@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-atlas"
+dynamic = ["version"]
+description = "One view across many claude-obsidian vaults, and a painless way to create them."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = []
+
+[project.scripts]
+claude-atlas = "claude_atlas.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["claude_atlas"]
+
+[tool.setuptools.dynamic]
+version = { attr = "claude_atlas.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
