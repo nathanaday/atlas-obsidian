@@ -45,7 +45,7 @@ internal/tree/          project pages (frontmatter) and derived state files
 internal/refresh/       derive state, render Overview.md
 internal/pages/         About.md and Reference.md from templates/*.md, paths filled in at write time
 internal/vaults/        create and register vaults (new-vault)
-internal/tui/           Bubble Tea screens behind bare commands (new-vault)
+internal/tui/           Bubble Tea screens: new-vault, manage-vaults
 internal/home/          ~/.claude-atlas and config.json
 internal/console/       prompts and step lines
 internal/testutil/      finds a real claude-obsidian for integration tests
@@ -74,7 +74,11 @@ file it cannot read as a project and report it instead of failing.
 - `product.TestedVersion` names the claude-obsidian release atlas was verified
   against. Atlas does not pin the install; it warns when the versions differ.
 - `refresh` is read-only toward every vault, offline, and idempotent.
-- Atlas never writes a project page after creating it. Users edit it.
+- Atlas edits a project page only through `tree.UpdateFrontmatter`, which
+  changes the named keys and nothing else: other properties, comments, key
+  order, and the body survive. Never re-render a page from the struct.
+- Moving a vault directory happens only from `manage-vaults` after an explicit
+  y/n; repointing to a vault that already exists needs no confirmation.
 - Tests never install a plugin or touch a real `~/.claude-atlas`. Integration
   tests find claude-obsidian through `internal/testutil` (the installed plugin,
   or `CLAUDE_ATLAS_TEST_PRODUCT`) and skip otherwise.

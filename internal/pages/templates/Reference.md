@@ -32,6 +32,14 @@ claude-atlas new-vault my-project --category university/cs566
 claude-atlas refresh
 ```
 
+**Manage vaults**
+
+> Browse every project by category. Open one to rename it, edit its purpose, move it to another category, change its priority or state, repoint or move its vault, or remove it from the atlas (the vault stays on disk).
+
+```bash
+claude-atlas manage-vaults
+```
+
 **List projects**
 
 ```bash

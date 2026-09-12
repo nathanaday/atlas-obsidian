@@ -35,8 +35,6 @@ const (
 	stepCount
 )
 
-const topLevel = "(top level)"
-
 var (
 	title    = lipgloss.NewStyle().Bold(true)
 	label    = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Width(11)
@@ -49,43 +47,13 @@ var (
 	rule     = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 )
 
-// option is one row of the category picker.
-type option struct {
-	label  string // what the row shows
-	value  string // category path; "" for the top level
-	create bool   // the row creates a new category
-}
-
-// categoryOptions filters known categories by the typed text and offers to create a new one.
-func categoryOptions(known []string, typed string) []option {
-	typed = strings.Trim(strings.TrimSpace(typed), "/")
-	var opts []option
-	if typed == "" {
-		opts = append(opts, option{label: topLevel, value: ""})
-	}
-	exact := false
-	for _, cat := range known {
-		if typed == "" || strings.Contains(strings.ToLower(cat), strings.ToLower(typed)) {
-			opts = append(opts, option{label: cat, value: cat})
-		}
-		if strings.EqualFold(cat, typed) {
-			exact = true
-		}
-	}
-	if typed != "" && !exact {
-		opts = append(opts, option{label: typed, value: typed, create: true})
-	}
-	return opts
-}
-
 type model struct {
 	vaultsDir  string
 	categories []string
 	step       step
 	name       textinput.Model
-	category   textinput.Model
+	category   picker
 	purpose    textinput.Model
-	cursor     int
 	chosen     option
 	err        string
 	done       bool
@@ -98,10 +66,7 @@ func newModel(vaultsDir string, categories []string) model {
 	name.Prompt = ""
 	name.CharLimit = 80
 	name.Focus()
-	category := textinput.New()
-	category.Placeholder = "type to filter, or a new name"
-	category.Prompt = ""
-	category.CharLimit = 120
+	category := newPicker(categories)
 	purpose := textinput.New()
 	purpose.Placeholder = "one line on why this exists (optional)"
 	purpose.Prompt = ""
@@ -135,17 +100,15 @@ func (m model) nameError() string {
 	return ""
 }
 
-func (m model) options() []option { return categoryOptions(m.categories, m.category.Value()) }
-
 func (m *model) focus() tea.Cmd {
 	m.name.Blur()
-	m.category.Blur()
+	m.category.blur()
 	m.purpose.Blur()
 	switch m.step {
 	case stepName:
 		return m.name.Focus()
 	case stepCategory:
-		return m.category.Focus()
+		return m.category.focus()
 	case stepPurpose:
 		return m.purpose.Focus()
 	}
@@ -169,16 +132,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.focus()
 		case tea.KeyEnter:
 			return m.advance()
-		case tea.KeyUp, tea.KeyDown:
-			if m.step == stepCategory {
-				n := len(m.options())
-				if key.Type == tea.KeyUp {
-					m.cursor = (m.cursor + n - 1) % n
-				} else {
-					m.cursor = (m.cursor + 1) % n
-				}
-				return m, nil
-			}
 		}
 	}
 	var cmd tea.Cmd
@@ -187,11 +140,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.name, cmd = m.name.Update(msg)
 		m.err = ""
 	case stepCategory:
-		before := m.category.Value()
-		m.category, cmd = m.category.Update(msg)
-		if m.category.Value() != before {
-			m.cursor = 0
-		}
+		m.category, cmd = m.category.update(msg)
 	case stepPurpose:
 		m.purpose, cmd = m.purpose.Update(msg)
 	}
@@ -206,11 +155,7 @@ func (m model) advance() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case stepCategory:
-		opts := m.options()
-		if m.cursor >= len(opts) {
-			m.cursor = 0
-		}
-		m.chosen = opts[m.cursor]
+		m.chosen = m.category.selected()
 	case stepConfirm:
 		m.done = true
 		return m, tea.Quit
@@ -249,21 +194,7 @@ func (m model) View() string {
 	case m.step < stepCategory:
 		b.WriteString(m.row(stepCategory, "Category", dim.Render("choose after the name")))
 	case m.step == stepCategory:
-		b.WriteString(m.row(stepCategory, "Category", m.category.View()))
-		for i, opt := range m.options() {
-			marker := "  "
-			text := opt.label
-			if opt.create {
-				text = newSt.Render("+ new category: " + opt.label)
-			}
-			if i == m.cursor {
-				marker = cursorSt.Render("▸ ")
-				if !opt.create {
-					text = cursorSt.Render(text)
-				}
-			}
-			b.WriteString("             " + marker + text + "\n")
-		}
+		b.WriteString(m.row(stepCategory, "Category", m.category.view("             ")))
 	default:
 		shown := m.chosen.label
 		if m.chosen.create {

@@ -36,6 +36,7 @@ Commands:
   new-vault              create a vault and its project page, step by step
   new-vault NAME         create a vault without prompts
   new-vault --from PATH  register a claude-obsidian vault that already exists
+  manage-vaults          browse every project by category; rename, move, repoint, or remove
   list                   list every project
   refresh                read every vault and rewrite Overview.md
   info                   show every path and version the atlas uses
@@ -90,6 +91,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.setup(rest[1:])
 	case "new-vault":
 		code, err = e.newVault(rest[1:])
+	case "manage-vaults":
+		code, err = e.manageVaults(rest[1:])
 	case "list":
 		code, err = e.list(rest[1:])
 	case "refresh":
@@ -278,6 +281,45 @@ func (e *env) newVaultInteractive() (int, error) {
 	return e.finishVault(cfg, prod, choice.Path, vaults.RegisterOptions{
 		Name: choice.Name, Category: choice.Category, Purpose: choice.Purpose,
 	})
+}
+
+func (e *env) manageVaults(args []string) (int, error) {
+	if !e.console.Interactive() {
+		return 2, errors.New("manage-vaults is an interactive screen and needs a terminal")
+	}
+	cfg, prod, err := e.load()
+	if err != nil {
+		return 1, err
+	}
+	hooks := tui.Hooks{
+		Load: func() ([]*tree.Project, error) {
+			projects, _, err := tree.Walk(cfg.TreeRoot())
+			return projects, err
+		},
+		Categories: func() []string { return tui.Categories(cfg.TreeRoot()) },
+		State: func(rel string) *tree.State {
+			state, err := tree.ReadState(e.home.StateDir(), rel)
+			if err != nil {
+				return nil
+			}
+			return state
+		},
+		Update: func(p *tree.Project, edit vaults.Edit) error { return vaults.Update(cfg, p, edit) },
+		Unlink: vaults.Unlink,
+	}
+	changed, err := tui.RunManage(hooks)
+	if err != nil {
+		return 1, err
+	}
+	if !changed {
+		return 0, nil
+	}
+	page, _, err := e.refreshAll(cfg, prod)
+	if err != nil {
+		return 1, err
+	}
+	e.console.Step(console.OK, "refreshed", home.Display(page))
+	return 0, nil
 }
 
 func (e *env) list(args []string) (int, error) {

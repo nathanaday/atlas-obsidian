@@ -95,6 +95,14 @@ The same thing without prompts, for scripts:
 claude-atlas new-vault sensor-triage --category work --purpose "Sort field sensor faults."
 ```
 
+Browse and edit what is registered. Open a project to rename it, change its
+purpose, priority, or state, move it to another category, repoint or move its
+vault, or remove it from the atlas. Removing never touches the vault on disk.
+
+```bash
+claude-atlas manage-vaults
+```
+
 Register a vault you already have:
 
 ```bash
