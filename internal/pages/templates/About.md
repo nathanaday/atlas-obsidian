@@ -1,5 +1,3 @@
-# About
-
 > [!info] Orientation
 > This vault is your atlas: one place that looks across every claude-obsidian vault you keep. claude-atlas generates and maintains it. Source and issues: %REPO%
 

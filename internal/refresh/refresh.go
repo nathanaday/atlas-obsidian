@@ -341,7 +341,7 @@ func Render(res *Result, generatedAt string, today time.Time) string {
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "---\ntitle: Overview\ngenerated_at: %s\n---\n\n# Overview\n\n", generatedAt)
+	fmt.Fprintf(&b, "---\ntitle: Overview\ngenerated_at: %s\n---\n\n", generatedAt)
 	fmt.Fprintf(&b, "> [!info] Generated page\n> `claude-atlas refresh` rewrites this page from every project under `tree/`. Edit a project's own page and refresh again; edits made here are lost.\n> **%s** · refreshed %s\n\n",
 		strings.Join(parts, " · "), stamp.Local().Format("2006-01-02 15:04"))
 
