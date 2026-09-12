@@ -27,7 +27,7 @@ func ResolveNewPath(arg, vaultsDir string) (string, error) {
 // Create runs claude-obsidian's plan-then-apply init as one reviewed step.
 func Create(p *product.Product, path string, c *console.Console, confirm bool) error {
 	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("%s already exists; use `claude-atlas vault add` to register an existing vault", home.Display(path))
+		return fmt.Errorf("%s already exists; use `claude-atlas new-vault --from` to register an existing vault", home.Display(path))
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err

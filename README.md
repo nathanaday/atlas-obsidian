@@ -22,7 +22,7 @@ them can answer "I have a free afternoon, what should I pick up?"
 
 claude-atlas fixes both. One `setup` command installs the claude-obsidian
 plugin into Claude Code, creates the atlas, and creates your first vault.
-`vault new` makes another vault in one confirmation. `refresh` reads every
+`new-vault` makes another vault in one confirmation. `refresh` reads every
 vault and writes a single page, the atlas, that you open in Obsidian: heat,
 idle days, open threads, unfinished work, and your own declared priority for
 each vault, side by side.
@@ -80,25 +80,25 @@ time; finished steps are skipped.
 
 ### Usage
 
-Create a vault. With no arguments, `vault add` walks you through it: type a
+Create a vault. With no arguments, `new-vault` walks you through it: type a
 name, pick a category from the ones in your tree or name a new one, add a
 one-line purpose, confirm. The vault is created in your vaults directory and
 its project page lands in the tree.
 
 ```bash
-claude-atlas vault add
+claude-atlas new-vault
 ```
 
 The same thing without prompts, for scripts:
 
 ```bash
-claude-atlas vault new sensor-triage --category work --purpose "Sort field sensor faults."
+claude-atlas new-vault sensor-triage --category work --purpose "Sort field sensor faults."
 ```
 
 Register a vault you already have:
 
 ```bash
-claude-atlas vault add ~/Documents/OldVault --priority high
+claude-atlas new-vault --from ~/Documents/OldVault --priority high
 ```
 
 Rebuild the atlas page from every vault:
@@ -141,7 +141,7 @@ claude-atlas doctor
     └── personal/
         └── reading-list.md
 
-~/Documents/Vaults/           where `vault new` puts each vault
+~/Documents/Vaults/           where `new-vault` puts each vault
 
 ~/.claude-atlas/              internal; you rarely open this
 ├── config.json               paths, plugin id, marketplace

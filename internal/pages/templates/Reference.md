@@ -15,13 +15,13 @@
 > Walks you through it: name, category (pick one from your tree or type a new one), purpose, confirm.
 
 ```bash
-claude-atlas vault add
+claude-atlas new-vault
 ```
 
 > The same without prompts. It lands in the vaults directory; missing category folders are created.
 
 ```bash
-claude-atlas vault new my-project --category university/cs566
+claude-atlas new-vault my-project --category university/cs566
 ```
 
 **Refresh [[Overview]]**
@@ -35,7 +35,7 @@ claude-atlas refresh
 **List projects**
 
 ```bash
-claude-atlas vault list
+claude-atlas list
 ```
 
 **Info**
@@ -82,19 +82,19 @@ claude-atlas version
 Set purpose and priority when creating a vault.
 
 ```bash
-claude-atlas vault new sensor-triage --purpose "Sort field sensor faults." --priority high
+claude-atlas new-vault sensor-triage --purpose "Sort field sensor faults." --priority high
 ```
 
 Create a vault at an explicit path instead of the vaults directory.
 
 ```bash
-claude-atlas vault new ~/Desktop/scratch-vault
+claude-atlas new-vault ~/Desktop/scratch-vault
 ```
 
 Register an existing vault with a display name, a category, and a priority.
 
 ```bash
-claude-atlas vault add ~/Documents/OldVault --name "Old Vault" --category archive --priority someday
+claude-atlas new-vault --from ~/Documents/OldVault --name "Old Vault" --category archive --priority someday
 ```
 
 Move a project by moving its page.
@@ -106,7 +106,7 @@ mv %ATLAS%/tree/capstone.md %ATLAS%/tree/university/cs566/
 Register a claude-obsidian vault that already exists.
 
 ```bash
-claude-atlas vault add ~/Documents/OldVault
+claude-atlas new-vault --from ~/Documents/OldVault
 ```
 
 

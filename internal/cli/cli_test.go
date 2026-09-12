@@ -66,7 +66,7 @@ func TestSetupCreatesHomeAtlasAndFirstVault(t *testing.T) {
 
 func TestVaultCommands(t *testing.T) {
 	h, vaults := setup(t)
-	if code := h.run("vault", "new", "triage", "--category", "work", "--purpose", "Sort sensors."); code != 0 {
+	if code := h.run("new-vault", "triage", "--category", "work", "--purpose", "Sort sensors."); code != 0 {
 		t.Fatalf("vault new exit %d\n%s%s", code, h.out.String(), h.err.String())
 	}
 	if !strings.Contains(h.out.String(), "tree/work/triage.md") {
@@ -75,13 +75,13 @@ func TestVaultCommands(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(vaults, "triage", "wiki", "hot.md")); err != nil {
 		t.Fatal("vault not created")
 	}
-	if code := h.run("vault", "add", filepath.Join(vaults, "triage")); code != 1 || !strings.Contains(h.err.String(), "already registered as work/triage") {
+	if code := h.run("new-vault", "--from", filepath.Join(vaults, "triage")); code != 1 || !strings.Contains(h.err.String(), "already registered as work/triage") {
 		t.Fatalf("exit %d err %s", code, h.err.String())
 	}
-	if code := h.run("vault", "add", t.TempDir(), "--name", "Plain"); code != 1 || !strings.Contains(h.err.String(), "not a claude-obsidian vault") {
+	if code := h.run("new-vault", "--from", t.TempDir(), "--name", "Plain"); code != 1 || !strings.Contains(h.err.String(), "not a claude-obsidian vault") {
 		t.Fatalf("exit %d err %s", code, h.err.String())
 	}
-	if code := h.run("vault", "list"); code != 0 {
+	if code := h.run("list"); code != 0 {
 		t.Fatal("list failed")
 	}
 	for _, want := range []string{"work/triage", "welcome"} {
@@ -112,6 +112,9 @@ func TestCommandsNeedSetupFirst(t *testing.T) {
 	}
 	if code := h.run("info"); code != 0 || !strings.Contains(h.out.String(), "not set up") {
 		t.Fatalf("info before setup: %d %s", code, h.out.String())
+	}
+	if code := h.run("new-vault", "a", "--from", "/b"); code != 2 {
+		t.Fatalf("name and --from together should be a usage error, got %d", code)
 	}
 	if code := h.run("bogus"); code != 2 {
 		t.Fatalf("unknown command exit %d", code)

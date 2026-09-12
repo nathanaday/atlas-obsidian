@@ -21,11 +21,11 @@ nothing shows many vaults at once. Atlas is the fix for both, built beside the
 product and never inside it. Setup quality comes first.
 
 The author is moving into a fresh set of vaults. Migration of old vaults is
-out of scope; `vault add` exists only for vaults made by hand later.
+out of scope; `new-vault --from` exists only for vaults made by hand later.
 
 ## Three rules
 
-1. Atlas never writes into a vault. `vault new` delegates every write to
+1. Atlas never writes into a vault. `new-vault` delegates every write to
    claude-obsidian's own init; after that atlas only reads.
 2. A vault never learns that atlas exists. A leaf records a vault path; the
    vault records nothing.
@@ -44,8 +44,8 @@ internal/product/       locate and run the claude-obsidian CLI
 internal/tree/          project pages (frontmatter) and derived state files
 internal/refresh/       derive state, render Overview.md
 internal/pages/         About.md and Reference.md from templates/*.md, paths filled in at write time
-internal/vaults/        vault new / vault add
-internal/tui/           Bubble Tea screens behind bare commands (vault add)
+internal/vaults/        create and register vaults (new-vault)
+internal/tui/           Bubble Tea screens behind bare commands (new-vault)
 internal/home/          ~/.claude-atlas and config.json
 internal/console/       prompts and step lines
 internal/testutil/      finds a real claude-obsidian for integration tests

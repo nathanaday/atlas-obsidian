@@ -32,15 +32,15 @@ Usage:
   claude-atlas [--home DIR] [-y] <command> [options]
 
 Commands:
-  setup            install claude-obsidian, create the atlas, and your first vault
-  vault add        create a vault and its project page, step by step
-  vault add PATH   register an existing claude-obsidian vault
-  vault new NAME   create a vault without prompts
-  vault list       list registered vaults
-  refresh          recompute every state.json and rewrite Overview.md
-  info             show every path and version the atlas uses
-  doctor           check the installation and every registered vault
-  version          print the version
+  setup                  install claude-obsidian, create the atlas, and your first vault
+  new-vault              create a vault and its project page, step by step
+  new-vault NAME         create a vault without prompts
+  new-vault --from PATH  register a claude-obsidian vault that already exists
+  list                   list every project
+  refresh                read every vault and rewrite Overview.md
+  info                   show every path and version the atlas uses
+  doctor                 check the installation and every registered vault
+  version                print the version
 
 Global options:
   --home DIR       atlas home (default ~/.claude-atlas or $CLAUDE_ATLAS_HOME)
@@ -88,8 +88,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 	switch rest[0] {
 	case "setup":
 		code, err = e.setup(rest[1:])
-	case "vault":
-		code, err = e.vault(rest[1:])
+	case "new-vault":
+		code, err = e.newVault(rest[1:])
+	case "list":
+		code, err = e.list(rest[1:])
 	case "refresh":
 		code, err = e.refresh(rest[1:])
 	case "info":
@@ -179,45 +181,62 @@ func nodeFlags(fs *flag.FlagSet) *vaults.RegisterOptions {
 	return opts
 }
 
-func (e *env) vault(args []string) (int, error) {
-	if len(args) == 0 {
-		fmt.Fprint(e.stderr, "usage: claude-atlas vault new|add|list\n")
-		return 2, nil
-	}
-	switch args[0] {
-	case "new":
-		return e.vaultNew(args[1:])
-	case "add":
-		return e.vaultAdd(args[1:])
-	case "list":
-		return e.vaultList(args[1:])
-	}
-	fmt.Fprintf(e.stderr, "unknown vault command %q\n", args[0])
-	return 2, nil
-}
-
-func (e *env) vaultNew(args []string) (int, error) {
-	fs := newFlags("vault new", e.stderr)
+func (e *env) newVault(args []string) (int, error) {
+	fs := newFlags("new-vault", e.stderr)
 	opts := nodeFlags(fs)
+	fs.StringVar(&opts.Name, "name", "", "display name (default: the vault's directory name)")
+	from := fs.String("from", "", "register a claude-obsidian vault that already exists at this path")
 	positional, err := parse(fs, args)
 	if err != nil {
 		return 2, nil
 	}
-	if len(positional) != 1 {
-		return 2, errors.New("usage: claude-atlas vault new NAME [--category DIR] [--purpose TEXT] [--priority P]")
+	switch {
+	case *from != "" && len(positional) == 0:
+		return e.registerExisting(*from, *opts)
+	case *from == "" && len(positional) == 0:
+		return e.newVaultInteractive()
+	case *from == "" && len(positional) == 1:
+		return e.createVault(positional[0], *opts)
 	}
+	return 2, errors.New("usage: claude-atlas new-vault [NAME | --from PATH] [--name N] [--category DIR] [--purpose TEXT] [--priority P]")
+}
+
+func (e *env) createVault(arg string, opts vaults.RegisterOptions) (int, error) {
 	cfg, prod, err := e.load()
 	if err != nil {
 		return 1, err
 	}
-	path, err := vaults.ResolveNewPath(positional[0], cfg.VaultsDir)
+	path, err := vaults.ResolveNewPath(arg, cfg.VaultsDir)
 	if err != nil {
 		return 1, err
 	}
 	if err := vaults.Create(prod, path, e.console, true); err != nil {
 		return 1, err
 	}
-	node, err := vaults.Register(cfg, path, *opts)
+	return e.finishVault(cfg, prod, path, opts)
+}
+
+func (e *env) registerExisting(path string, opts vaults.RegisterOptions) (int, error) {
+	cfg, prod, err := e.load()
+	if err != nil {
+		return 1, err
+	}
+	project, err := vaults.Register(cfg, path, opts)
+	if err != nil {
+		return 1, err
+	}
+	page, _, err := e.refreshAll(cfg, prod)
+	if err != nil {
+		return 1, err
+	}
+	e.console.Step(console.OK, "registered", fmt.Sprintf("%s → tree/%s.md", home.Display(project.VaultPath()), project.Rel))
+	e.console.Step(console.OK, "refreshed", home.Display(page))
+	return 0, nil
+}
+
+// finishVault registers a vault that was just created, refreshes, and reports.
+func (e *env) finishVault(cfg *home.Config, prod *product.Product, path string, opts vaults.RegisterOptions) (int, error) {
+	project, err := vaults.Register(cfg, path, opts)
 	if err != nil {
 		return 1, err
 	}
@@ -228,7 +247,7 @@ func (e *env) vaultNew(args []string) (int, error) {
 	c := e.console
 	c.Say("")
 	c.Step(console.OK, "created", home.Display(path))
-	c.Step(console.OK, "registered", "tree/"+node.Rel+".md")
+	c.Step(console.OK, "registered", "tree/"+project.Rel+".md")
 	c.Step(console.OK, "refreshed", home.Display(page))
 	c.Say("")
 	c.Say("  Open it in Obsidian with \"Open folder as vault\", or start working:")
@@ -237,41 +256,10 @@ func (e *env) vaultNew(args []string) (int, error) {
 	return 0, nil
 }
 
-func (e *env) vaultAdd(args []string) (int, error) {
-	fs := newFlags("vault add", e.stderr)
-	opts := nodeFlags(fs)
-	fs.StringVar(&opts.Name, "name", "", "display name (default: directory name)")
-	positional, err := parse(fs, args)
-	if err != nil {
-		return 2, nil
-	}
-	if len(positional) == 0 {
-		return e.vaultAddInteractive()
-	}
-	if len(positional) != 1 {
-		return 2, errors.New("usage: claude-atlas vault add [PATH] [--name N] [--category DIR] [--purpose TEXT] [--priority P]")
-	}
-	cfg, prod, err := e.load()
-	if err != nil {
-		return 1, err
-	}
-	node, err := vaults.Register(cfg, positional[0], *opts)
-	if err != nil {
-		return 1, err
-	}
-	page, _, err := e.refreshAll(cfg, prod)
-	if err != nil {
-		return 1, err
-	}
-	e.console.Step(console.OK, "registered", fmt.Sprintf("%s → tree/%s.md", home.Display(node.VaultPath()), node.Rel))
-	e.console.Step(console.OK, "refreshed", home.Display(page))
-	return 0, nil
-}
-
-// vaultAddInteractive walks the user through name, category, and purpose, then creates the vault.
-func (e *env) vaultAddInteractive() (int, error) {
+// newVaultInteractive walks the user through name, category, and purpose, then creates the vault.
+func (e *env) newVaultInteractive() (int, error) {
 	if !e.console.Interactive() {
-		return 2, errors.New("usage: claude-atlas vault add PATH (the interactive screen needs a terminal)")
+		return 2, errors.New("usage: claude-atlas new-vault NAME (the interactive screen needs a terminal)")
 	}
 	cfg, prod, err := e.load()
 	if err != nil {
@@ -287,27 +275,12 @@ func (e *env) vaultAddInteractive() (int, error) {
 	if err := vaults.Create(prod, choice.Path, e.console, false); err != nil {
 		return 1, err
 	}
-	project, err := vaults.Register(cfg, choice.Path, vaults.RegisterOptions{
+	return e.finishVault(cfg, prod, choice.Path, vaults.RegisterOptions{
 		Name: choice.Name, Category: choice.Category, Purpose: choice.Purpose,
 	})
-	if err != nil {
-		return 1, err
-	}
-	page, _, err := e.refreshAll(cfg, prod)
-	if err != nil {
-		return 1, err
-	}
-	c := e.console
-	c.Step(console.OK, "created", home.Display(choice.Path))
-	c.Step(console.OK, "registered", "tree/"+project.Rel+".md")
-	c.Step(console.OK, "refreshed", home.Display(page))
-	c.Say("")
-	c.Say("  cd %s && claude    # then /claude-obsidian:wiki", home.Display(choice.Path))
-	c.Say("")
-	return 0, nil
 }
 
-func (e *env) vaultList(args []string) (int, error) {
+func (e *env) list(args []string) (int, error) {
 	cfg, err := e.home.Load()
 	if err != nil {
 		return 1, err
@@ -317,7 +290,7 @@ func (e *env) vaultList(args []string) (int, error) {
 		return 1, err
 	}
 	if len(projects) == 0 && len(problems) == 0 {
-		e.console.Say("no projects yet; run `claude-atlas vault new <name>`")
+		e.console.Say("no projects yet; run `claude-atlas new-vault`")
 		return 0, nil
 	}
 	for _, p := range projects {

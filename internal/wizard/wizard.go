@@ -106,7 +106,7 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 			return 1, err
 		}
 		if _, err := os.Stat(path); err == nil {
-			return 1, fmt.Errorf("%s already exists; choose another name or register it with `claude-atlas vault add`", home.Display(path))
+			return 1, fmt.Errorf("%s already exists; choose another name or register it with `claude-atlas new-vault --from`", home.Display(path))
 		}
 		firstPath = path
 	}
@@ -212,8 +212,7 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	c.Say("Open either one in Obsidian with \"Open folder as vault\".")
 	c.Say("")
 	c.Say("Next:")
-	c.Say("  claude-atlas vault new <name>    create another vault")
-	c.Say("  claude-atlas vault add <path>    register an existing claude-obsidian vault")
+	c.Say("  claude-atlas new-vault           create another vault, step by step")
 	c.Say("  claude-atlas refresh             rebuild Overview.md from every vault")
 	c.Say("  claude-atlas info                show every path the atlas uses")
 	if prod == nil {
