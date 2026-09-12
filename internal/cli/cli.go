@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/claudecode"
 	"github.com/nathanaday/claude-atlas/internal/console"
 	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/obsidian"
 	"github.com/nathanaday/claude-atlas/internal/product"
 	"github.com/nathanaday/claude-atlas/internal/refresh"
 	"github.com/nathanaday/claude-atlas/internal/tree"
@@ -35,8 +35,8 @@ Commands:
   vault add PATH   register an existing claude-obsidian vault
   vault list       list registered vaults
   refresh          recompute every state.json and rewrite Atlas.md
-  open [NODE]      open the atlas (or one vault) in Obsidian
-  doctor           report the state of the installation
+  info             show every path and version the atlas uses
+  doctor           check the installation and every registered vault
   version          print the version
 
 Global options:
@@ -89,8 +89,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.vault(rest[1:])
 	case "refresh":
 		code, err = e.refresh(rest[1:])
-	case "open":
-		code, err = e.open(rest[1:])
+	case "info":
+		code, err = e.info(rest[1:])
 	case "doctor":
 		code, err = e.doctor(rest[1:])
 	case "version":
@@ -152,15 +152,10 @@ func (e *env) setup(args []string) (int, error) {
 	first := fs.String("first-vault", "", "name or path of the first vault (default welcome)")
 	productPath := fs.String("claude-obsidian", "", "use a claude-obsidian checkout at this path instead of the plugin")
 	noPlugin := fs.Bool("no-plugin", false, "do not run `claude plugin`")
-	noOpen := fs.Bool("no-open", false, "do not offer to open Obsidian")
 	if err := fs.Parse(args); err != nil {
 		return 2, nil
 	}
 	opts := wizard.Options{VaultsDir: *vaultsDir, FirstVault: *first, ProductPath: *productPath, WithPlugin: !*noPlugin}
-	if *noOpen {
-		f := false
-		opts.OpenAfter = &f
-	}
 	return wizard.Run(e.home, e.console, opts)
 }
 
@@ -192,7 +187,6 @@ func (e *env) vault(args []string) (int, error) {
 func (e *env) vaultNew(args []string) (int, error) {
 	fs := newFlags("vault new", e.stderr)
 	opts := nodeFlags(fs)
-	noOpen := fs.Bool("no-open", false, "do not offer to open Obsidian")
 	positional, err := parse(fs, args)
 	if err != nil {
 		return 2, nil
@@ -225,14 +219,9 @@ func (e *env) vaultNew(args []string) (int, error) {
 	c.Step(console.OK, "registered", "node "+node.Rel)
 	c.Step(console.OK, "refreshed", home.Display(page))
 	c.Say("")
-	c.Say("  %s", obsidian.OpenURI(path))
+	c.Say("  Open it in Obsidian with \"Open folder as vault\", or start working:")
 	c.Say("  cd %s && claude    # then /claude-obsidian:wiki", home.Display(path))
 	c.Say("")
-	if !*noOpen && c.Interactive() && !c.AssumeYes {
-		if ok, _ := c.Confirm("Open it in Obsidian now?", true); ok {
-			obsidian.Open(path)
-		}
-	}
 	return 0, nil
 }
 
@@ -322,25 +311,40 @@ func (e *env) refresh(args []string) (int, error) {
 	return 0, nil
 }
 
-func (e *env) open(args []string) (int, error) {
+func (e *env) info(args []string) (int, error) {
+	c := e.console
+	row := func(label, value string) { c.Say("  %-18s %s", label, value) }
+	row("claude-atlas", Version)
+	row("home", home.Display(e.home.Root))
+	row("config", home.Display(e.home.ConfigPath()))
+	if !e.home.Exists() {
+		row("status", "not set up; run `claude-atlas setup`")
+		return 0, nil
+	}
 	cfg, err := e.home.Load()
 	if err != nil {
 		return 1, err
 	}
-	target := cfg.AtlasVault
-	if len(args) > 0 {
-		nodes, err := tree.Walk(cfg.TreeRoot())
-		if err != nil {
-			return 1, err
-		}
-		node := tree.FindByRel(nodes, args[0])
-		if node == nil || node.VaultPath() == "" {
-			return 1, fmt.Errorf("no leaf node named %q", args[0])
-		}
-		target = node.VaultPath()
+	row("atlas vault", home.Display(cfg.AtlasVault))
+	row("atlas page", home.Display(filepath.Join(cfg.AtlasVault, "Atlas.md")))
+	row("tree", home.Display(cfg.TreeRoot()))
+	row("vaults dir", home.Display(cfg.VaultsDir))
+	if prod, err := product.Locate(cfg.ClaudeObsidian); err != nil {
+		row("claude-obsidian", err.Error())
+	} else {
+		row("claude-obsidian", fmt.Sprintf("v%s (tested with v%s)", prod.Version, product.TestedVersion))
+		row("  cli", home.Display(filepath.Join(prod.Root, "scripts", "claude-obsidian.py")))
+		row("  source", ternary(prod.Source == "plugin", "Claude Code plugin "+cfg.ClaudeObsidian.Plugin, "config path"))
 	}
-	if !obsidian.Open(target) {
-		e.console.Say("%s", obsidian.OpenURI(target))
+	row("claude config", home.Display(claudecode.ConfigDir()))
+	nodes, err := tree.Walk(cfg.TreeRoot())
+	if err != nil {
+		return 1, err
+	}
+	leaves := tree.Leaves(nodes)
+	row("vaults", fmt.Sprintf("%d registered", len(leaves)))
+	for _, n := range leaves {
+		row("  "+n.Rel, home.Display(n.VaultPath()))
 	}
 	return 0, nil
 }

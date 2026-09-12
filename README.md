@@ -74,8 +74,9 @@ The claude-obsidian step runs the two commands from that project's own install
 guide: `claude plugin marketplace add` and `claude plugin install`. The plugin
 carries the whole product, skills and CLI alike, so nothing else is fetched.
 
-When setup finishes it prints two Obsidian links: the atlas, and your first
-vault. Run it again at any time; finished steps are skipped.
+When setup finishes it prints the atlas path and your first vault's path. Open
+either one in Obsidian with "Open folder as vault". Run setup again at any
+time; finished steps are skipped.
 
 ### Usage
 
@@ -92,11 +93,16 @@ Register a vault you already have:
 claude-atlas vault add ~/Documents/OldVault --priority high
 ```
 
-Rebuild the atlas page from every vault, then open it:
+Rebuild the atlas page from every vault:
 
 ```bash
 claude-atlas refresh
-claude-atlas open
+```
+
+Show every path the atlas uses, and the claude-obsidian version it found:
+
+```bash
+claude-atlas info
 ```
 
 Start working in a vault with Claude Code:
@@ -175,4 +181,3 @@ Full reasoning in the [design spec](docs/spec.md).
 - Design spec — [docs/spec.md](docs/spec.md)
 - Setup experience notes — [docs/setup-experience.md](docs/setup-experience.md)
 - claude-obsidian — https://github.com/AgriciDaniel/claude-obsidian
-- Obsidian URI scheme, used to open vaults — https://help.obsidian.md/Extending+Obsidian/Obsidian+URI

@@ -11,7 +11,6 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/claudecode"
 	"github.com/nathanaday/claude-atlas/internal/console"
 	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/obsidian"
 	"github.com/nathanaday/claude-atlas/internal/product"
 	"github.com/nathanaday/claude-atlas/internal/refresh"
 	"github.com/nathanaday/claude-atlas/internal/tree"
@@ -24,7 +23,6 @@ type Options struct {
 	FirstVault  string
 	ProductPath string // dev override written into config
 	WithPlugin  bool
-	OpenAfter   *bool // nil asks
 }
 
 func plan(c *console.Console, label, action, target string) {
@@ -193,17 +191,18 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	c.Say("Setup complete.")
 	c.Say("")
 	c.Say("  Atlas        %s", home.Display(cfg.AtlasVault))
-	c.Say("               %s", obsidian.OpenURI(cfg.AtlasVault))
 	if firstPath != "" && prod != nil {
 		c.Say("  First vault  %s", home.Display(firstPath))
-		c.Say("               %s", obsidian.OpenURI(firstPath))
 	}
+	c.Say("")
+	c.Say("Open each in Obsidian with \"Open folder as vault\". In the macOS file dialog,")
+	c.Say("press Cmd+Shift+. to show hidden folders such as %s.", home.Display(h.Root))
 	c.Say("")
 	c.Say("Next:")
 	c.Say("  claude-atlas vault new <name>    create another vault")
 	c.Say("  claude-atlas vault add <path>    register an existing claude-obsidian vault")
 	c.Say("  claude-atlas refresh             rebuild Atlas.md from every vault")
-	c.Say("  claude-atlas open                open the atlas in Obsidian")
+	c.Say("  claude-atlas info                show every path the atlas uses")
 	if prod == nil {
 		c.Say("")
 		c.Say("claude-obsidian is not installed. Install it, then run setup again:")
@@ -212,16 +211,6 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 		}
 	}
 	c.Say("")
-
-	open := false
-	if opts.OpenAfter != nil {
-		open = *opts.OpenAfter
-	} else if c.Interactive() && !c.AssumeYes {
-		open, _ = c.Confirm("Open the atlas in Obsidian now?", true)
-	}
-	if open && !obsidian.Open(cfg.AtlasVault) {
-		c.Say("Could not launch Obsidian; open the path above from its vault picker.")
-	}
 	return 0, nil
 }
 

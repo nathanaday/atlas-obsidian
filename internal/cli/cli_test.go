@@ -30,7 +30,7 @@ func setup(t *testing.T) (*harness, string) {
 	root := t.TempDir()
 	h := &harness{t: t, home: filepath.Join(root, "home")}
 	vaults := filepath.Join(root, "Vaults")
-	code := h.run("setup", "--no-plugin", "--no-open", "--vaults-dir", vaults, "--first-vault", "welcome", "--claude-obsidian", prod.Root)
+	code := h.run("setup", "--no-plugin", "--vaults-dir", vaults, "--first-vault", "welcome", "--claude-obsidian", prod.Root)
 	if code != 0 {
 		t.Fatalf("setup exit %d\n%s%s", code, h.out.String(), h.err.String())
 	}
@@ -57,14 +57,14 @@ func TestSetupCreatesHomeAtlasAndFirstVault(t *testing.T) {
 	if !strings.Contains(string(page), "[[tree/welcome/node\\|welcome]]") {
 		t.Fatalf("atlas page:\n%s", page)
 	}
-	if code := h.run("setup", "--no-plugin", "--no-open"); code != 0 || !strings.Contains(h.out.String(), "keep       1 registered") {
+	if code := h.run("setup", "--no-plugin"); code != 0 || !strings.Contains(h.out.String(), "keep       1 registered") {
 		t.Fatalf("rerun exit %d:\n%s", code, h.out.String())
 	}
 }
 
 func TestVaultCommands(t *testing.T) {
 	h, vaults := setup(t)
-	if code := h.run("vault", "new", "triage", "--parent", "work", "--purpose", "Sort sensors.", "--no-open"); code != 0 {
+	if code := h.run("vault", "new", "triage", "--parent", "work", "--purpose", "Sort sensors."); code != 0 {
 		t.Fatalf("vault new exit %d\n%s%s", code, h.out.String(), h.err.String())
 	}
 	if !strings.Contains(h.out.String(), "node work/triage") {
@@ -93,12 +93,23 @@ func TestVaultCommands(t *testing.T) {
 	if code := h.run("refresh"); code != 0 || !strings.Contains(h.out.String(), "work/triage") {
 		t.Fatalf("refresh exit %d:\n%s", code, h.out.String())
 	}
+	if code := h.run("info"); code != 0 {
+		t.Fatalf("info exit %d:\n%s", code, h.out.String())
+	}
+	for _, want := range []string{"atlas page", "Atlas.md", "claude-obsidian", "2 registered", "work/triage"} {
+		if !strings.Contains(h.out.String(), want) {
+			t.Errorf("info missing %q:\n%s", want, h.out.String())
+		}
+	}
 }
 
 func TestCommandsNeedSetupFirst(t *testing.T) {
 	h := &harness{t: t, home: filepath.Join(t.TempDir(), "none")}
 	if code := h.run("refresh"); code != 1 || !strings.Contains(h.err.String(), "claude-atlas setup") {
 		t.Fatalf("exit %d err %s", code, h.err.String())
+	}
+	if code := h.run("info"); code != 0 || !strings.Contains(h.out.String(), "not set up") {
+		t.Fatalf("info before setup: %d %s", code, h.out.String())
 	}
 	if code := h.run("bogus"); code != 2 {
 		t.Fatalf("unknown command exit %d", code)

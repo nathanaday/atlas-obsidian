@@ -145,7 +145,7 @@ func TestRenderListsRowsAndSignals(t *testing.T) {
 	page := Render([]Row{{node, state}}, "2026-09-11T20:00:00Z", today)
 	for _, want := range []string{
 		"| cold | [[tree/work/v/node\\|work/v]] | normal | active | 41d | 3 | 1 | 3 |",
-		"obsidian://open?path=%2FUsers%2Fme%2Fv",
+		"`/Users/me/v`",
 		"## Signals", "cold for 41 days", "## work/v", "Why.", "- thread one",
 	} {
 		if !strings.Contains(page, want) {

@@ -45,7 +45,6 @@ internal/refresh/       derive state, render Atlas.md
 internal/vaults/        vault new / vault add
 internal/home/          ~/.claude-atlas and config.json
 internal/console/       prompts and step lines
-internal/obsidian/      obsidian:// links
 internal/testutil/      finds a real claude-obsidian for integration tests
 ```
 
@@ -85,6 +84,8 @@ not a claude-obsidian wiki, so the user can open the generated table.
 - `seed_pages` is not a lint category; atlas counts `status: seed` frontmatter
   itself.
 - `wiki/hot.md` "Active Threads" is prose; treat it as best effort.
+- `obsidian://open?path=` only opens vaults Obsidian already knows. It cannot
+  register a new vault, so atlas never tries to launch Obsidian.
 
 ## Build and test
 
