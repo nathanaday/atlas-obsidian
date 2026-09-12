@@ -30,7 +30,7 @@ func setup(t *testing.T) (*harness, string) {
 	root := t.TempDir()
 	h := &harness{t: t, home: filepath.Join(root, "home")}
 	vaults := filepath.Join(root, "Vaults")
-	code := h.run("setup", "--no-plugin", "--vaults-dir", vaults, "--first-vault", "welcome", "--claude-obsidian", prod.Root)
+	code := h.run("setup", "--no-plugin", "--vaults-dir", vaults, "--atlas-vault", filepath.Join(root, "Atlas"), "--first-vault", "welcome", "--claude-obsidian", prod.Root)
 	if code != 0 {
 		t.Fatalf("setup exit %d\n%s%s", code, h.out.String(), h.err.String())
 	}
@@ -44,16 +44,16 @@ func TestSetupCreatesHomeAtlasAndFirstVault(t *testing.T) {
 	}
 	for _, path := range []string{
 		filepath.Join(vaults, "welcome", ".claude-obsidian.json"),
-		filepath.Join(h.home, "atlas", ".obsidian", "app.json"),
-		filepath.Join(h.home, "atlas", "tree", "welcome", "node.md"),
-		filepath.Join(h.home, "atlas", "tree", "welcome", "state.json"),
+		filepath.Join(filepath.Dir(h.home), "Atlas", ".obsidian", "app.json"),
+		filepath.Join(filepath.Dir(h.home), "Atlas", "tree", "welcome", "node.md"),
+		filepath.Join(filepath.Dir(h.home), "Atlas", "tree", "welcome", "state.json"),
 		filepath.Join(h.home, "config.json"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("missing %s", path)
 		}
 	}
-	page, _ := os.ReadFile(filepath.Join(h.home, "atlas", "Atlas.md"))
+	page, _ := os.ReadFile(filepath.Join(filepath.Dir(h.home), "Atlas", "Atlas.md"))
 	if !strings.Contains(string(page), "[[tree/welcome/node\\|welcome]]") {
 		t.Fatalf("atlas page:\n%s", page)
 	}

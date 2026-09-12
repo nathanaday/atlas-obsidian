@@ -63,7 +63,7 @@ claude-atlas setup
 
   home             create     ~/.claude-atlas
   claude-obsidian  install    claude-obsidian@agricidaniel-claude-obsidian from AgriciDaniel/claude-obsidian via `claude plugin`
-  atlas vault      create     ~/.claude-atlas/atlas
+  atlas vault      create     ~/Documents/Atlas
   vaults dir       use        ~/Documents/Vaults
   first vault      create     ~/Documents/Vaults/welcome (claude-obsidian init)
 
@@ -121,16 +121,18 @@ claude-atlas doctor
 ## What the atlas holds
 
 ```
-~/.claude-atlas/
-├── config.json               vaults directory, plugin id, marketplace
-└── atlas/                    an Obsidian vault
-    ├── Atlas.md              generated: one table across every vault
-    └── tree/
-        └── work/
-            └── sensor-triage/
-                ├── node.md       you write this: purpose, priority, blockers
-                ├── state.json    refresh writes this: heat, idle days, counts
-                └── outputs/      decks, images, exports for this project
+~/.claude-atlas/config.json   paths, plugin id, marketplace; you rarely open this
+
+~/Documents/Atlas/            an Obsidian vault; open it like any other
+├── Atlas.md                  generated: one table across every vault
+└── tree/
+    └── work/
+        └── sensor-triage/
+            ├── node.md       you write this: purpose, priority, blockers
+            ├── state.json    refresh writes this: heat, idle days, counts
+            └── outputs/      decks, images, exports for this project
+
+~/Documents/Vaults/           where `vault new` puts each vault
 ```
 
 `node.md` is intent. Its frontmatter holds the fields the atlas reads, so you
@@ -151,7 +153,7 @@ Everything lives in `~/.claude-atlas/config.json`:
 {
   "schema": "claude-atlas.config.v1",
   "vaults_dir": "/Users/you/Documents/Vaults",
-  "atlas_vault": "/Users/you/.claude-atlas/atlas",
+  "atlas_vault": "/Users/you/Documents/Atlas",
   "claude_obsidian": {
     "plugin": "claude-obsidian@agricidaniel-claude-obsidian",
     "marketplace": "AgriciDaniel/claude-obsidian"
@@ -159,9 +161,10 @@ Everything lives in `~/.claude-atlas/config.json`:
 }
 ```
 
-Set `claude_obsidian.path` to a claude-obsidian checkout to use it instead of
-the installed plugin. `CLAUDE_ATLAS_HOME` or `--home` moves the home
-directory.
+Setup asks for both directories and accepts `--atlas-vault` and
+`--vaults-dir`. Set `claude_obsidian.path` to a claude-obsidian checkout to
+use it instead of the installed plugin. `CLAUDE_ATLAS_HOME` or `--home` moves
+the home directory.
 
 ## Conventions
 

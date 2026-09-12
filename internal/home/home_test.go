@@ -28,7 +28,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if _, err := h.Load(); err == nil {
 		t.Fatal("load before setup should fail")
 	}
-	cfg := h.Default("~/Docs/Vaults")
+	cfg := h.Default("~/Docs/Vaults", "")
 	if err := h.Save(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -37,10 +37,10 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	userHome, _ := os.UserHomeDir()
-	if back.VaultsDir != filepath.Join(userHome, "Docs", "Vaults") || back.AtlasVault != filepath.Join(h.Root, "atlas") {
+	if back.VaultsDir != filepath.Join(userHome, "Docs", "Vaults") || back.AtlasVault != filepath.Join(userHome, "Documents", "Atlas") {
 		t.Fatalf("got %+v", back)
 	}
-	if back.ClaudeObsidian.Plugin == "" || back.TreeRoot() != filepath.Join(h.Root, "atlas", "tree") {
+	if back.ClaudeObsidian.Plugin == "" || back.TreeRoot() != filepath.Join(userHome, "Documents", "Atlas", "tree") {
 		t.Fatalf("got %+v", back)
 	}
 }

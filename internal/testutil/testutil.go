@@ -15,7 +15,7 @@ const EnvProduct = "CLAUDE_ATLAS_TEST_PRODUCT"
 // Product returns an installed claude-obsidian or skips the test. Tests never install one.
 func Product(t *testing.T) *product.Product {
 	t.Helper()
-	cfg := home.Home{}.Default("").ClaudeObsidian
+	cfg := home.Home{}.Default("", "").ClaudeObsidian
 	cfg.Path = os.Getenv(EnvProduct)
 	p, err := product.Locate(cfg)
 	if err != nil {

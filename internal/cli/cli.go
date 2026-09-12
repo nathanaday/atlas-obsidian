@@ -149,13 +149,14 @@ func (e *env) load() (*home.Config, *product.Product, error) {
 func (e *env) setup(args []string) (int, error) {
 	fs := newFlags("setup", e.stderr)
 	vaultsDir := fs.String("vaults-dir", "", "where new vaults are created (default ~/Documents/Vaults)")
+	atlasVault := fs.String("atlas-vault", "", "where the atlas vault lives (default ~/Documents/Atlas)")
 	first := fs.String("first-vault", "", "name or path of the first vault (default welcome)")
 	productPath := fs.String("claude-obsidian", "", "use a claude-obsidian checkout at this path instead of the plugin")
 	noPlugin := fs.Bool("no-plugin", false, "do not run `claude plugin`")
 	if err := fs.Parse(args); err != nil {
 		return 2, nil
 	}
-	opts := wizard.Options{VaultsDir: *vaultsDir, FirstVault: *first, ProductPath: *productPath, WithPlugin: !*noPlugin}
+	opts := wizard.Options{VaultsDir: *vaultsDir, AtlasVault: *atlasVault, FirstVault: *first, ProductPath: *productPath, WithPlugin: !*noPlugin}
 	return wizard.Run(e.home, e.console, opts)
 }
 

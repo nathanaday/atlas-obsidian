@@ -20,6 +20,7 @@ import (
 // Options come from setup's flags.
 type Options struct {
 	VaultsDir   string
+	AtlasVault  string
 	FirstVault  string
 	ProductPath string // dev override written into config
 	WithPlugin  bool
@@ -52,11 +53,15 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	fresh := !h.Exists()
 	var cfg *home.Config
 	if fresh {
+		atlas := opts.AtlasVault
+		if atlas == "" {
+			atlas = c.Ask("Where should the atlas vault live?", home.DefaultAtlas)
+		}
 		dir := opts.VaultsDir
 		if dir == "" {
-			dir = c.Ask("Where should new vaults live?", "~/Documents/Vaults")
+			dir = c.Ask("Where should new vaults live?", home.DefaultVaults)
 		}
-		cfg = h.Default(dir)
+		cfg = h.Default(dir, atlas)
 	} else {
 		loaded, err := h.Load()
 		if err != nil {
@@ -65,6 +70,9 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 		cfg = loaded
 		if opts.VaultsDir != "" {
 			cfg.VaultsDir = home.Expand(opts.VaultsDir)
+		}
+		if opts.AtlasVault != "" {
+			cfg.AtlasVault = home.Expand(opts.AtlasVault)
 		}
 	}
 	if opts.ProductPath != "" {
@@ -195,8 +203,7 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 		c.Say("  First vault  %s", home.Display(firstPath))
 	}
 	c.Say("")
-	c.Say("Open each in Obsidian with \"Open folder as vault\". In the macOS file dialog,")
-	c.Say("press Cmd+Shift+. to show hidden folders such as %s.", home.Display(h.Root))
+	c.Say("Open either one in Obsidian with \"Open folder as vault\".")
 	c.Say("")
 	c.Say("Next:")
 	c.Say("  claude-atlas vault new <name>    create another vault")

@@ -14,7 +14,8 @@ const (
 	ConfigSchema  = "claude-atlas.config.v1"
 	EnvHome       = "CLAUDE_ATLAS_HOME"
 	defaultHome   = "~/.claude-atlas"
-	defaultVaults = "~/Documents/Vaults"
+	DefaultVaults = "~/Documents/Vaults"
+	DefaultAtlas  = "~/Documents/Atlas"
 )
 
 // ProductConfig says where claude-obsidian comes from.
@@ -66,15 +67,18 @@ func (h Home) Exists() bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-// Default is the config a fresh setup starts from.
-func (h Home) Default(vaultsDir string) *Config {
+// Default is the config a fresh setup starts from. Empty arguments take the defaults.
+func (h Home) Default(vaultsDir, atlasVault string) *Config {
 	if vaultsDir == "" {
-		vaultsDir = defaultVaults
+		vaultsDir = DefaultVaults
+	}
+	if atlasVault == "" {
+		atlasVault = DefaultAtlas
 	}
 	return &Config{
 		Schema:     ConfigSchema,
 		VaultsDir:  Expand(vaultsDir),
-		AtlasVault: filepath.Join(h.Root, "atlas"),
+		AtlasVault: Expand(atlasVault),
 		ClaudeObsidian: ProductConfig{
 			Plugin:      "claude-obsidian@agricidaniel-claude-obsidian",
 			Marketplace: "AgriciDaniel/claude-obsidian",

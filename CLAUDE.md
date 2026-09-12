@@ -48,8 +48,10 @@ internal/console/       prompts and step lines
 internal/testutil/      finds a real claude-obsidian for integration tests
 ```
 
-`~/.claude-atlas/` is per machine. `atlas/` inside it is a plain Obsidian vault,
-not a claude-obsidian wiki, so the user can open the generated table.
+`~/.claude-atlas/` holds only internal state the user rarely opens. Anything
+the user views lives under `~/Documents`: the atlas vault (default
+`~/Documents/Atlas`, a plain Obsidian vault, not a claude-obsidian wiki) and
+the vaults directory (default `~/Documents/Vaults`).
 
 ## Constraints
 
