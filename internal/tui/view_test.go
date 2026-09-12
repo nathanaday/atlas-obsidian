@@ -1,0 +1,123 @@
+package tui
+
+import (
+	"strings"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/nathanaday/claude-atlas/internal/tree"
+)
+
+func item(rel, name string, heat string) Item {
+	cat := ""
+	if i := strings.LastIndex(rel, "/"); i >= 0 {
+		cat = rel[:i]
+	}
+	four := 4
+	p := &tree.Project{Path: "/tree/" + rel + ".md", Rel: rel, Frontmatter: tree.Frontmatter{Name: name, Vault: "/v/" + name, Priority: "normal", State: "active"}}
+	_ = cat
+	return Item{Project: p, State: &tree.State{Heat: heat, Pages: &four, GeneratedAt: "2026-09-12T18:00:00Z", OpenThreads: []string{"thread"}}}
+}
+
+func pressV(v view, keys ...tea.KeyType) view {
+	for _, k := range keys {
+		next, _ := v.Update(tea.KeyMsg{Type: k})
+		v = next.(view)
+	}
+	return v
+}
+
+func sample() []Item {
+	return []Item{
+		item("welcome", "welcome", "new"),
+		item("engineering/itl/p3", "p3", "hot"),
+		item("engineering/usc/cs566/course", "course", "cold"),
+		item("engineering/usc/cs566/deep/deeper/buried", "buried", "warm"),
+		item("engineering/usc/cs566/deep/other", "other", "warm"),
+	}
+}
+
+func TestTreeShowsThreeLayersAndFoldsDeeper(t *testing.T) {
+	v := newView(sample())
+	out := v.View()
+	t.Logf("\n%s", out)
+	for _, want := range []string{"▾ engineering", "▾ itl", "▾ usc", "▾ cs566", "▸ deep", "2 projects", "welcome", "p3", "course"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(out, "buried") || strings.Contains(out, "other") {
+		t.Fatal("projects under a folded category should not render")
+	}
+	kinds := ""
+	for _, r := range v.rows {
+		if r.kind == rowFolded {
+			kinds += "F"
+		} else {
+			kinds += "P"
+		}
+	}
+	if kinds != "PPPF" {
+		t.Fatalf("rows %s", kinds)
+	}
+}
+
+func TestEnterOnFoldedZoomsAndEscReturns(t *testing.T) {
+	v := newView(sample())
+	v = pressV(v, tea.KeyUp) // wraps to the folded row
+	if v.rows[v.cursor].kind != rowFolded {
+		t.Fatalf("cursor on %+v", v.rows[v.cursor])
+	}
+	v = pressV(v, tea.KeyEnter)
+	out := v.View()
+	t.Logf("\n%s", out)
+	if v.root != "engineering/usc/cs566/deep" || !strings.Contains(out, "▾ deeper") || !strings.Contains(out, "buried") || !strings.Contains(out, "other") {
+		t.Fatalf("zoom failed: root=%q\n%s", v.root, out)
+	}
+	if !strings.Contains(out, "engineering › usc › cs566 › deep") {
+		t.Fatal("breadcrumb missing")
+	}
+	v = pressV(v, tea.KeyEsc)
+	if v.root != "" || v.rows[v.cursor].kind != rowFolded || v.rows[v.cursor].path != "engineering/usc/cs566/deep" {
+		t.Fatalf("esc should return to where the user came from: root=%q row=%+v", v.root, v.rows[v.cursor])
+	}
+}
+
+func TestDetailShowsEverything(t *testing.T) {
+	v := newView(sample())
+	v = pressV(v, tea.KeyDown, tea.KeyEnter) // p3
+	out := v.View()
+	t.Logf("\n%s", out)
+	for _, want := range []string{"p3", "tree/engineering/itl/p3.md", "🔥 hot", "Vault", "/v/p3", "Pages", "4", "Open threads", "- thread", "Vault check", "Esc back"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	v = pressV(v, tea.KeyEsc)
+	if v.detail != nil {
+		t.Fatal("esc should close the detail")
+	}
+}
+
+func TestScrollKeepsCursorVisible(t *testing.T) {
+	v := newView(sample())
+	next, _ := v.Update(tea.WindowSizeMsg{Width: 80, Height: 14})
+	v = next.(view)
+	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyDown)
+	r := v.rows[v.cursor]
+	if r.start < v.offset || r.end >= v.offset+v.bodyHeight() {
+		t.Fatalf("cursor row %d-%d not within offset %d + %d", r.start, r.end, v.offset, v.bodyHeight())
+	}
+	if !strings.Contains(v.View(), "more lines") && v.offset == 0 {
+		t.Fatal("expected scrolling")
+	}
+}
+
+func TestEmptyTree(t *testing.T) {
+	v := newView(nil)
+	if !strings.Contains(v.View(), "no projects yet") {
+		t.Fatal("empty message missing")
+	}
+	v = pressV(v, tea.KeyDown, tea.KeyEnter) // must not panic
+}

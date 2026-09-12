@@ -95,6 +95,14 @@ The same thing without prompts, for scripts:
 claude-atlas new-vault sensor-triage --category work --purpose "Sort field sensor faults."
 ```
 
+Navigate the atlas as a tree. Categories nest three layers deep on screen;
+anything deeper opens on Enter. Each project is a card with its heat, page
+count, and unfinished work; open one for every detail.
+
+```bash
+claude-atlas view
+```
+
 Browse and edit what is registered. Open a project to rename it, change its
 purpose, priority, or state, move it to another category, repoint or move its
 vault, or remove it from the atlas. Removing never touches the vault on disk.

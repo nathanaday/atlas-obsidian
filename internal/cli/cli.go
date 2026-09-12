@@ -36,6 +36,7 @@ Commands:
   new-vault              create a vault and its project page, step by step
   new-vault NAME         create a vault without prompts
   new-vault --from PATH  register a claude-obsidian vault that already exists
+  view                   navigate the atlas as a tree; open a project for every detail
   manage-vaults          browse every project by category; rename, move, repoint, or remove
   list                   list every project
   refresh                read every vault and rewrite Overview.md
@@ -91,6 +92,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.setup(rest[1:])
 	case "new-vault":
 		code, err = e.newVault(rest[1:])
+	case "view":
+		code, err = e.view(rest[1:])
 	case "manage-vaults":
 		code, err = e.manageVaults(rest[1:])
 	case "list":
@@ -281,6 +284,29 @@ func (e *env) newVaultInteractive() (int, error) {
 	return e.finishVault(cfg, prod, choice.Path, vaults.RegisterOptions{
 		Name: choice.Name, Category: choice.Category, Purpose: choice.Purpose,
 	})
+}
+
+func (e *env) view(args []string) (int, error) {
+	if !e.console.Interactive() {
+		return 2, errors.New("view is an interactive screen and needs a terminal")
+	}
+	cfg, err := e.home.Load()
+	if err != nil {
+		return 1, err
+	}
+	projects, _, err := tree.Walk(cfg.TreeRoot())
+	if err != nil {
+		return 1, err
+	}
+	items := make([]tui.Item, 0, len(projects))
+	for _, p := range projects {
+		state, _ := tree.ReadState(e.home.StateDir(), p.Rel)
+		items = append(items, tui.Item{Project: p, State: state})
+	}
+	if err := tui.RunView(items); err != nil {
+		return 1, err
+	}
+	return 0, nil
 }
 
 func (e *env) manageVaults(args []string) (int, error) {

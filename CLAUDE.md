@@ -45,7 +45,7 @@ internal/tree/          project pages (frontmatter) and derived state files
 internal/refresh/       derive state, render Overview.md
 internal/pages/         About.md and Reference.md from templates/*.md, paths filled in at write time
 internal/vaults/        create and register vaults (new-vault)
-internal/tui/           Bubble Tea screens: new-vault, manage-vaults
+internal/tui/           Bubble Tea screens: new-vault, manage-vaults, view
 internal/home/          ~/.claude-atlas and config.json
 internal/console/       prompts and step lines
 internal/testutil/      finds a real claude-obsidian for integration tests
