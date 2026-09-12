@@ -183,7 +183,7 @@ the home directory.
 
 Full reasoning in the [design spec](docs/spec.md).
 
-- The atlas never writes into a vault. `vault new` delegates every write to
+- The atlas never writes into a vault. `new-vault` delegates every write to
   claude-obsidian's own init; after that the atlas only reads.
 - A vault never learns the atlas exists. A leaf records a path to a vault; the
   vault records nothing.

@@ -67,7 +67,7 @@ func TestSetupCreatesHomeAtlasAndFirstVault(t *testing.T) {
 func TestVaultCommands(t *testing.T) {
 	h, vaults := setup(t)
 	if code := h.run("new-vault", "triage", "--category", "work", "--purpose", "Sort sensors."); code != 0 {
-		t.Fatalf("vault new exit %d\n%s%s", code, h.out.String(), h.err.String())
+		t.Fatalf("new-vault exit %d\n%s%s", code, h.out.String(), h.err.String())
 	}
 	if !strings.Contains(h.out.String(), "tree/work/triage.md") {
 		t.Fatalf("output:\n%s", h.out.String())
