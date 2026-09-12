@@ -50,6 +50,9 @@ func TestTreeShowsThreeLayersAndFoldsDeeper(t *testing.T) {
 	if strings.Contains(out, "buried") || strings.Contains(out, "other") {
 		t.Fatal("projects under a folded category should not render")
 	}
+	if !strings.HasSuffix(v.lines[len(v.lines)-1], "(end)") {
+		t.Fatal("tree should end with an explicit (end) marker")
+	}
 	kinds := ""
 	for _, r := range v.rows {
 		if r.kind == rowFolded {

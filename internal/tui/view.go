@@ -195,6 +195,9 @@ func (v *view) layout() {
 	v.rows = nil
 	top := buildTree(v.items, v.root)
 	v.renderNode(top, 0)
+	if len(v.lines) > 0 {
+		v.lines = append(v.lines, dim.Render("(end)"))
+	}
 	if v.cursor >= len(v.rows) {
 		v.cursor = max(0, len(v.rows)-1)
 	}
