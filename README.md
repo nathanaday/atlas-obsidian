@@ -20,12 +20,12 @@ hesitate before starting a new one.
 Nothing shows all your vaults at once. Each vault knows its own state; none of
 them can answer "I have a free afternoon, what should I pick up?"
 
-claude-atlas fixes both. One `setup` command installs a pinned claude-obsidian
-release, registers its skills with Claude Code, and creates your first vault.
-`vault new` makes another vault in one confirmation. `refresh` reads every vault
-and writes a single page, the atlas, that you open in Obsidian: heat, idle days,
-open threads, unfinished work, and your own declared priority for each vault,
-side by side.
+claude-atlas fixes both. One `setup` command installs the claude-obsidian
+plugin into Claude Code, creates the atlas, and creates your first vault.
+`vault new` makes another vault in one confirmation. `refresh` reads every
+vault and writes a single page, the atlas, that you open in Obsidian: heat,
+idle days, open threads, unfinished work, and your own declared priority for
+each vault, side by side.
 
 The atlas never writes into a vault, and no vault knows the atlas exists.
 Delete the atlas and every vault is untouched.
@@ -34,16 +34,26 @@ Delete the atlas and every vault is untouched.
 
 ### Prerequisites
 
-- Python 3.11 or newer
+- [Claude Code](https://claude.com/claude-code); the `claude` command must be on your PATH
 - [Obsidian](https://obsidian.md)
-- [Claude Code](https://claude.com/claude-code), so the `claude-obsidian` skills can be installed
+- Python 3.11 or newer, which claude-obsidian itself runs on
+- Go 1.24 or newer, to build the binary
 
-### Setup
+### Install
 
 ```bash
 git clone <this repository> claude-atlas
 cd claude-atlas
-python3 -m claude_atlas setup
+go install ./cmd/claude-atlas
+```
+
+`go install` puts the binary in `$(go env GOPATH)/bin`, usually `~/go/bin`.
+Add that directory to your PATH if it is not there yet.
+
+### Setup
+
+```bash
+claude-atlas setup
 ```
 
 Setup shows its plan and asks before it does anything:
@@ -52,28 +62,25 @@ Setup shows its plan and asks before it does anything:
 claude-atlas setup
 
   home             create     ~/.claude-atlas
-  claude-obsidian  download   v2.2.0 (3.1 MB from github.com; verified by sha256)
-  Claude Code      install    claude-obsidian@agricidaniel-claude-obsidian into Claude Code
+  claude-obsidian  install    claude-obsidian@agricidaniel-claude-obsidian from AgriciDaniel/claude-obsidian via `claude plugin`
   atlas vault      create     ~/.claude-atlas/atlas
-  vaults dir       use        ~/Vaults
-  first vault      create     ~/Vaults/welcome (claude-obsidian init)
+  vaults dir       use        ~/Documents/Vaults
+  first vault      create     ~/Documents/Vaults/welcome (claude-obsidian init)
 
 Proceed? [Y/n]
 ```
 
-When it finishes it prints two Obsidian links: the atlas, and your first vault.
-Run it again at any time; finished steps are skipped.
+The claude-obsidian step runs the two commands from that project's own install
+guide: `claude plugin marketplace add` and `claude plugin install`. The plugin
+carries the whole product, skills and CLI alike, so nothing else is fetched.
 
-To get a `claude-atlas` command on your PATH:
-
-```bash
-pip install -e .
-```
+When setup finishes it prints two Obsidian links: the atlas, and your first
+vault. Run it again at any time; finished steps are skipped.
 
 ### Usage
 
-Create a vault. The plan is shown, you confirm once, and the vault is
-registered in the atlas:
+Create a vault. It lands in your vaults directory, the plan is shown, you
+confirm once, and the vault is registered in the atlas:
 
 ```bash
 claude-atlas vault new sensor-triage --parent work --purpose "Sort field sensor faults."
@@ -82,7 +89,7 @@ claude-atlas vault new sensor-triage --parent work --purpose "Sort field sensor 
 Register a vault you already have:
 
 ```bash
-claude-atlas vault add ~/Documents/MyKnowledgeVault --priority high
+claude-atlas vault add ~/Documents/OldVault --priority high
 ```
 
 Rebuild the atlas page from every vault, then open it:
@@ -95,7 +102,7 @@ claude-atlas open
 Start working in a vault with Claude Code:
 
 ```bash
-cd ~/Vaults/sensor-triage && claude
+cd ~/Documents/Vaults/sensor-triage && claude
 # then /claude-obsidian:wiki
 ```
 
@@ -109,40 +116,63 @@ claude-atlas doctor
 
 ```
 ~/.claude-atlas/
-├── config.json
-├── claude-obsidian/          pinned release, verified against its SHA256SUMS
+├── config.json               vaults directory, plugin id, marketplace
 └── atlas/                    an Obsidian vault
     ├── Atlas.md              generated: one table across every vault
     └── tree/
         └── work/
             └── sensor-triage/
-                ├── node.json     you write this: purpose, priority, blockers
+                ├── node.md       you write this: purpose, priority, blockers
                 ├── state.json    refresh writes this: heat, idle days, counts
                 └── outputs/      decks, images, exports for this project
 ```
 
-`node.json` is intent. `state.json` is observation. They live in separate
-files so a stale tracker can never masquerade as a fresh one. The most useful
-line on the atlas page is where the two disagree: a vault you marked `high`
-that has been cold for six weeks.
+`node.md` is intent. Its frontmatter holds the fields the atlas reads, so you
+can edit priority and state in Obsidian's property panel; the body is yours.
+`state.json` is observation. They are separate files so a stale tracker can
+never masquerade as a fresh one. The most useful line on the atlas page is
+where the two disagree: a vault you marked `high` that has been cold for six
+weeks.
 
 The tree is plain directories. To move a project under a different area, `mv`
 its directory and run `refresh`.
+
+## Configuration
+
+Everything lives in `~/.claude-atlas/config.json`:
+
+```json
+{
+  "schema": "claude-atlas.config.v1",
+  "vaults_dir": "/Users/you/Documents/Vaults",
+  "atlas_vault": "/Users/you/.claude-atlas/atlas",
+  "claude_obsidian": {
+    "plugin": "claude-obsidian@agricidaniel-claude-obsidian",
+    "marketplace": "AgriciDaniel/claude-obsidian"
+  }
+}
+```
+
+Set `claude_obsidian.path` to a claude-obsidian checkout to use it instead of
+the installed plugin. `CLAUDE_ATLAS_HOME` or `--home` moves the home
+directory.
 
 ## Conventions
 
 Full reasoning in the [design spec](docs/spec.md).
 
-- The atlas never writes into a vault. It reads. A vault stays complete when
-  the atlas is deleted.
+- The atlas never writes into a vault. `vault new` delegates every write to
+  claude-obsidian's own init; after that the atlas only reads.
 - A vault never learns the atlas exists. A leaf records a path to a vault; the
   vault records nothing.
 - The atlas never stores a fact it can compute. Derived state is regenerated on
   every refresh and safe to delete.
-- Standard library only. No parser dependency stands between you and your data.
+- claude-obsidian is installed once, through Claude Code, the way its own
+  documentation describes. The atlas finds it there and never carries a copy.
 
 ## Documentation
 
 - Design spec — [docs/spec.md](docs/spec.md)
+- Setup experience notes — [docs/setup-experience.md](docs/setup-experience.md)
 - claude-obsidian — https://github.com/AgriciDaniel/claude-obsidian
 - Obsidian URI scheme, used to open vaults — https://help.obsidian.md/Extending+Obsidian/Obsidian+URI

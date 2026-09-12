@@ -1,7 +1,7 @@
 # claude-atlas
 
-A CLI that wraps claude-obsidian: it installs a pinned release, creates vaults
-in one confirmation, and reports on every vault from one Obsidian page.
+A Go CLI that wraps claude-obsidian: installs it through Claude Code, creates
+vaults in one confirmation, and reports on every vault from one Obsidian page.
 
 Read `README.md` first. This file holds what the code and README do not say.
 
@@ -11,16 +11,17 @@ Read `README.md` first. This file holds what the code and README do not say.
 |---|---|
 | Design spec (brainstorm, not a contract) | `docs/spec.md` |
 | Setup experience notes | `docs/setup-experience.md` |
-| The product atlas wraps | `~/.claude-atlas/claude-obsidian` after setup; a dev checkout is at `~/claude-obsidian` |
-| The user's real vault | `~/Documents/MyKnowledgeVault` |
+| The product atlas wraps | the installed plugin, `~/.claude/plugins/cache/agricidaniel-claude-obsidian/claude-obsidian/<version>/` |
 
 ## Why the project exists
 
 claude-obsidian is good and the author wants to use it as-is. Two things hurt:
 vault init takes several commands with copied hashes and timestamps, and
 nothing shows many vaults at once. Atlas is the fix for both, built beside the
-product and never inside it. Setup quality comes first; decisions made there
-guide the rest.
+product and never inside it. Setup quality comes first.
+
+The author is moving into a fresh set of vaults. Migration of old vaults is
+out of scope; `vault add` exists only for vaults made by hand later.
 
 ## Three rules
 
@@ -28,42 +29,53 @@ guide the rest.
    claude-obsidian's own init; after that atlas only reads.
 2. A vault never learns that atlas exists. A leaf records a vault path; the
    vault records nothing.
-3. Atlas never stores a fact it can compute. `node.json` is authored,
+3. Atlas never stores a fact it can compute. `node.md` is authored,
    `state.json` is derived and regenerated in full by `refresh`.
 
 ## Layout
 
 ```
-claude_atlas/
-  cli.py       argparse; one cmd_* per subcommand
-  wizard.py    the setup flow
-  product.py   pinned release: download, sha256 verify, extract, run the CLI
-  plugin.py    claude plugin marketplace add + install
-  tree.py      node.json / state.json
-  refresh.py   derive state, render Atlas.md
-  vaults.py    vault new / vault add
-  home.py      ~/.claude-atlas and config.json
+cmd/claude-atlas/       main
+internal/cli/           argument parsing and one method per subcommand
+internal/wizard/        the setup flow
+internal/claudecode/    Claude Code's plugin registry and `claude plugin`
+internal/product/       locate and run the claude-obsidian CLI
+internal/tree/          node.md (frontmatter) and state.json
+internal/refresh/       derive state, render Atlas.md
+internal/vaults/        vault new / vault add
+internal/home/          ~/.claude-atlas and config.json
+internal/console/       prompts and step lines
+internal/obsidian/      obsidian:// links
+internal/testutil/      finds a real claude-obsidian for integration tests
 ```
 
-`~/.claude-atlas/` is tool state and is per machine; `atlas/` inside it is a
-plain Obsidian vault (not a claude-obsidian wiki) so the user can open the
-generated table.
+`~/.claude-atlas/` is per machine. `atlas/` inside it is a plain Obsidian vault,
+not a claude-obsidian wiki, so the user can open the generated table.
 
 ## Constraints
 
-- Runtime is standard library only. pytest is the one dev dependency.
-- Python 3.11+, matching claude-obsidian.
-- Bump `product.PRODUCT_VERSION` and `product.RELEASE_SHA256` together. The
-  hash is the sha256 of the release zip. Setup refuses a mismatch.
+- The only dependency is `gopkg.in/yaml.v3`, for node frontmatter. Obsidian's
+  property editor writes real YAML, so a hand-rolled parser would break on
+  files the user edits there.
+- `product.TestedVersion` names the claude-obsidian release atlas was verified
+  against. Atlas does not pin the install; it warns when the versions differ.
 - `refresh` is read-only toward every vault, offline, and idempotent.
-- No test may read or write a real `~/.claude-atlas` or a real vault. Tests
-  that need the product find it through `tests/conftest.py` and skip otherwise.
-  Tests never download.
+- Atlas never writes `node.md` after creating it. Users edit it.
+- Tests never install a plugin or touch a real `~/.claude-atlas`. Integration
+  tests find claude-obsidian through `internal/testutil` (the installed plugin,
+  or `CLAUDE_ATLAS_TEST_PRODUCT`) and skip otherwise.
+- Prose follows the user's global writing guide: short sentences, active voice,
+  no stock phrases.
 
 ## claude-obsidian facts verified against v2.2.0
 
-- The CLI is `python3 <release>/scripts/claude-obsidian.py`. Nothing is on
-  PATH.
+- A marketplace install copies the whole release into the plugin cache,
+  including `claude_obsidian/` and `scripts/claude-obsidian.py`. The skills
+  call that script through `${CLAUDE_PLUGIN_ROOT}`.
+- The GitHub repo's `main` branch is a valid marketplace named
+  `agricidaniel-claude-obsidian`.
+- `installed_plugins.json` records `installPath` and `version` per plugin id,
+  as a list or a single object.
 - `init` needs the vault's parent directory to exist.
 - `init` is dry-run by default and prints `approved_plan_sha256`; apply repeats
   the same `--generated-at` and `--operation-id` plus the hash.
@@ -72,26 +84,21 @@ generated table.
   `summary.category_counts` and `summary.pages_scanned`.
 - `seed_pages` is not a lint category; atlas counts `status: seed` frontmatter
   itself.
-- The release zip contains `.claude-plugin/marketplace.json`, so the extracted
-  directory is a valid local marketplace named `agricidaniel-claude-obsidian`.
 - `wiki/hot.md` "Active Threads" is prose; treat it as best effort.
 
-## Running tests
+## Build and test
 
 ```
-python3 -m pytest
+make build      # bin/claude-atlas
+make install    # go install into $(go env GOPATH)/bin
+make test
 ```
-
-Integration tests need an extracted release. After `setup` they find it in
-`~/.claude-atlas`; otherwise set `CLAUDE_ATLAS_TEST_PRODUCT` and
-`CLAUDE_ATLAS_TEST_RELEASE_ZIP`.
 
 ## Open questions
 
-- Should `node.json` become `node.md` with frontmatter, so intent is edited in
-  Obsidian's property panel? It would need a small frontmatter parser.
 - Registration: hand-written only, or a `scan` that finds
   `.claude-obsidian.json` files and proposes them?
 - Archived leaves: hidden or dimmed on the atlas page?
-- A Claude Code skill for the bird's-eye conversation is the planned next step
-  after setup settles; MCP is not planned.
+- A Claude Code skill for the bird's-eye conversation is the planned next step;
+  MCP is not planned.
+- Distribution: a Homebrew tap once the command set settles.
