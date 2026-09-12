@@ -124,13 +124,19 @@ cd %VAULTS%/my-project && claude
 
 ## Organizing the tree
 
-File a new project under a category. Missing folders are created.
+The easiest way is in Obsidian. In this vault's file explorer, make folders under ` + "`tree/`" + ` for your categories and drag project pages between them; rename and nest folders as you like. Then refresh.
+
+` + "```bash" + `
+claude-atlas refresh
+` + "```" + `
+
+The CLI can do the same. File a new project under a category; missing folders are created.
 
 ` + "```bash" + `
 claude-atlas vault new capstone --category university/cs566
 ` + "```" + `
 
-Move a project by moving its page, then refresh.
+Move a project by moving its page.
 
 ` + "```bash" + `
 mv %ATLAS%/tree/capstone.md %ATLAS%/tree/university/cs566/
