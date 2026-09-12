@@ -408,11 +408,12 @@ func (v view) openAsync(item *Item, register bool) (tea.Model, tea.Cmd) {
 func (v view) footer(hints string) string {
 	switch {
 	case v.ask != nil:
-		msg := fmt.Sprintf("Obsidian does not know %s. Register it as a vault", v.ask.Project.Name)
+		question := "Register it as a vault?"
 		if v.askRun {
-			msg += "? Obsidian will quit and relaunch"
+			question += " Obsidian will quit and relaunch."
 		}
-		return "  " + errSt.Render("▲") + " " + msg + "?  " + title.Render("y") + " / " + title.Render("n") + "\n"
+		return fmt.Sprintf("  %s Obsidian does not know %s.\n  %s\n  %s / %s\n",
+			errSt.Render("▲"), v.ask.Project.Name, question, title.Render("y"), title.Render("n"))
 	case v.busy != "":
 		return "  " + okSt.Render(v.busy) + "\n"
 	}
