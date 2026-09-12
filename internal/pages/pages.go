@@ -29,9 +29,9 @@ const about = `# About
 
 | Piece | Where | Who writes it |
 |:--|:--|:--|
-| Your vaults | %VAULTS% | claude-obsidian, through Claude Code |
-| This atlas | %ATLAS% | You, in ` + "`tree/`" + `; claude-atlas writes [[Overview]], [[About]], and [[Reference]] |
-| Settings and derived state | %HOME% | claude-atlas. Derived state is rebuilt on every refresh and safe to delete. |
+| Your vaults | ` + "`%VAULTS%`" + ` | claude-obsidian, through Claude Code |
+| This atlas | ` + "`%ATLAS%`" + ` | You, in ` + "`tree/`" + `; claude-atlas writes [[Overview]], [[About]], and [[Reference]] |
+| Settings and derived state | ` + "`%HOME%`" + ` | claude-atlas. Derived state is rebuilt on every refresh and safe to delete. |
 
 > [!tip] Three rules
 > The atlas never writes into a vault. A vault never learns the atlas exists. The atlas never stores a fact it can compute; derived state and [[Overview]] are rebuilt from scratch on every refresh.
@@ -82,86 +82,134 @@ Run ` + "`claude-atlas refresh`" + ` after any edit to update [[Overview]].
 const reference = `# Reference
 
 > [!info] Generated page
-> ` + "`claude-atlas`" + ` writes this page on every refresh so it matches the installed version (%VERSION%).
+> ` + "`claude-atlas`" + ` writes this page on every refresh so it matches the installed version (%VERSION%). Each command sits in its own block so one click copies it.
 
-## Setup
+## Everyday commands
 
-Install claude-obsidian into Claude Code, create the atlas, and create a first vault. Safe to run again; finished steps are skipped.
+Create a vault. It lands in the vaults directory, the plan is shown, and one confirmation applies it.
 
 ` + "```bash" + `
-claude-atlas setup
-claude-atlas setup --atlas-vault ~/Documents/Atlas --vaults-dir ~/Documents/Vaults
-claude-atlas setup --first-vault research
-claude-atlas setup --no-plugin        # skip the claude plugin step
-claude-atlas -y setup                 # answer yes to every prompt
+claude-atlas vault new my-project
 ` + "```" + `
 
-## Vaults
-
-Create a vault. A bare name lands in the vaults directory; a path is used as given. The plan is shown and applied after one confirmation.
+Read every vault and rewrite [[Overview]]. Run it after editing anything under ` + "`tree/`" + `.
 
 ` + "```bash" + `
-claude-atlas vault new sensor-triage
-claude-atlas vault new sensor-triage --category work
-claude-atlas vault new sensor-triage --purpose "Sort field sensor faults." --priority high
-claude-atlas vault new ~/Desktop/scratch-vault
+claude-atlas refresh
+` + "```" + `
+
+List every project with its heat, priority, and state.
+
+` + "```bash" + `
+claude-atlas vault list
+` + "```" + `
+
+Show every path and version the atlas uses.
+
+` + "```bash" + `
+claude-atlas info
+` + "```" + `
+
+## Working in a vault
+
+Start Claude Code inside a vault, then call the wiki skill.
+
+` + "```bash" + `
+cd %VAULTS%/my-project && claude
+` + "```" + `
+
+` + "```text" + `
+/claude-obsidian:wiki
+` + "```" + `
+
+## Organizing the tree
+
+File a new project under a category. Missing folders are created.
+
+` + "```bash" + `
+claude-atlas vault new capstone --category university/cs566
+` + "```" + `
+
+Move a project by moving its page, then refresh.
+
+` + "```bash" + `
+mv %ATLAS%/tree/capstone.md %ATLAS%/tree/university/cs566/
 ` + "```" + `
 
 Register a claude-obsidian vault that already exists.
 
 ` + "```bash" + `
 claude-atlas vault add ~/Documents/OldVault
-claude-atlas vault add ~/Documents/OldVault --name "Old Vault" --category archive --priority someday
 ` + "```" + `
 
-List registered vaults with their heat, priority, and state.
+## Setup and health
+
+Install claude-obsidian into Claude Code, create the atlas, and create a first vault. Safe to run again; finished steps are skipped.
 
 ` + "```bash" + `
-claude-atlas vault list
+claude-atlas setup
 ` + "```" + `
 
-## Refresh
-
-Read every vault and rewrite [[Overview]] and the derived state. Read-only toward the vaults.
+Check the installation and reach every vault.
 
 ` + "```bash" + `
-claude-atlas refresh
+claude-atlas doctor
 ` + "```" + `
 
-## Inspect
-
 ` + "```bash" + `
-claude-atlas info      # every path and version the atlas uses
-claude-atlas doctor    # check the installation and reach every vault
 claude-atlas version
 ` + "```" + `
 
-## Options and environment
+## Advanced
 
-| Flag or variable | Effect |
+Set purpose and priority when creating a vault.
+
+` + "```bash" + `
+claude-atlas vault new sensor-triage --purpose "Sort field sensor faults." --priority high
+` + "```" + `
+
+Create a vault at an explicit path instead of the vaults directory.
+
+` + "```bash" + `
+claude-atlas vault new ~/Desktop/scratch-vault
+` + "```" + `
+
+Register an existing vault with a display name, a category, and a priority.
+
+` + "```bash" + `
+claude-atlas vault add ~/Documents/OldVault --name "Old Vault" --category archive --priority someday
+` + "```" + `
+
+Run setup with every location chosen up front.
+
+` + "```bash" + `
+claude-atlas setup --atlas-vault ~/Documents/Atlas --vaults-dir ~/Documents/Vaults --first-vault research
+` + "```" + `
+
+Run setup without touching Claude Code plugins.
+
+` + "```bash" + `
+claude-atlas setup --no-plugin
+` + "```" + `
+
+Answer yes to every prompt, for scripts.
+
+` + "```bash" + `
+claude-atlas -y setup
+` + "```" + `
+
+Use a different home directory for one command.
+
+` + "```bash" + `
+claude-atlas --home ~/other-atlas info
+` + "```" + `
+
+| Flag or setting | Effect |
 |:--|:--|
 | ` + "`--home DIR`" + ` | Use a different home instead of ` + "`~/.claude-atlas`" + `. |
 | ` + "`-y`, `--yes`" + ` | Answer yes to every prompt. |
-| ` + "`CLAUDE_ATLAS_HOME`" + ` | Same as ` + "`--home`" + `. |
+| ` + "`CLAUDE_ATLAS_HOME`" + ` | Same as ` + "`--home`" + `, as an environment variable. |
 | ` + "`claude_obsidian.path`" + ` in config.json | Use a claude-obsidian checkout instead of the installed plugin. |
-
-## Working in a vault
-
-` + "```bash" + `
-cd ~/Documents/Vaults/sensor-triage
-claude
-# then, inside Claude Code:
-/claude-obsidian:wiki
-` + "```" + `
-
-## Moving a project
-
-The tree is plain files and folders. Move the file, then refresh.
-
-` + "```bash" + `
-mv ~/Documents/Atlas/tree/sensor-triage.md ~/Documents/Atlas/tree/work/
-claude-atlas refresh
-` + "```" + `
 `
 
 // Write renders About.md and Reference.md into the atlas vault.
@@ -169,9 +217,9 @@ func Write(cfg *home.Config, homeRoot, version string) error {
 	r := strings.NewReplacer(
 		"%REPO%", Repository,
 		"%VERSION%", version,
-		"%VAULTS%", "`"+home.Display(cfg.VaultsDir)+"`",
-		"%ATLAS%", "`"+home.Display(cfg.AtlasVault)+"`",
-		"%HOME%", "`"+home.Display(homeRoot)+"`",
+		"%VAULTS%", home.Display(cfg.VaultsDir),
+		"%ATLAS%", home.Display(cfg.AtlasVault),
+		"%HOME%", home.Display(homeRoot),
 	)
 	for name, text := range map[string]string{"About.md": about, "Reference.md": reference} {
 		if err := os.WriteFile(filepath.Join(cfg.AtlasVault, name), []byte(r.Replace(text)), 0o644); err != nil {
