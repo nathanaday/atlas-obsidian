@@ -35,16 +35,19 @@ const (
 	stepCount
 )
 
+// muted replaces gray for secondary text; gray is unreadable on dark terminals.
+const muted = lipgloss.Color("#FFC600")
+
 var (
 	title    = lipgloss.NewStyle().Bold(true)
-	label    = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Width(11)
+	label    = lipgloss.NewStyle().Foreground(muted).Width(11)
 	activeL  = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true).Width(11)
-	dim      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	dim      = lipgloss.NewStyle().Foreground(muted)
 	value    = lipgloss.NewStyle()
 	cursorSt = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
 	newSt    = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	errSt    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	rule     = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	rule     = lipgloss.NewStyle().Foreground(muted)
 )
 
 type model struct {

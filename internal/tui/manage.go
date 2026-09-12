@@ -108,7 +108,7 @@ var (
 	headerSt = lipgloss.NewStyle().Bold(true)
 	selSt    = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
 	okSt     = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	modSt    = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+	modSt    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5F00"))
 )
 
 func newManage(hooks Hooks) (manage, error) {
