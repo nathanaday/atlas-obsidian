@@ -18,6 +18,7 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/product"
 	"github.com/nathanaday/claude-atlas/internal/refresh"
 	"github.com/nathanaday/claude-atlas/internal/tree"
+	"github.com/nathanaday/claude-atlas/internal/tui"
 	"github.com/nathanaday/claude-atlas/internal/vaults"
 	"github.com/nathanaday/claude-atlas/internal/wizard"
 )
@@ -32,8 +33,9 @@ Usage:
 
 Commands:
   setup            install claude-obsidian, create the atlas, and your first vault
-  vault new NAME   create a claude-obsidian vault and register it
+  vault add        create a vault and its project page, step by step
   vault add PATH   register an existing claude-obsidian vault
+  vault new NAME   create a vault without prompts
   vault list       list registered vaults
   refresh          recompute every state.json and rewrite Overview.md
   info             show every path and version the atlas uses
@@ -243,8 +245,11 @@ func (e *env) vaultAdd(args []string) (int, error) {
 	if err != nil {
 		return 2, nil
 	}
+	if len(positional) == 0 {
+		return e.vaultAddInteractive()
+	}
 	if len(positional) != 1 {
-		return 2, errors.New("usage: claude-atlas vault add PATH [--name N] [--category DIR] [--purpose TEXT] [--priority P]")
+		return 2, errors.New("usage: claude-atlas vault add [PATH] [--name N] [--category DIR] [--purpose TEXT] [--priority P]")
 	}
 	cfg, prod, err := e.load()
 	if err != nil {
@@ -260,6 +265,45 @@ func (e *env) vaultAdd(args []string) (int, error) {
 	}
 	e.console.Step(console.OK, "registered", fmt.Sprintf("%s → tree/%s.md", home.Display(node.VaultPath()), node.Rel))
 	e.console.Step(console.OK, "refreshed", home.Display(page))
+	return 0, nil
+}
+
+// vaultAddInteractive walks the user through name, category, and purpose, then creates the vault.
+func (e *env) vaultAddInteractive() (int, error) {
+	if !e.console.Interactive() {
+		return 2, errors.New("usage: claude-atlas vault add PATH (the interactive screen needs a terminal)")
+	}
+	cfg, prod, err := e.load()
+	if err != nil {
+		return 1, err
+	}
+	choice, err := tui.RunAddVault(cfg.VaultsDir, tui.Categories(cfg.TreeRoot()))
+	if err != nil {
+		return 1, err
+	}
+	if choice == nil {
+		return 1, vaults.ErrCancelled
+	}
+	if err := vaults.Create(prod, choice.Path, e.console, false); err != nil {
+		return 1, err
+	}
+	project, err := vaults.Register(cfg, choice.Path, vaults.RegisterOptions{
+		Name: choice.Name, Category: choice.Category, Purpose: choice.Purpose,
+	})
+	if err != nil {
+		return 1, err
+	}
+	page, _, err := e.refreshAll(cfg, prod)
+	if err != nil {
+		return 1, err
+	}
+	c := e.console
+	c.Step(console.OK, "created", home.Display(choice.Path))
+	c.Step(console.OK, "registered", "tree/"+project.Rel+".md")
+	c.Step(console.OK, "refreshed", home.Display(page))
+	c.Say("")
+	c.Say("  cd %s && claude    # then /claude-obsidian:wiki", home.Display(choice.Path))
+	c.Say("")
 	return 0, nil
 }
 

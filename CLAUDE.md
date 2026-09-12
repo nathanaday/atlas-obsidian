@@ -45,6 +45,7 @@ internal/tree/          project pages (frontmatter) and derived state files
 internal/refresh/       derive state, render Overview.md
 internal/pages/         About.md and Reference.md from templates/*.md, paths filled in at write time
 internal/vaults/        vault new / vault add
+internal/tui/           Bubble Tea screens behind bare commands (vault add)
 internal/home/          ~/.claude-atlas and config.json
 internal/console/       prompts and step lines
 internal/testutil/      finds a real claude-obsidian for integration tests
@@ -62,9 +63,14 @@ file it cannot read as a project and report it instead of failing.
 
 ## Constraints
 
-- The only dependency is `gopkg.in/yaml.v3`, for node frontmatter. Obsidian's
-  property editor writes real YAML, so a hand-rolled parser would break on
-  files the user edits there.
+- Dependencies: `gopkg.in/yaml.v3` for project frontmatter (Obsidian's property
+  editor writes real YAML), and Bubble Tea, Bubbles, and Lip Gloss for the
+  interactive screens. Nothing else. Keep `go.mod` at the lowest Go version
+  those need; do not pull `golang.org/x/*` modules at `@latest`, they can
+  require a newer Go than the rest of the graph.
+- TUI models keep all logic in `Update`, so tests drive them with `tea.KeyMsg`
+  values and read `View()`; nothing in `internal/tui` touches a terminal
+  except `Run*`.
 - `product.TestedVersion` names the claude-obsidian release atlas was verified
   against. Atlas does not pin the install; it warns when the versions differ.
 - `refresh` is read-only toward every vault, offline, and idempotent.

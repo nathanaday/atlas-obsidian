@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/charmbracelet/x/term"
 )
 
 var ErrNotInteractive = errors.New("stdin is not a terminal; pass --yes to run without prompts")
@@ -20,8 +22,7 @@ type Console struct {
 }
 
 func New(assumeYes bool) *Console {
-	info, err := os.Stdin.Stat()
-	tty := err == nil && info.Mode()&os.ModeCharDevice != 0
+	tty := term.IsTerminal(os.Stdin.Fd())
 	return &Console{AssumeYes: assumeYes, Out: os.Stdout, in: bufio.NewReader(os.Stdin), inIsTTY: tty}
 }
 

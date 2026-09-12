@@ -12,14 +12,13 @@
 
 **Create a vault**
 
-> It lands in the vaults directory, the plan is shown, and one confirmation applies it.
+> Walks you through it: name, category (pick one from your tree or type a new one), purpose, confirm.
 
 ```bash
-claude-atlas vault new my-project
+claude-atlas vault add
 ```
 
-> Create and assign a category (missing directories are created)
-
+> The same without prompts. It lands in the vaults directory; missing category folders are created.
 
 ```bash
 claude-atlas vault new my-project --category university/cs566

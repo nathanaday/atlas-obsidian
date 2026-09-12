@@ -37,7 +37,7 @@ Delete the atlas and every vault is untouched.
 - [Claude Code](https://claude.com/claude-code); the `claude` command must be on your PATH
 - [Obsidian](https://obsidian.md)
 - Python 3.11 or newer, which claude-obsidian itself runs on
-- Go 1.24 or newer, to build the binary
+- Go 1.24.2 or newer, to build the binary
 
 ### Install
 
@@ -80,8 +80,16 @@ time; finished steps are skipped.
 
 ### Usage
 
-Create a vault. It lands in your vaults directory, the plan is shown, you
-confirm once, and the vault is registered in the atlas:
+Create a vault. With no arguments, `vault add` walks you through it: type a
+name, pick a category from the ones in your tree or name a new one, add a
+one-line purpose, confirm. The vault is created in your vaults directory and
+its project page lands in the tree.
+
+```bash
+claude-atlas vault add
+```
+
+The same thing without prompts, for scripts:
 
 ```bash
 claude-atlas vault new sensor-triage --category work --purpose "Sort field sensor faults."
