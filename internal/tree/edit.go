@@ -12,8 +12,9 @@ import (
 )
 
 // UpdateFrontmatter sets the given keys in a project page and leaves everything
-// else as written: other keys, their order, comments, and the body.
-func UpdateFrontmatter(path string, fields map[string]string) error {
+// else as written: other keys, their order, comments, and the body. Values are
+// strings or string lists.
+func UpdateFrontmatter(path string, fields map[string]any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -71,12 +72,26 @@ func UpdateFrontmatter(path string, fields map[string]string) error {
 	return os.WriteFile(path, buf.Bytes(), 0o644)
 }
 
-func scalar(value string) *yaml.Node {
-	node := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value}
-	if value == "" {
-		node.Style = yaml.DoubleQuotedStyle
+func scalar(value any) *yaml.Node {
+	switch v := value.(type) {
+	case []string:
+		seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		if len(v) == 0 {
+			seq.Style = yaml.FlowStyle
+		}
+		for _, item := range v {
+			seq.Content = append(seq.Content, scalar(item))
+		}
+		return seq
+	case string:
+		node := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v}
+		if v == "" {
+			node.Style = yaml.DoubleQuotedStyle
+		}
+		return node
+	default:
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: fmt.Sprint(v)}
 	}
-	return node
 }
 
 // Move files a project page under another category and returns the new path.

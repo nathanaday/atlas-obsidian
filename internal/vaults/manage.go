@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/links"
 	"github.com/nathanaday/claude-atlas/internal/tree"
 )
 
@@ -20,11 +21,13 @@ type Edit struct {
 	Category     *string // nil: unchanged; "" : top level
 	Vault        string  // new vault path; "" unchanged
 	MoveVault    bool    // move the directory on disk to Vault
+	Repos        *[]string
+	Materials    *[]string
 }
 
 // Update applies an Edit: frontmatter first, then the vault, then the page's category.
 func Update(cfg *home.Config, p *tree.Project, edit Edit) error {
-	fields := map[string]string{}
+	fields := map[string]any{}
 	if edit.Name != "" && edit.Name != p.Name {
 		fields["name"] = edit.Name
 	}
@@ -38,6 +41,12 @@ func Update(cfg *home.Config, p *tree.Project, edit Edit) error {
 	}
 	if edit.State != "" && edit.State != p.State {
 		fields["state"] = edit.State
+	}
+	if edit.Repos != nil {
+		fields["repos"] = orEmpty(*edit.Repos)
+	}
+	if edit.Materials != nil {
+		fields["materials"] = orEmpty(*edit.Materials)
 	}
 	if edit.Vault != "" {
 		target, err := filepath.Abs(home.Expand(edit.Vault))
@@ -72,6 +81,70 @@ func Update(cfg *home.Config, p *tree.Project, edit Edit) error {
 		}
 	}
 	return nil
+}
+
+func orEmpty(list []string) []string {
+	if list == nil {
+		return []string{}
+	}
+	return list
+}
+
+// SetLinks replaces a project's repo and materials lists.
+func SetLinks(p *tree.Project, repos, materials []string) error {
+	if repos == nil {
+		repos = []string{}
+	}
+	if materials == nil {
+		materials = []string{}
+	}
+	return tree.UpdateFrontmatter(p.Path, map[string]any{"repos": repos, "materials": materials})
+}
+
+// AddLink records a folder on a project page; kind is links.Repo or links.Materials.
+func AddLink(p *tree.Project, kind, path string) error {
+	abs, err := filepath.Abs(home.Expand(path))
+	if err != nil {
+		return err
+	}
+	if info, err := os.Stat(abs); err != nil || !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", home.Display(abs))
+	}
+	for _, existing := range append(append([]string{}, p.Repos...), p.Materials...) {
+		if filepath.Clean(home.Expand(existing)) == abs {
+			return fmt.Errorf("%s is already linked", home.Display(abs))
+		}
+	}
+	repos, materials := p.Repos, p.Materials
+	if kind == links.Repo {
+		repos = append(repos, abs)
+	} else {
+		materials = append(materials, abs)
+	}
+	return SetLinks(p, repos, materials)
+}
+
+// RemoveLink drops a folder from a project page, whichever list holds it.
+func RemoveLink(p *tree.Project, path string) error {
+	target := filepath.Clean(home.Expand(path))
+	keep := func(list []string) ([]string, bool) {
+		var out []string
+		found := false
+		for _, item := range list {
+			if filepath.Clean(home.Expand(item)) == target {
+				found = true
+				continue
+			}
+			out = append(out, item)
+		}
+		return out, found
+	}
+	repos, inRepos := keep(p.Repos)
+	materials, inMaterials := keep(p.Materials)
+	if !inRepos && !inMaterials {
+		return fmt.Errorf("%s is not linked to %s", home.Display(target), p.Name)
+	}
+	return SetLinks(p, repos, materials)
 }
 
 // Unlink removes a project from the atlas. The vault stays on disk.

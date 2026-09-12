@@ -15,6 +15,7 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/claudecode"
 	"github.com/nathanaday/claude-atlas/internal/console"
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/links"
 	"github.com/nathanaday/claude-atlas/internal/obsidian"
 	"github.com/nathanaday/claude-atlas/internal/pages"
 	"github.com/nathanaday/claude-atlas/internal/product"
@@ -42,6 +43,9 @@ Commands:
   manage-vaults          browse every project by category; rename, move, repoint, or remove
   open-vault [NAME]      open the atlas, or a project's vault, in Obsidian
   open-claude NAME       start Claude Code inside a project's vault
+  link NAME PATH         link a git repo or a folder of material to a project
+  unlink NAME PATH       remove that link; the folder is untouched
+  links NAME             show a project's links and what refresh found in them
   list                   list every project
   refresh                read every vault and rewrite Overview.md
   info                   show every path and version the atlas uses
@@ -104,6 +108,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.openVault(rest[1:])
 	case "open-claude":
 		code, err = e.openClaude(rest[1:])
+	case "link":
+		code, err = e.link(rest[1:])
+	case "unlink":
+		code, err = e.unlink(rest[1:])
+	case "links":
+		code, err = e.links(rest[1:])
 	case "list":
 		code, err = e.list(rest[1:])
 	case "refresh":
@@ -487,6 +497,117 @@ func (e *env) openClaude(args []string) (int, error) {
 		return 1, err
 	}
 	return 0, nil
+}
+
+func (e *env) project(cfg *home.Config, name string) (*tree.Project, error) {
+	projects, _, err := tree.Walk(cfg.TreeRoot())
+	if err != nil {
+		return nil, err
+	}
+	p := tree.FindByRel(projects, name)
+	if p == nil {
+		return nil, fmt.Errorf("no project named %q; see `claude-atlas list`", name)
+	}
+	return p, nil
+}
+
+func (e *env) link(args []string) (int, error) {
+	fs := newFlags("link", e.stderr)
+	kind := fs.String("kind", "", "repo or materials (default: repo when the folder holds .git)")
+	positional, err := parse(fs, args)
+	if err != nil {
+		return 2, nil
+	}
+	if len(positional) != 2 {
+		return 2, errors.New("usage: claude-atlas link NAME PATH [--kind repo|materials]")
+	}
+	if *kind != "" && *kind != links.Repo && *kind != links.Materials {
+		return 2, errors.New("--kind must be repo or materials")
+	}
+	cfg, prod, err := e.load()
+	if err != nil {
+		return 1, err
+	}
+	p, err := e.project(cfg, positional[0])
+	if err != nil {
+		return 1, err
+	}
+	k := *kind
+	if k == "" {
+		k = links.DetectKind(positional[1])
+	}
+	if err := vaults.AddLink(p, k, positional[1]); err != nil {
+		return 1, err
+	}
+	page, _, err := e.refreshAll(cfg, prod)
+	if err != nil {
+		return 1, err
+	}
+	e.console.Step(console.OK, "linked", fmt.Sprintf("%s → %s (%s)", home.Display(home.Expand(positional[1])), p.Name, k))
+	e.console.Step(console.OK, "refreshed", home.Display(page))
+	return 0, nil
+}
+
+func (e *env) unlink(args []string) (int, error) {
+	if len(args) != 2 {
+		return 2, errors.New("usage: claude-atlas unlink NAME PATH")
+	}
+	cfg, prod, err := e.load()
+	if err != nil {
+		return 1, err
+	}
+	p, err := e.project(cfg, args[0])
+	if err != nil {
+		return 1, err
+	}
+	if err := vaults.RemoveLink(p, args[1]); err != nil {
+		return 1, err
+	}
+	page, _, err := e.refreshAll(cfg, prod)
+	if err != nil {
+		return 1, err
+	}
+	e.console.Step(console.OK, "unlinked", fmt.Sprintf("%s from %s", home.Display(home.Expand(args[1])), p.Name))
+	e.console.Step(console.OK, "refreshed", home.Display(page))
+	return 0, nil
+}
+
+func (e *env) links(args []string) (int, error) {
+	if len(args) != 1 {
+		return 2, errors.New("usage: claude-atlas links NAME")
+	}
+	cfg, err := e.home.Load()
+	if err != nil {
+		return 1, err
+	}
+	p, err := e.project(cfg, args[0])
+	if err != nil {
+		return 1, err
+	}
+	state, _ := tree.ReadState(e.home.StateDir(), p.Rel)
+	if len(p.Repos)+len(p.Materials) == 0 {
+		e.console.Say("%s has no links; add one with `claude-atlas link %s PATH`", p.Name, p.Rel)
+		return 0, nil
+	}
+	for _, path := range p.Repos {
+		e.console.Say("  %-10s %s  %s", "repo", home.Display(home.Expand(path)), linkFacts(state, path))
+	}
+	for _, path := range p.Materials {
+		e.console.Say("  %-10s %s  %s", "materials", home.Display(home.Expand(path)), linkFacts(state, path))
+	}
+	return 0, nil
+}
+
+func linkFacts(state *tree.State, path string) string {
+	if state == nil {
+		return "(not refreshed)"
+	}
+	for _, l := range state.Links {
+		if l.Path == path {
+			return refresh.LinkSummary(l)
+		}
+	}
+	return "(not refreshed)"
 }
 
 func (e *env) list(args []string) (int, error) {

@@ -31,6 +31,8 @@ const (
 	editing
 	editText
 	editCategory
+	editList
+	editListText
 	confirmRemove
 	confirmMove
 )
@@ -42,21 +44,53 @@ const (
 	fieldVault
 	fieldPriority
 	fieldState
+	fieldRepos
+	fieldMaterials
 	fieldCount
 )
 
-var fieldNames = [fieldCount]string{"Name", "Purpose", "Category", "Vault", "Priority", "State"}
+var fieldNames = [fieldCount]string{"Name", "Purpose", "Category", "Vault", "Priority", "State", "Repos", "Materials"}
 
 type draft struct {
 	Name, Purpose, Category, Vault, Priority, State string
+	Repos, Materials                                []string
 }
 
 func draftOf(p *tree.Project) draft {
-	return draft{Name: p.Name, Purpose: p.Purpose, Category: p.Category(), Vault: p.VaultPath(), Priority: p.Priority, State: p.State}
+	return draft{
+		Name: p.Name, Purpose: p.Purpose, Category: p.Category(), Vault: p.VaultPath(), Priority: p.Priority, State: p.State,
+		Repos: append([]string{}, p.Repos...), Materials: append([]string{}, p.Materials...),
+	}
+}
+
+func (d draft) equal(o draft) bool {
+	return d.Name == o.Name && d.Purpose == o.Purpose && d.Category == o.Category && d.Vault == o.Vault &&
+		d.Priority == o.Priority && d.State == o.State &&
+		strings.Join(d.Repos, "\x00") == strings.Join(o.Repos, "\x00") &&
+		strings.Join(d.Materials, "\x00") == strings.Join(o.Materials, "\x00")
+}
+
+func (d draft) list(field int) []string {
+	if field == fieldRepos {
+		return d.Repos
+	}
+	return d.Materials
+}
+
+func (d *draft) setList(field int, list []string) {
+	if field == fieldRepos {
+		d.Repos = list
+	} else {
+		d.Materials = list
+	}
 }
 
 func (d draft) get(field int) string {
-	return [fieldCount]string{d.Name, d.Purpose, d.Category, d.Vault, d.Priority, d.State}[field]
+	switch field {
+	case fieldRepos, fieldMaterials:
+		return strings.Join(d.list(field), ", ")
+	}
+	return [fieldCount]string{d.Name, d.Purpose, d.Category, d.Vault, d.Priority, d.State, "", ""}[field]
 }
 
 func (d *draft) set(field int, v string) {
@@ -97,6 +131,7 @@ type manage struct {
 	field     int
 	text      textinput.Model
 	picker    picker
+	listPos   int
 	status    string
 	err       string
 	discard   bool
@@ -159,7 +194,7 @@ func (m *manage) reload(rel string) error {
 
 func (m manage) Init() tea.Cmd { return nil }
 
-func (m manage) dirty() bool { return m.draft != m.original }
+func (m manage) dirty() bool { return !m.draft.equal(m.original) }
 
 func (m manage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, isKey := msg.(tea.KeyMsg)
@@ -200,6 +235,64 @@ func (m manage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var cmd tea.Cmd
 		m.picker, cmd = m.picker.update(msg)
+		return m, cmd
+	case editList:
+		if !isKey {
+			return m, nil
+		}
+		list := m.draft.list(m.field)
+		switch key.Type {
+		case tea.KeyUp:
+			if len(list) > 0 {
+				m.listPos = (m.listPos + len(list) - 1) % len(list)
+			}
+		case tea.KeyDown:
+			if len(list) > 0 {
+				m.listPos = (m.listPos + 1) % len(list)
+			}
+		case tea.KeyEsc, tea.KeyEnter:
+			m.mode = editing
+		default:
+			switch key.String() {
+			case "a":
+				m.text.SetValue("")
+				m.mode = editListText
+				return m, m.text.Focus()
+			case "d":
+				if len(list) > 0 {
+					m.draft.setList(m.field, append(append([]string{}, list[:m.listPos]...), list[m.listPos+1:]...))
+					if m.listPos >= len(list)-1 && m.listPos > 0 {
+						m.listPos--
+					}
+				}
+			}
+		}
+		return m, nil
+	case editListText:
+		if isKey {
+			switch key.Type {
+			case tea.KeyEnter:
+				path := strings.TrimSpace(m.text.Value())
+				if path != "" {
+					abs, _ := filepath.Abs(home.Expand(path))
+					if info, err := os.Stat(abs); err != nil || !info.IsDir() {
+						m.err = home.Display(abs) + " is not a directory"
+						return m, nil
+					}
+					m.draft.setList(m.field, append(m.draft.list(m.field), abs))
+					m.listPos = len(m.draft.list(m.field)) - 1
+				}
+				m.err = ""
+				m.mode = editList
+				return m, nil
+			case tea.KeyEsc:
+				m.err = ""
+				m.mode = editList
+				return m, nil
+			}
+		}
+		var cmd tea.Cmd
+		m.text, cmd = m.text.Update(msg)
 		return m, cmd
 	case confirmRemove:
 		if isKey {
@@ -312,6 +405,9 @@ func (m manage) updateEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.picker.focus()
 		case fieldPriority, fieldState:
 			m.cycle(true)
+		case fieldRepos, fieldMaterials:
+			m.listPos = 0
+			m.mode = editList
 		default:
 			m.text.SetValue(m.draft.get(m.field))
 			m.text.CursorEnd()
@@ -374,6 +470,14 @@ func (m manage) save() (tea.Model, tea.Cmd) {
 	if m.draft.Category != m.original.Category {
 		cat := m.draft.Category
 		edit.Category = &cat
+	}
+	if strings.Join(m.draft.Repos, "\x00") != strings.Join(m.original.Repos, "\x00") {
+		repos := m.draft.Repos
+		edit.Repos = &repos
+	}
+	if strings.Join(m.draft.Materials, "\x00") != strings.Join(m.original.Materials, "\x00") {
+		materials := m.draft.Materials
+		edit.Materials = &materials
 	}
 	if m.draft.Vault != m.original.Vault {
 		target, _ := filepath.Abs(home.Expand(m.draft.Vault))
@@ -506,6 +610,15 @@ func (m manage) viewEdit() string {
 			if content == "" {
 				content = topLevel
 			}
+		case (m.mode == editList || m.mode == editListText) && f == m.field:
+			content = m.viewList()
+		case f == fieldRepos || f == fieldMaterials:
+			list := m.draft.list(f)
+			if len(list) == 0 {
+				content = dim.Render("none")
+			} else {
+				content = fmt.Sprintf("%d linked", len(list))
+			}
 		case f == fieldVault:
 			content = home.Display(m.draft.Vault)
 		default:
@@ -521,6 +634,10 @@ func (m manage) viewEdit() string {
 	}
 	b.WriteString("\n")
 	switch m.mode {
+	case editList:
+		b.WriteString("  " + dim.Render("↑↓ choose · a add a folder · d remove · Esc done") + "\n")
+	case editListText:
+		b.WriteString("  " + dim.Render("type a folder path · Enter add · Esc cancel") + "\n")
 	case editText:
 		b.WriteString("  " + dim.Render("Enter keep · Esc cancel") + "\n")
 	case editCategory:
@@ -537,6 +654,28 @@ func (m manage) viewEdit() string {
 		b.WriteString("  " + errSt.Render(m.err) + "\n")
 	}
 	return b.String()
+}
+
+// viewList renders the list editor for repos or materials.
+func (m manage) viewList() string {
+	list := m.draft.list(m.field)
+	var b strings.Builder
+	if len(list) == 0 && m.mode != editListText {
+		b.WriteString(dim.Render("none yet; press a to add a folder") + "\n")
+	}
+	for i, item := range list {
+		marker := "  "
+		text := home.Display(item)
+		if i == m.listPos && m.mode == editList {
+			marker = cursorSt.Render("▸ ")
+			text = cursorSt.Render(text)
+		}
+		b.WriteString(marker + text + "\n")
+	}
+	if m.mode == editListText {
+		b.WriteString("  " + m.text.View() + "\n")
+	}
+	return "\n               " + strings.ReplaceAll(strings.TrimRight(b.String(), "\n"), "\n", "\n               ")
 }
 
 func plural(n int) string {

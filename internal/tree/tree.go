@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/links"
 )
 
 const (
@@ -39,6 +40,7 @@ type Frontmatter struct {
 	BlockedOn        string   `yaml:"blocked_on"`
 	ReviewAfter      string   `yaml:"review_after"`
 	Repos            []string `yaml:"repos"`
+	Materials        []string `yaml:"materials"`
 }
 
 // Project is one markdown file under the tree root.
@@ -262,13 +264,14 @@ func Create(root string, opts ProjectOptions) (string, error) {
 		return "", err
 	}
 	front := Frontmatter{
-		Schema:   ProjectSchema,
-		Name:     opts.Name,
-		Vault:    opts.Vault,
-		Purpose:  opts.Purpose,
-		Priority: opts.Priority,
-		State:    "active",
-		Repos:    []string{},
+		Schema:    ProjectSchema,
+		Name:      opts.Name,
+		Vault:     opts.Vault,
+		Purpose:   opts.Purpose,
+		Priority:  opts.Priority,
+		State:     "active",
+		Repos:     []string{},
+		Materials: []string{},
 	}
 	body := "# " + opts.Name + "\n\nNotes that belong to the atlas rather than the vault.\n"
 	data, err := Render(front, body)
@@ -290,20 +293,21 @@ type Unfinished struct {
 
 // State is the derived half of a project, regenerated in full by refresh.
 type State struct {
-	Schema        string     `json:"schema"`
-	GeneratedAt   string     `json:"generated_at"`
-	Project       string     `json:"project"`
-	Vault         string     `json:"vault"`
-	VaultOK       bool       `json:"vault_ok"`
-	VaultError    string     `json:"vault_error"`
-	Created       string     `json:"created"`
-	LastOperation string     `json:"last_operation"`
-	LastTouched   string     `json:"last_touched"`
-	DaysIdle      *int       `json:"days_idle"`
-	Heat          string     `json:"heat"`
-	Pages         *int       `json:"pages"`
-	OpenThreads   []string   `json:"open_threads"`
-	Unfinished    Unfinished `json:"unfinished"`
+	Schema        string       `json:"schema"`
+	GeneratedAt   string       `json:"generated_at"`
+	Project       string       `json:"project"`
+	Vault         string       `json:"vault"`
+	VaultOK       bool         `json:"vault_ok"`
+	VaultError    string       `json:"vault_error"`
+	Created       string       `json:"created"`
+	LastOperation string       `json:"last_operation"`
+	LastTouched   string       `json:"last_touched"`
+	DaysIdle      *int         `json:"days_idle"`
+	Heat          string       `json:"heat"`
+	Pages         *int         `json:"pages"`
+	OpenThreads   []string     `json:"open_threads"`
+	Unfinished    Unfinished   `json:"unfinished"`
+	Links         []links.Link `json:"links"`
 }
 
 // StatePath is where a project's derived state lives: the state dir mirrors the tree.
@@ -326,6 +330,9 @@ func ReadState(stateDir, rel string) (*State, error) {
 func WriteState(stateDir, rel string, state *State) error {
 	if state.OpenThreads == nil {
 		state.OpenThreads = []string{}
+	}
+	if state.Links == nil {
+		state.Links = []links.Link{}
 	}
 	path := StatePath(stateDir, rel)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

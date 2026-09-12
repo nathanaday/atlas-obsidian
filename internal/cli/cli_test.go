@@ -107,6 +107,31 @@ func TestVaultCommands(t *testing.T) {
 	}
 }
 
+func TestLinkCommands(t *testing.T) {
+	h, vaults := setup(t)
+	docs := filepath.Join(vaults, "docs")
+	os.MkdirAll(docs, 0o755)
+	os.WriteFile(filepath.Join(docs, "a.pdf"), []byte("x"), 0o644)
+	if code := h.run("link", "welcome", docs); code != 0 || !strings.Contains(h.out.String(), "(materials)") {
+		t.Fatalf("link exit %d\n%s%s", code, h.out.String(), h.err.String())
+	}
+	if code := h.run("link", "welcome", docs); code != 1 || !strings.Contains(h.err.String(), "already linked") {
+		t.Fatalf("duplicate: %d %s", code, h.err.String())
+	}
+	if code := h.run("links", "welcome"); code != 0 || !strings.Contains(h.out.String(), "materials") || !strings.Contains(h.out.String(), "1 file") {
+		t.Fatalf("links exit %d:\n%s", code, h.out.String())
+	}
+	if code := h.run("unlink", "welcome", docs); code != 0 {
+		t.Fatalf("unlink exit %d %s", code, h.err.String())
+	}
+	if code := h.run("links", "welcome"); code != 0 || !strings.Contains(h.out.String(), "no links") {
+		t.Fatalf("after unlink:\n%s", h.out.String())
+	}
+	if code := h.run("link", "welcome", docs, "--kind", "bogus"); code != 2 {
+		t.Fatalf("bad kind exit %d", code)
+	}
+}
+
 func TestResolveVault(t *testing.T) {
 	h, vaults := setup(t)
 	cfg, _ := home.Home{Root: h.home}.Load()

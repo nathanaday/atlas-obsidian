@@ -178,3 +178,60 @@ func TestMoveVaultAsksFirst(t *testing.T) {
 		t.Fatal("vault not moved")
 	}
 }
+
+func TestEditLinksThroughTheListEditor(t *testing.T) {
+	cfg, hooks := fakeAtlas(t)
+	repo := filepath.Join(cfg.VaultsDir, "code")
+	os.MkdirAll(filepath.Join(repo, ".git"), 0o755)
+	m, _ := newManage(hooks)
+	m = pressM(m, tea.KeyDown, tea.KeyEnter) // open reading
+	for i := 0; i < fieldRepos; i++ {
+		m = pressM(m, tea.KeyDown)
+	}
+	m = pressM(m, tea.KeyEnter) // list editor
+	if m.mode != editList {
+		t.Fatalf("mode %d", m.mode)
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = next.(manage)
+	m.text.SetValue(filepath.Join(cfg.VaultsDir, "missing"))
+	m = pressM(m, tea.KeyEnter)
+	if m.mode != editListText || m.err == "" {
+		t.Fatalf("missing folder should be refused: mode=%d err=%q", m.mode, m.err)
+	}
+	m.text.SetValue(repo)
+	m = pressM(m, tea.KeyEnter)
+	if m.mode != editList || len(m.draft.Repos) != 1 || m.draft.Repos[0] != repo {
+		t.Fatalf("add failed: mode=%d repos=%v", m.mode, m.draft.Repos)
+	}
+	t.Logf("\n%s", m.View())
+	m = pressM(m, tea.KeyEsc)
+	if !m.dirty() {
+		t.Fatal("adding a link should dirty the draft")
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m = next.(manage)
+	if m.err != "" || m.mode != browse {
+		t.Fatalf("save: err=%q mode=%d", m.err, m.mode)
+	}
+	projects, _, _ := tree.Walk(cfg.TreeRoot())
+	p := tree.FindByRel(projects, "personal/reading")
+	if len(p.Repos) != 1 || p.Repos[0] != repo {
+		t.Fatalf("page not updated: %v", p.Repos)
+	}
+	// remove it again
+	m = pressM(m, tea.KeyEnter)
+	for i := 0; i < fieldRepos; i++ {
+		m = pressM(m, tea.KeyDown)
+	}
+	m = pressM(m, tea.KeyEnter)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = next.(manage)
+	m = pressM(m, tea.KeyEsc)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m = next.(manage)
+	projects, _, _ = tree.Walk(cfg.TreeRoot())
+	if p := tree.FindByRel(projects, "personal/reading"); len(p.Repos) != 0 {
+		t.Fatalf("remove failed: %v", p.Repos)
+	}
+}

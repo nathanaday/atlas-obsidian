@@ -205,3 +205,28 @@ func TestRunAgainstARealVault(t *testing.T) {
 		t.Fatalf("page:\n%s", text)
 	}
 }
+
+func TestLinksCountAsActivityAndMissingOnesSignal(t *testing.T) {
+	vault := fakeVault(t, "## 2020-01-01 — old\n", "", nil)
+	docs := filepath.Join(t.TempDir(), "docs")
+	os.MkdirAll(docs, 0o755)
+	os.WriteFile(filepath.Join(docs, "slides.pdf"), []byte("x"), 0o644)
+	node := leaf(vault)
+	node.Materials = []string{docs}
+	node.Repos = []string{filepath.Join(t.TempDir(), "gone")}
+	state := Derive(nil, node, time.Now(), "t")
+	if len(state.Links) != 2 || !state.Links[1].OK || state.Links[0].OK {
+		t.Fatalf("links %+v", state.Links)
+	}
+	if state.LastTouched != time.Now().Format("2006-01-02") {
+		t.Fatalf("material activity should count: last touched %s", state.LastTouched)
+	}
+	notes := strings.Join(Signals(node, state, time.Now()), "\n")
+	if !strings.Contains(notes, "repo ") || !strings.Contains(notes, "not found") {
+		t.Fatalf("signals %q", notes)
+	}
+	page := Render(&Result{Rows: []Row{{node, state}}}, "2026-09-12T18:00:00Z", time.Now())
+	if !strings.Contains(page, "| Materials | `") || !strings.Contains(page, "1 file") || !strings.Contains(page, "> [!failure] x") {
+		t.Fatalf("page:\n%s", page)
+	}
+}

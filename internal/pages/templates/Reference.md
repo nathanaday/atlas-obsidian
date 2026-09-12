@@ -74,6 +74,30 @@ claude-atlas list
 claude-atlas info
 ```
 
+## Linking repos and material
+
+> Link a folder to a project: a git repository (detected by its `.git`) or a folder of static material such as slides, PDFs, and images. Nothing is copied; the atlas remembers the path and reports on it at every refresh.
+
+```bash
+claude-atlas link my-project ~/code/my-project
+```
+
+```bash
+claude-atlas link my-project ~/Documents/lectures --kind materials
+```
+
+> Show a project's links and what the last refresh found in them.
+
+```bash
+claude-atlas links my-project
+```
+
+> Remove a link. The folder is untouched.
+
+```bash
+claude-atlas unlink my-project ~/code/my-project
+```
+
 ## Working with Claude Code
 
 > Start Claude Code inside a project's vault. claude-obsidian's session hook hands Claude the vault's recent context (`wiki/hot.md`) at the start, and its skills are on the slash menu.

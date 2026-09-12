@@ -58,6 +58,10 @@ Open its page under `tree/`. The properties panel shows the fields the atlas rea
 | blocked_on | free text | What you are waiting for, when state is blocked. |
 | review_after | a date | When to revisit these fields. Overview flags it once it passes. |
 | purpose, definition_of_done | free text | Why this exists and what finished looks like. |
+| repos | list of folders | Git repositories on this machine the project works in. Overview shows the branch, uncommitted changes, and last commit. |
+| materials | list of folders | Folders of static material: slide decks, PDFs, images. Overview shows the file count, size, and newest file. |
+
+A commit in a linked repo or a new file in a linked folder counts as touching the project, so its heat reflects all of your work on it, not only the wiki. Nothing is copied; the atlas only remembers the path.
 
 The body below the properties is yours. Keep notes there that belong to the atlas rather than to the vault.
 

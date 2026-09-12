@@ -26,12 +26,12 @@ Body stays.
 func TestUpdateFrontmatterTouchesOnlyGivenKeys(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "capstone.md")
 	os.WriteFile(path, []byte(authored), 0o644)
-	if err := UpdateFrontmatter(path, map[string]string{"name": "Capstone II", "priority": "high", "purpose": ""}); err != nil {
+	if err := UpdateFrontmatter(path, map[string]any{"name": "Capstone II", "priority": "high", "purpose": "", "repos": []string{"/r/one"}, "materials": []string{}}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(path)
 	text := string(got)
-	for _, want := range []string{"name: Capstone II\n", "# my own comment\n", "tags:\n  - school\n", "priority: high\n", "purpose: \"\"\n", "\n# Capstone\n\nBody stays.\n"} {
+	for _, want := range []string{"name: Capstone II\n", "# my own comment\n", "tags:\n  - school\n", "priority: high\n", "purpose: \"\"\n", "repos:\n  - /r/one\n", "materials: []\n", "\n# Capstone\n\nBody stays.\n"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in:\n%s", want, text)
 		}
@@ -40,7 +40,7 @@ func TestUpdateFrontmatterTouchesOnlyGivenKeys(t *testing.T) {
 		t.Fatal("key order changed")
 	}
 	p, err := Load(path, filepath.Dir(path))
-	if err != nil || p.Name != "Capstone II" || p.Priority != "high" {
+	if err != nil || p.Name != "Capstone II" || p.Priority != "high" || len(p.Repos) != 1 || p.Repos[0] != "/r/one" {
 		t.Fatalf("reload: %+v %v", p, err)
 	}
 }
@@ -48,7 +48,7 @@ func TestUpdateFrontmatterTouchesOnlyGivenKeys(t *testing.T) {
 func TestUpdateFrontmatterOnEmptyBlock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "n.md")
 	os.WriteFile(path, []byte("---\n---\nbody\n"), 0o644)
-	if err := UpdateFrontmatter(path, map[string]string{"vault": "/v"}); err != nil {
+	if err := UpdateFrontmatter(path, map[string]any{"vault": "/v"}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(path)

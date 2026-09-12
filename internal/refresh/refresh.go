@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/links"
 	"github.com/nathanaday/claude-atlas/internal/product"
 	"github.com/nathanaday/claude-atlas/internal/tree"
 )
@@ -207,6 +208,13 @@ func Derive(p *product.Product, project *tree.Project, today time.Time, generate
 	if mt, ok := NewestWikiMtime(vault); ok && (!touchedFound || mt.After(touched)) {
 		touched, touchedFound = mt, true
 	}
+	// Work in a linked repo or on linked material counts as work on the project.
+	state.Links = inspectLinks(project)
+	for _, link := range state.Links {
+		if t, ok := link.Touched(); ok && (!touchedFound || t.After(touched)) {
+			touched, touchedFound = t, true
+		}
+	}
 	var daysOld *int
 	if created, ok := CreatedDate(vault); ok {
 		state.Created = created.Format("2006-01-02")
@@ -254,6 +262,54 @@ func Derive(p *product.Product, project *tree.Project, today time.Time, generate
 	state.Unfinished.EmptySections = ptr(summary.CategoryCounts["empty_sections"])
 	state.Unfinished.DeadLinks = ptr(summary.CategoryCounts["dead_links"])
 	return state
+}
+
+func inspectLinks(project *tree.Project) []links.Link {
+	out := []links.Link{}
+	for _, path := range project.Repos {
+		out = append(out, links.Inspect(links.Repo, path))
+	}
+	for _, path := range project.Materials {
+		out = append(out, links.Inspect(links.Materials, path))
+	}
+	return out
+}
+
+// LinkSummary renders one link's derived facts on a line.
+func LinkSummary(l links.Link) string {
+	if !l.OK {
+		return l.Error
+	}
+	var bits []string
+	if l.Kind == links.Repo {
+		if l.Branch != "" {
+			bits = append(bits, l.Branch)
+		}
+		if l.Dirty != nil {
+			if *l.Dirty == 0 {
+				bits = append(bits, "clean")
+			} else {
+				bits = append(bits, fmt.Sprintf("%d uncommitted", *l.Dirty))
+			}
+		}
+		if l.LastCommit != "" {
+			bits = append(bits, "last commit "+l.LastCommit)
+		}
+	} else {
+		if l.Files != nil {
+			bits = append(bits, fmt.Sprintf("%d file%s", *l.Files, plural(*l.Files)))
+		}
+		if l.Bytes != nil {
+			bits = append(bits, links.HumanBytes(*l.Bytes))
+		}
+		if l.Newest != "" {
+			bits = append(bits, "newest "+l.Newest)
+		}
+	}
+	if len(bits) == 0 {
+		return "ok"
+	}
+	return strings.Join(bits, " · ")
 }
 
 func sumPtr(values []*int) *int {
@@ -336,6 +392,11 @@ func Signals(node *tree.Project, state *tree.State, today time.Time) []string {
 	}
 	if state.Heat == "cold" && node.State == "active" && (node.Priority == "high" || node.Priority == "normal") {
 		notes = append(notes, fmt.Sprintf("declared priority %s, active, but cold for %d days", node.Priority, *state.DaysIdle))
+	}
+	for _, link := range state.Links {
+		if !link.OK {
+			notes = append(notes, fmt.Sprintf("%s %s: %s", link.Kind, home.Display(home.Expand(link.Path)), link.Error))
+		}
 	}
 	if node.State == "blocked" {
 		on := node.BlockedOn
@@ -466,8 +527,12 @@ func Render(res *Result, generatedAt string, today time.Time) string {
 		if r.Project.ReviewAfter != "" {
 			fmt.Fprintf(&b, "| Review after | %s |\n", r.Project.ReviewAfter)
 		}
-		if len(r.Project.Repos) > 0 {
-			fmt.Fprintf(&b, "| Repos | %s |\n", strings.Join(r.Project.Repos, " · "))
+		for _, link := range r.State.Links {
+			label := "Repo"
+			if link.Kind == links.Materials {
+				label = "Materials"
+			}
+			fmt.Fprintf(&b, "| %s | `%s` · %s |\n", label, home.Display(home.Expand(link.Path)), LinkSummary(link))
 		}
 		if r.Project.DefinitionOfDone != "" {
 			fmt.Fprintf(&b, "\n> [!success] Done when\n> %s\n", strings.TrimSpace(r.Project.DefinitionOfDone))
@@ -506,7 +571,7 @@ func heatLabel(heat string) string {
 
 func calloutFor(note string) string {
 	switch {
-	case strings.HasPrefix(note, "vault unreachable"):
+	case strings.HasPrefix(note, "vault unreachable"), strings.HasPrefix(note, "repo "), strings.HasPrefix(note, "materials "):
 		return "failure"
 	case strings.HasPrefix(note, "blocked on"):
 		return "danger"

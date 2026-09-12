@@ -115,6 +115,16 @@ Obsidian, and `c` starts Claude Code in it.
 claude-atlas view
 ```
 
+Link the folders a project works with: a git repository, or a folder of slide
+decks, PDFs, and images. Nothing is copied. Refresh reports the repo's branch,
+uncommitted changes, and last commit, and the folder's file count and newest
+file, and a commit or a new file counts as touching the project.
+
+```bash
+claude-atlas link sensor-triage ~/code/sensor-triage
+claude-atlas link sensor-triage ~/Documents/sensor-datasheets
+```
+
 Browse and edit what is registered. Open a project to rename it, change its
 purpose, priority, or state, move it to another category, repoint or move its
 vault, or remove it from the atlas. Removing never touches the vault on disk.

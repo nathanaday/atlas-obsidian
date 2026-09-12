@@ -44,7 +44,8 @@ internal/product/       locate and run the claude-obsidian CLI
 internal/tree/          project pages (frontmatter) and derived state files
 internal/refresh/       derive state, render Overview.md
 internal/pages/         About.md and Reference.md from templates/*.md, paths filled in at write time
-internal/vaults/        create and register vaults (new-vault)
+internal/vaults/        create and register vaults, edit pages, link folders
+internal/links/         inspect linked git repos and material folders (read-only)
 internal/tui/           Bubble Tea screens: new-vault, manage-vaults, view
 internal/obsidian/      Obsidian's vault registry, obsidian:// URIs, restart
 internal/home/          ~/.claude-atlas and config.json

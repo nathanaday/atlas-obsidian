@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/refresh"
 	"github.com/nathanaday/claude-atlas/internal/tree"
 )
 
@@ -560,18 +561,30 @@ func (v view) viewDetail() string {
 			b.WriteString("    " + line + "\n")
 		}
 	}
+	if s != nil && len(s.Links) > 0 {
+		b.WriteString("\n  " + catSt.Render("Links") + "\n")
+		for _, l := range s.Links {
+			facts := refresh.LinkSummary(l)
+			if !l.OK {
+				facts = errSt.Render(facts)
+			}
+			fmt.Fprintf(&b, "    %-10s %s\n               %s\n", l.Kind, home.Display(home.Expand(l.Path)), dim.Render(facts))
+		}
+	} else if len(p.Repos)+len(p.Materials) > 0 {
+		b.WriteString("\n  " + catSt.Render("Links") + "\n")
+		for _, r := range p.Repos {
+			fmt.Fprintf(&b, "    %-10s %s\n", "repo", home.Display(home.Expand(r)))
+		}
+		for _, r := range p.Materials {
+			fmt.Fprintf(&b, "    %-10s %s\n", "materials", home.Display(home.Expand(r)))
+		}
+	}
 	section("Purpose", p.Purpose)
 	section("Done when", p.DefinitionOfDone)
 	if s != nil && len(s.OpenThreads) > 0 {
 		b.WriteString("\n  " + catSt.Render("Open threads") + "\n")
 		for _, t := range s.OpenThreads {
 			b.WriteString("    - " + t + "\n")
-		}
-	}
-	if len(p.Repos) > 0 {
-		b.WriteString("\n  " + catSt.Render("Repos") + "\n")
-		for _, r := range p.Repos {
-			b.WriteString("    - " + r + "\n")
 		}
 	}
 	b.WriteString("\n" + v.footer("o Obsidian · c Claude Code · Esc back · q quit"))
