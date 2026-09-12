@@ -415,6 +415,8 @@ func heatOf(state *tree.State) string {
 		return dim.Render("—  ")
 	}
 	switch state.Heat {
+	case "new":
+		return "✨ "
 	case "hot":
 		return "🔥 "
 	case "warm":

@@ -296,6 +296,7 @@ type State struct {
 	Vault         string     `json:"vault"`
 	VaultOK       bool       `json:"vault_ok"`
 	VaultError    string     `json:"vault_error"`
+	Created       string     `json:"created"`
 	LastOperation string     `json:"last_operation"`
 	LastTouched   string     `json:"last_touched"`
 	DaysIdle      *int       `json:"days_idle"`

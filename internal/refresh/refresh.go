@@ -17,23 +17,29 @@ import (
 )
 
 const (
+	NewDays  = 7
 	HotDays  = 7
 	WarmDays = 30
 )
 
 var (
-	logHeading = regexp.MustCompile(`(?m)^##\s+(\d{4}-\d{2}-\d{2})\b`)
-	statusLine = regexp.MustCompile(`(?m)^status:\s*(.+?)\s*$`)
-	wikiLink   = regexp.MustCompile(`\[\[([^\]|]+)(?:\|([^\]]+))?\]\]`)
+	logHeading  = regexp.MustCompile(`(?m)^##\s+(\d{4}-\d{2}-\d{2})\b`)
+	statusLine  = regexp.MustCompile(`(?m)^status:\s*(.+?)\s*$`)
+	createdLine = regexp.MustCompile(`(?m)^created:\s*(\d{4}-\d{2}-\d{2})`)
+	wikiLink    = regexp.MustCompile(`\[\[([^\]|]+)(?:\|([^\]]+))?\]\]`)
 )
 
 func ptr[T any](v T) *T { return &v }
 
-// Heat maps idle days to hot, warm, or cold; unknown idleness gives "".
-func Heat(daysIdle *int) string {
+// Heat maps a vault's age and idleness to new, hot, warm, or cold; unknown idleness gives "".
+// A vault created within NewDays is "new" whatever its activity, so a fresh, possibly
+// empty vault is not mistaken for one with a long active history.
+func Heat(daysIdle, daysOld *int) string {
 	switch {
 	case daysIdle == nil:
 		return ""
+	case daysOld != nil && *daysOld < NewDays:
+		return "new"
 	case *daysIdle < HotDays:
 		return "hot"
 	case *daysIdle < WarmDays:
@@ -67,6 +73,27 @@ func NewestLogDate(vault string) (time.Time, bool) {
 		}
 	}
 	return newest, found
+}
+
+// CreatedDate is the day claude-obsidian initialized the vault: the `created:` field it
+// writes into wiki/index.md (or wiki/overview.md) from its template.
+func CreatedDate(vault string) (time.Time, bool) {
+	for _, name := range []string{"index.md", "overview.md", "log.md"} {
+		data, err := os.ReadFile(filepath.Join(vault, "wiki", name))
+		if err != nil {
+			continue
+		}
+		front, _, ok := tree.SplitFrontmatter(string(data))
+		if !ok {
+			continue
+		}
+		if m := createdLine.FindStringSubmatch(front); m != nil {
+			if t, ok := parseDate(m[1]); ok {
+				return t, true
+			}
+		}
+	}
+	return time.Time{}, false
 }
 
 // NewestWikiMtime is the latest modification date of any file under wiki/.
@@ -180,11 +207,16 @@ func Derive(p *product.Product, project *tree.Project, today time.Time, generate
 	if mt, ok := NewestWikiMtime(vault); ok && (!touchedFound || mt.After(touched)) {
 		touched, touchedFound = mt, true
 	}
+	var daysOld *int
+	if created, ok := CreatedDate(vault); ok {
+		state.Created = created.Format("2006-01-02")
+		daysOld = ptr(int(dateOf(today).Sub(dateOf(created)).Hours() / 24))
+	}
 	if touchedFound {
 		state.LastTouched = touched.Format("2006-01-02")
 		days := int(dateOf(today).Sub(dateOf(touched)).Hours() / 24)
 		state.DaysIdle = ptr(days)
-		state.Heat = Heat(state.DaysIdle)
+		state.Heat = Heat(state.DaysIdle, daysOld)
 	}
 	state.OpenThreads = ActiveThreads(vault)
 	if state.OpenThreads == nil {
@@ -270,7 +302,7 @@ func Tree(cfg *home.Config, stateDir string, p *product.Product, today time.Time
 }
 
 var (
-	heatOrder     = map[string]int{"hot": 0, "warm": 1, "cold": 2, "": 3}
+	heatOrder     = map[string]int{"hot": 0, "new": 1, "warm": 2, "cold": 3, "": 4}
 	priorityOrder = map[string]int{"high": 0, "normal": 1, "low": 2, "someday": 3}
 )
 
@@ -331,7 +363,7 @@ func Render(res *Result, generatedAt string, today time.Time) string {
 		heats[r.State.Heat]++
 	}
 	parts := []string{fmt.Sprintf("%d project%s", len(rows), plural(len(rows)))}
-	for _, h := range []string{"hot", "warm", "cold"} {
+	for _, h := range []string{"hot", "new", "warm", "cold"} {
 		if heats[h] > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", heats[h], h))
 		}
@@ -409,6 +441,9 @@ func Render(res *Result, generatedAt string, today time.Time) string {
 		case r.State.LastTouched != "":
 			fmt.Fprintf(&b, "| Heat | %s · last touched %s (%s) |\n", heatLabel(r.State.Heat), r.State.LastTouched, idle(r.State))
 		}
+		if r.State.Created != "" {
+			fmt.Fprintf(&b, "| Created | %s |\n", r.State.Created)
+		}
 		if r.State.LastOperation != "" {
 			fmt.Fprintf(&b, "| Last operation | %s |\n", r.State.LastOperation)
 		}
@@ -456,6 +491,8 @@ func categoryLabel(category string) string {
 
 func heatLabel(heat string) string {
 	switch heat {
+	case "new":
+		return "✨ new"
 	case "hot":
 		return "🔥 hot"
 	case "warm":

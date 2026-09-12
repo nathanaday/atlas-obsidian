@@ -34,6 +34,18 @@ tree/
 
 Folders are categories and carry no data of their own; make, rename, and nest them freely. Each markdown file is one project that points at one vault. Move a project by moving its file, then run `claude-atlas refresh`.
 
+## Heat
+
+[[Overview]] gives every project a heat from how recently its vault changed, counting both claude-obsidian operations and edits you make by hand.
+
+| Heat | Meaning |
+|:--|:--|
+| ✨ new | Created within the last 7 days, whatever its activity. A fresh vault has no history yet, so this keeps it apart from projects with a long active run. |
+| 🔥 hot | Touched within the last 7 days. |
+| 🌤️ warm | Touched within the last 30 days. |
+| ❄️ cold | Untouched for 30 days or more. |
+| ⛔ unreachable | The vault is missing, moved, or fails claude-obsidian's checks. |
+
 ## Editing a project
 
 Open its page under `tree/`. The properties panel shows the fields the atlas reads:

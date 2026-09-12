@@ -36,12 +36,40 @@ func leaf(vault string) *tree.Project {
 func TestHeat(t *testing.T) {
 	for days, want := range map[int]string{0: "hot", 6: "hot", 7: "warm", 29: "warm", 30: "cold"} {
 		d := days
-		if got := Heat(&d); got != want {
+		if got := Heat(&d, nil); got != want {
 			t.Errorf("%d days: got %s want %s", days, got, want)
 		}
 	}
-	if Heat(nil) != "" {
-		t.Error("nil should be unknown")
+	if Heat(nil, p(0)) != "" {
+		t.Error("nil idleness should be unknown even when new")
+	}
+	if Heat(p(0), p(3)) != "new" || Heat(p(40), p(6)) != "new" {
+		t.Error("a vault under 7 days old is new whatever its idleness")
+	}
+	if Heat(p(0), p(7)) != "hot" {
+		t.Error("7 days old is no longer new")
+	}
+}
+
+func TestCreatedDateComesFromTheIndexPage(t *testing.T) {
+	vault := fakeVault(t, "", "", map[string]string{
+		"index.md":    "---\ntitle: Wiki Index\ncreated: 2026-09-01\nupdated: 2026-09-10\n---\n",
+		"overview.md": "---\ncreated: 2020-01-01\n---\n",
+	})
+	got, ok := CreatedDate(vault)
+	if !ok || got.Format("2006-01-02") != "2026-09-01" {
+		t.Fatalf("got %v %v", got, ok)
+	}
+	if _, ok := CreatedDate(fakeVault(t, "", "", nil)); ok {
+		t.Fatal("no created field should report none")
+	}
+}
+
+func TestDeriveMarksAFreshVaultNew(t *testing.T) {
+	vault := fakeVault(t, "", "", map[string]string{"index.md": "---\ncreated: " + time.Now().Format("2006-01-02") + "\n---\n"})
+	state := Derive(nil, leaf(vault), time.Now(), "t")
+	if state.Heat != "new" || state.Created != time.Now().Format("2006-01-02") {
+		t.Fatalf("got heat %q created %q", state.Heat, state.Created)
 	}
 }
 
@@ -166,7 +194,7 @@ func TestRunAgainstARealVault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !state.VaultOK || *state.Pages != 4 || state.Heat != "hot" || len(state.OpenThreads) != 1 || *state.Unfinished.EmptySections != 0 || state.Project != "area/fresh" {
+	if !state.VaultOK || *state.Pages != 4 || state.Heat != "new" || len(state.OpenThreads) != 1 || *state.Unfinished.EmptySections != 0 || state.Project != "area/fresh" {
 		t.Fatalf("state %+v", state)
 	}
 	if _, err := os.Stat(filepath.Join(stateDir, "stale.json")); err == nil {
