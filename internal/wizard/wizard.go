@@ -11,6 +11,7 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/claudecode"
 	"github.com/nathanaday/claude-atlas/internal/console"
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/pages"
 	"github.com/nathanaday/claude-atlas/internal/product"
 	"github.com/nathanaday/claude-atlas/internal/refresh"
 	"github.com/nathanaday/claude-atlas/internal/tree"
@@ -19,6 +20,7 @@ import (
 
 // Options come from setup's flags.
 type Options struct {
+	Version     string
 	VaultsDir   string
 	AtlasVault  string
 	FirstVault  string
@@ -187,6 +189,10 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 		}
 		c.Step(console.OK, "first vault", fmt.Sprintf("%s → node %s", home.Display(firstPath), node.Rel))
 	}
+	if err := pages.Write(cfg, h.ConfigPath(), opts.Version); err != nil {
+		return 1, err
+	}
+	c.Step(console.OK, "pages", "About.md, Reference.md")
 	if prod != nil {
 		page, _, err := refresh.Run(cfg, prod, time.Now())
 		if err != nil {
@@ -208,7 +214,7 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	c.Say("Next:")
 	c.Say("  claude-atlas vault new <name>    create another vault")
 	c.Say("  claude-atlas vault add <path>    register an existing claude-obsidian vault")
-	c.Say("  claude-atlas refresh             rebuild Atlas.md from every vault")
+	c.Say("  claude-atlas refresh             rebuild Overview.md from every vault")
 	c.Say("  claude-atlas info                show every path the atlas uses")
 	if prod == nil {
 		c.Say("")

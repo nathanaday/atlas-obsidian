@@ -14,6 +14,7 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/claudecode"
 	"github.com/nathanaday/claude-atlas/internal/console"
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/pages"
 	"github.com/nathanaday/claude-atlas/internal/product"
 	"github.com/nathanaday/claude-atlas/internal/refresh"
 	"github.com/nathanaday/claude-atlas/internal/tree"
@@ -34,7 +35,7 @@ Commands:
   vault new NAME   create a claude-obsidian vault and register it
   vault add PATH   register an existing claude-obsidian vault
   vault list       list registered vaults
-  refresh          recompute every state.json and rewrite Atlas.md
+  refresh          recompute every state.json and rewrite Overview.md
   info             show every path and version the atlas uses
   doctor           check the installation and every registered vault
   version          print the version
@@ -134,6 +135,14 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 	}
 }
 
+// refreshAll rewrites every derived page in the atlas vault.
+func (e *env) refreshAll(cfg *home.Config, prod *product.Product) (string, []refresh.Row, error) {
+	if err := pages.Write(cfg, e.home.ConfigPath(), Version); err != nil {
+		return "", nil, err
+	}
+	return refresh.Run(cfg, prod, time.Now())
+}
+
 func (e *env) load() (*home.Config, *product.Product, error) {
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -156,7 +165,7 @@ func (e *env) setup(args []string) (int, error) {
 	if err := fs.Parse(args); err != nil {
 		return 2, nil
 	}
-	opts := wizard.Options{VaultsDir: *vaultsDir, AtlasVault: *atlasVault, FirstVault: *first, ProductPath: *productPath, WithPlugin: !*noPlugin}
+	opts := wizard.Options{Version: Version, VaultsDir: *vaultsDir, AtlasVault: *atlasVault, FirstVault: *first, ProductPath: *productPath, WithPlugin: !*noPlugin}
 	return wizard.Run(e.home, e.console, opts)
 }
 
@@ -210,7 +219,7 @@ func (e *env) vaultNew(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	page, _, err := refresh.Run(cfg, prod, time.Now())
+	page, _, err := e.refreshAll(cfg, prod)
 	if err != nil {
 		return 1, err
 	}
@@ -245,7 +254,7 @@ func (e *env) vaultAdd(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	page, _, err := refresh.Run(cfg, prod, time.Now())
+	page, _, err := e.refreshAll(cfg, prod)
 	if err != nil {
 		return 1, err
 	}
@@ -289,7 +298,7 @@ func (e *env) refresh(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	page, rows, err := refresh.Run(cfg, prod, time.Now())
+	page, rows, err := e.refreshAll(cfg, prod)
 	if err != nil {
 		return 1, err
 	}
@@ -327,7 +336,7 @@ func (e *env) info(args []string) (int, error) {
 		return 1, err
 	}
 	row("atlas vault", home.Display(cfg.AtlasVault))
-	row("atlas page", home.Display(filepath.Join(cfg.AtlasVault, "Atlas.md")))
+	row("overview", home.Display(filepath.Join(cfg.AtlasVault, "Overview.md")))
 	row("tree", home.Display(cfg.TreeRoot()))
 	row("vaults dir", home.Display(cfg.VaultsDir))
 	if prod, err := product.Locate(cfg.ClaudeObsidian); err != nil {

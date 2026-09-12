@@ -144,9 +144,10 @@ func TestRenderListsRowsAndSignals(t *testing.T) {
 	state := &tree.State{VaultOK: true, LastTouched: "2026-08-01", DaysIdle: p(41), Heat: "cold", Pages: p(3), OpenThreads: []string{"thread [[one]]"}, Unfinished: tree.Unfinished{EmptySections: p(1), SeedPages: p(2), DeadLinks: p(0)}}
 	page := Render([]Row{{node, state}}, "2026-09-11T20:00:00Z", today)
 	for _, want := range []string{
-		"| cold | [[tree/work/v/node\\|work/v]] | normal | active | 41d | 3 | 1 | 3 |",
-		"`/Users/me/v`",
-		"## Signals", "cold for 41 days", "## work/v", "Why.", "- thread one",
+		"| ❄️ cold | [[tree/work/v/node\\|work/v]] | normal | active | 41d | 3 | 1 | 3 |",
+		"| Vault | `/Users/me/v` |",
+		"## Signals", "> [!warning] work/v", "cold for 41 days", "### work/v", "> [!abstract] x\n> Why.", "> - thread one",
+		"| Unfinished | 1 empty sections · 2 seed pages · 0 dead links |",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("missing %q in:\n%s", want, page)
@@ -183,7 +184,7 @@ func TestRunAgainstARealVault(t *testing.T) {
 		t.Fatalf("cluster %+v", cluster)
 	}
 	text, _ := os.ReadFile(page)
-	if !strings.Contains(string(text), "[[tree/area/fresh/node\\|area/fresh]]") || len(rows) != 2 {
+	if filepath.Base(page) != "Overview.md" || !strings.Contains(string(text), "[[tree/area/fresh/node\\|area/fresh]]") || len(rows) != 2 {
 		t.Fatalf("page:\n%s", text)
 	}
 }

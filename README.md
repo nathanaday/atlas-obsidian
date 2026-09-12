@@ -124,7 +124,9 @@ claude-atlas doctor
 ~/.claude-atlas/config.json   paths, plugin id, marketplace; you rarely open this
 
 ~/Documents/Atlas/            an Obsidian vault; open it like any other
-├── Atlas.md                  generated: one table across every vault
+├── Overview.md               generated: every vault, its heat, threads, and signals
+├── About.md                  orientation: what each part of the atlas is
+├── Reference.md              every claude-atlas command with examples
 └── tree/
     └── work/
         └── sensor-triage/

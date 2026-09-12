@@ -41,7 +41,8 @@ internal/wizard/        the setup flow
 internal/claudecode/    Claude Code's plugin registry and `claude plugin`
 internal/product/       locate and run the claude-obsidian CLI
 internal/tree/          node.md (frontmatter) and state.json
-internal/refresh/       derive state, render Atlas.md
+internal/refresh/       derive state, render Overview.md
+internal/pages/         About.md and Reference.md, static text with paths filled in
 internal/vaults/        vault new / vault add
 internal/home/          ~/.claude-atlas and config.json
 internal/console/       prompts and step lines

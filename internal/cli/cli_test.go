@@ -48,12 +48,14 @@ func TestSetupCreatesHomeAtlasAndFirstVault(t *testing.T) {
 		filepath.Join(filepath.Dir(h.home), "Atlas", "tree", "welcome", "node.md"),
 		filepath.Join(filepath.Dir(h.home), "Atlas", "tree", "welcome", "state.json"),
 		filepath.Join(h.home, "config.json"),
+		filepath.Join(filepath.Dir(h.home), "Atlas", "About.md"),
+		filepath.Join(filepath.Dir(h.home), "Atlas", "Reference.md"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("missing %s", path)
 		}
 	}
-	page, _ := os.ReadFile(filepath.Join(filepath.Dir(h.home), "Atlas", "Atlas.md"))
+	page, _ := os.ReadFile(filepath.Join(filepath.Dir(h.home), "Atlas", "Overview.md"))
 	if !strings.Contains(string(page), "[[tree/welcome/node\\|welcome]]") {
 		t.Fatalf("atlas page:\n%s", page)
 	}
@@ -96,7 +98,7 @@ func TestVaultCommands(t *testing.T) {
 	if code := h.run("info"); code != 0 {
 		t.Fatalf("info exit %d:\n%s", code, h.out.String())
 	}
-	for _, want := range []string{"atlas page", "Atlas.md", "claude-obsidian", "2 registered", "work/triage"} {
+	for _, want := range []string{"overview", "Overview.md", "claude-obsidian", "2 registered", "work/triage"} {
 		if !strings.Contains(h.out.String(), want) {
 			t.Errorf("info missing %q:\n%s", want, h.out.String())
 		}
