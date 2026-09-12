@@ -45,8 +45,8 @@ func TestSetupCreatesHomeAtlasAndFirstVault(t *testing.T) {
 	for _, path := range []string{
 		filepath.Join(vaults, "welcome", ".claude-obsidian.json"),
 		filepath.Join(filepath.Dir(h.home), "Atlas", ".obsidian", "app.json"),
-		filepath.Join(filepath.Dir(h.home), "Atlas", "tree", "welcome", "node.md"),
-		filepath.Join(filepath.Dir(h.home), "Atlas", "tree", "welcome", "state.json"),
+		filepath.Join(filepath.Dir(h.home), "Atlas", "tree", "welcome.md"),
+		filepath.Join(h.home, "state", "welcome.json"),
 		filepath.Join(h.home, "config.json"),
 		filepath.Join(filepath.Dir(h.home), "Atlas", "About.md"),
 		filepath.Join(filepath.Dir(h.home), "Atlas", "Reference.md"),
@@ -56,7 +56,7 @@ func TestSetupCreatesHomeAtlasAndFirstVault(t *testing.T) {
 		}
 	}
 	page, _ := os.ReadFile(filepath.Join(filepath.Dir(h.home), "Atlas", "Overview.md"))
-	if !strings.Contains(string(page), "[[tree/welcome/node\\|welcome]]") {
+	if !strings.Contains(string(page), "[[tree/welcome\\|welcome]]") {
 		t.Fatalf("atlas page:\n%s", page)
 	}
 	if code := h.run("setup", "--no-plugin"); code != 0 || !strings.Contains(h.out.String(), "keep       1 registered") {
@@ -66,10 +66,10 @@ func TestSetupCreatesHomeAtlasAndFirstVault(t *testing.T) {
 
 func TestVaultCommands(t *testing.T) {
 	h, vaults := setup(t)
-	if code := h.run("vault", "new", "triage", "--parent", "work", "--purpose", "Sort sensors."); code != 0 {
+	if code := h.run("vault", "new", "triage", "--category", "work", "--purpose", "Sort sensors."); code != 0 {
 		t.Fatalf("vault new exit %d\n%s%s", code, h.out.String(), h.err.String())
 	}
-	if !strings.Contains(h.out.String(), "node work/triage") {
+	if !strings.Contains(h.out.String(), "tree/work/triage.md") {
 		t.Fatalf("output:\n%s", h.out.String())
 	}
 	if _, err := os.Stat(filepath.Join(vaults, "triage", "wiki", "hot.md")); err != nil {
@@ -84,7 +84,7 @@ func TestVaultCommands(t *testing.T) {
 	if code := h.run("vault", "list"); code != 0 {
 		t.Fatal("list failed")
 	}
-	for _, want := range []string{"work/triage", "welcome", "(cluster)"} {
+	for _, want := range []string{"work/triage", "welcome"} {
 		if !strings.Contains(h.out.String(), want) {
 			t.Errorf("list missing %q:\n%s", want, h.out.String())
 		}

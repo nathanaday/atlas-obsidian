@@ -136,11 +136,11 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 }
 
 // refreshAll rewrites every derived page in the atlas vault.
-func (e *env) refreshAll(cfg *home.Config, prod *product.Product) (string, []refresh.Row, error) {
-	if err := pages.Write(cfg, e.home.ConfigPath(), Version); err != nil {
+func (e *env) refreshAll(cfg *home.Config, prod *product.Product) (string, *refresh.Result, error) {
+	if err := pages.Write(cfg, e.home.Root, Version); err != nil {
 		return "", nil, err
 	}
-	return refresh.Run(cfg, prod, time.Now())
+	return refresh.Run(cfg, e.home.StateDir(), prod, time.Now())
 }
 
 func (e *env) load() (*home.Config, *product.Product, error) {
@@ -171,7 +171,7 @@ func (e *env) setup(args []string) (int, error) {
 
 func nodeFlags(fs *flag.FlagSet) *vaults.RegisterOptions {
 	opts := &vaults.RegisterOptions{}
-	fs.StringVar(&opts.Parent, "parent", "", "cluster path to place the node under, e.g. work")
+	fs.StringVar(&opts.Category, "category", "", "directory under tree/ to file the project in, e.g. university/cs566")
 	fs.StringVar(&opts.Purpose, "purpose", "", "one paragraph: why this vault exists")
 	fs.StringVar(&opts.Priority, "priority", "normal", "high, normal, low, or someday")
 	return opts
@@ -202,7 +202,7 @@ func (e *env) vaultNew(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) != 1 {
-		return 2, errors.New("usage: claude-atlas vault new NAME [--parent P] [--purpose TEXT] [--priority P]")
+		return 2, errors.New("usage: claude-atlas vault new NAME [--category DIR] [--purpose TEXT] [--priority P]")
 	}
 	cfg, prod, err := e.load()
 	if err != nil {
@@ -226,7 +226,7 @@ func (e *env) vaultNew(args []string) (int, error) {
 	c := e.console
 	c.Say("")
 	c.Step(console.OK, "created", home.Display(path))
-	c.Step(console.OK, "registered", "node "+node.Rel)
+	c.Step(console.OK, "registered", "tree/"+node.Rel+".md")
 	c.Step(console.OK, "refreshed", home.Display(page))
 	c.Say("")
 	c.Say("  Open it in Obsidian with \"Open folder as vault\", or start working:")
@@ -244,7 +244,7 @@ func (e *env) vaultAdd(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) != 1 {
-		return 2, errors.New("usage: claude-atlas vault add PATH [--name N] [--parent P] [--purpose TEXT] [--priority P]")
+		return 2, errors.New("usage: claude-atlas vault add PATH [--name N] [--category DIR] [--purpose TEXT] [--priority P]")
 	}
 	cfg, prod, err := e.load()
 	if err != nil {
@@ -258,7 +258,7 @@ func (e *env) vaultAdd(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	e.console.Step(console.OK, "registered", fmt.Sprintf("%s → node %s", home.Display(node.VaultPath()), node.Rel))
+	e.console.Step(console.OK, "registered", fmt.Sprintf("%s → tree/%s.md", home.Display(node.VaultPath()), node.Rel))
 	e.console.Step(console.OK, "refreshed", home.Display(page))
 	return 0, nil
 }
@@ -268,27 +268,26 @@ func (e *env) vaultList(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	nodes, err := tree.Walk(cfg.TreeRoot())
+	projects, problems, err := tree.Walk(cfg.TreeRoot())
 	if err != nil {
 		return 1, err
 	}
-	if len(nodes) == 0 {
-		e.console.Say("no vaults registered; run `claude-atlas vault new <name>`")
+	if len(projects) == 0 && len(problems) == 0 {
+		e.console.Say("no projects yet; run `claude-atlas vault new <name>`")
 		return 0, nil
 	}
-	for _, n := range nodes {
+	for _, p := range projects {
 		heat := "?"
-		if state, err := tree.ReadState(n.Dir); err == nil {
+		if state, err := tree.ReadState(e.home.StateDir(), p.Rel); err == nil {
 			heat = state.Heat
 			if heat == "" {
 				heat = "off"
 			}
 		}
-		target := "(cluster)"
-		if v := n.VaultPath(); v != "" {
-			target = home.Display(v)
-		}
-		e.console.Say("  %-5s %-7s %-8s %-32s %s", heat, n.Priority, n.State, n.Rel, target)
+		e.console.Say("  %-5s %-7s %-8s %-32s %s", heat, p.Priority, p.State, p.Rel, home.Display(p.VaultPath()))
+	}
+	for _, problem := range problems {
+		e.console.Step(console.Fail, "tree/"+problem.Rel+".md", problem.Reason)
 	}
 	return 0, nil
 }
@@ -298,13 +297,16 @@ func (e *env) refresh(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	page, rows, err := e.refreshAll(cfg, prod)
+	page, res, err := e.refreshAll(cfg, prod)
 	if err != nil {
 		return 1, err
 	}
-	for _, r := range rows {
-		if r.Node.IsLeaf() && !r.State.VaultOK {
-			e.console.Step(console.Fail, r.Node.Rel, r.State.VaultError)
+	for _, problem := range res.Problems {
+		e.console.Step(console.Fail, "tree/"+problem.Rel+".md", problem.Reason)
+	}
+	for _, r := range res.Rows {
+		if !r.State.VaultOK {
+			e.console.Step(console.Fail, r.Project.Rel, r.State.VaultError)
 			continue
 		}
 		heat := r.State.Heat
@@ -315,7 +317,7 @@ func (e *env) refresh(args []string) (int, error) {
 		if r.State.DaysIdle != nil {
 			days = fmt.Sprint(*r.State.DaysIdle)
 		}
-		e.console.Step(console.OK, r.Node.Rel, fmt.Sprintf("%s, idle %sd", heat, days))
+		e.console.Step(console.OK, r.Project.Rel, fmt.Sprintf("%s, idle %sd", heat, days))
 	}
 	e.console.Say("  wrote %s", home.Display(page))
 	return 0, nil
@@ -338,6 +340,7 @@ func (e *env) info(args []string) (int, error) {
 	row("atlas vault", home.Display(cfg.AtlasVault))
 	row("overview", home.Display(filepath.Join(cfg.AtlasVault, "Overview.md")))
 	row("tree", home.Display(cfg.TreeRoot()))
+	row("state", home.Display(e.home.StateDir()))
 	row("vaults dir", home.Display(cfg.VaultsDir))
 	if prod, err := product.Locate(cfg.ClaudeObsidian); err != nil {
 		row("claude-obsidian", err.Error())
@@ -347,14 +350,13 @@ func (e *env) info(args []string) (int, error) {
 		row("  source", ternary(prod.Source == "plugin", "Claude Code plugin "+cfg.ClaudeObsidian.Plugin, "config path"))
 	}
 	row("claude config", home.Display(claudecode.ConfigDir()))
-	nodes, err := tree.Walk(cfg.TreeRoot())
+	projects, _, err := tree.Walk(cfg.TreeRoot())
 	if err != nil {
 		return 1, err
 	}
-	leaves := tree.Leaves(nodes)
-	row("vaults", fmt.Sprintf("%d registered", len(leaves)))
-	for _, n := range leaves {
-		row("  "+n.Rel, home.Display(n.VaultPath()))
+	row("projects", fmt.Sprintf("%d registered", len(projects)))
+	for _, p := range projects {
+		row("  "+p.Rel, home.Display(p.VaultPath()))
 	}
 	return 0, nil
 }
@@ -389,17 +391,20 @@ func (e *env) doctor(args []string) (int, error) {
 	_, statErr := os.Stat(strings.TrimSuffix(cfg.AtlasVault, "/") + "/.obsidian")
 	c.Say("  %-16s %s  %s", "atlas vault", home.Display(cfg.AtlasVault), ternary(statErr == nil, "ok", "missing"))
 	c.Say("  %-16s %s", "vaults dir", home.Display(cfg.VaultsDir))
-	nodes, err := tree.Walk(cfg.TreeRoot())
+	projects, problems, err := tree.Walk(cfg.TreeRoot())
 	if err != nil {
 		return 1, err
 	}
-	leaves := tree.Leaves(nodes)
-	c.Say("  %-16s %d registered", "vaults", len(leaves))
-	for _, n := range leaves {
-		_, err := os.Stat(n.VaultPath() + "/.claude-obsidian.json")
+	c.Say("  %-16s %d registered", "projects", len(projects))
+	for _, p := range projects {
+		_, err := os.Stat(filepath.Join(p.VaultPath(), ".claude-obsidian.json"))
 		reachable := err == nil
 		ok = ok && reachable
-		c.Say("    %-3s %-24s %s", ternary(reachable, "ok", "off"), n.Rel, home.Display(n.VaultPath()))
+		c.Say("    %-3s %-24s %s", ternary(reachable, "ok", "off"), p.Rel, home.Display(p.VaultPath()))
+	}
+	for _, problem := range problems {
+		ok = false
+		c.Say("    %-3s %-24s %s", "bad", "tree/"+problem.Rel+".md", problem.Reason)
 	}
 	if !ok {
 		return 1, nil

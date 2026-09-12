@@ -62,6 +62,9 @@ func Resolve(explicit string) Home {
 
 func (h Home) ConfigPath() string { return filepath.Join(h.Root, "config.json") }
 
+// StateDir holds derived state for every project, mirroring the tree. Safe to delete.
+func (h Home) StateDir() string { return filepath.Join(h.Root, "state") }
+
 func (h Home) Exists() bool {
 	info, err := os.Stat(h.ConfigPath())
 	return err == nil && info.Mode().IsRegular()

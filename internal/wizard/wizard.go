@@ -87,13 +87,13 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	if _, err := os.Stat(filepath.Join(cfg.AtlasVault, ".obsidian")); err == nil {
 		atlasReady = true
 	}
-	var registered []*tree.Node
+	var registered []*tree.Project
 	if atlasReady {
-		nodes, err := tree.Walk(cfg.TreeRoot())
+		projects, _, err := tree.Walk(cfg.TreeRoot())
 		if err != nil {
 			return 1, err
 		}
-		registered = tree.Leaves(nodes)
+		registered = projects
 	}
 	firstPath := ""
 	if len(registered) == 0 {
@@ -134,7 +134,7 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	if firstPath != "" {
 		plan(c, "first vault", "create", home.Display(firstPath)+" (claude-obsidian init)")
 	} else {
-		plan(c, "vaults", "keep", fmt.Sprintf("%d registered", len(registered)))
+		plan(c, "projects", "keep", fmt.Sprintf("%d registered", len(registered)))
 	}
 	c.Say("")
 	ok, err := c.Confirm("Proceed?", true)
@@ -187,14 +187,14 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 		if err != nil {
 			return 1, err
 		}
-		c.Step(console.OK, "first vault", fmt.Sprintf("%s → node %s", home.Display(firstPath), node.Rel))
+		c.Step(console.OK, "first vault", fmt.Sprintf("%s → tree/%s.md", home.Display(firstPath), node.Rel))
 	}
-	if err := pages.Write(cfg, h.ConfigPath(), opts.Version); err != nil {
+	if err := pages.Write(cfg, h.Root, opts.Version); err != nil {
 		return 1, err
 	}
 	c.Step(console.OK, "pages", "About.md, Reference.md")
 	if prod != nil {
-		page, _, err := refresh.Run(cfg, prod, time.Now())
+		page, _, err := refresh.Run(cfg, h.StateDir(), prod, time.Now())
 		if err != nil {
 			return 1, err
 		}

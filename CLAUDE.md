@@ -29,8 +29,9 @@ out of scope; `vault add` exists only for vaults made by hand later.
    claude-obsidian's own init; after that atlas only reads.
 2. A vault never learns that atlas exists. A leaf records a vault path; the
    vault records nothing.
-3. Atlas never stores a fact it can compute. `node.md` is authored,
-   `state.json` is derived and regenerated in full by `refresh`.
+3. Atlas never stores a fact it can compute. Project pages under `tree/` are
+   authored; `~/.claude-atlas/state/` is derived and rebuilt in full by
+   `refresh`.
 
 ## Layout
 
@@ -40,7 +41,7 @@ internal/cli/           argument parsing and one method per subcommand
 internal/wizard/        the setup flow
 internal/claudecode/    Claude Code's plugin registry and `claude plugin`
 internal/product/       locate and run the claude-obsidian CLI
-internal/tree/          node.md (frontmatter) and state.json
+internal/tree/          project pages (frontmatter) and derived state files
 internal/refresh/       derive state, render Overview.md
 internal/pages/         About.md and Reference.md, static text with paths filled in
 internal/vaults/        vault new / vault add
@@ -49,10 +50,15 @@ internal/console/       prompts and step lines
 internal/testutil/      finds a real claude-obsidian for integration tests
 ```
 
-`~/.claude-atlas/` holds only internal state the user rarely opens. Anything
-the user views lives under `~/Documents`: the atlas vault (default
-`~/Documents/Atlas`, a plain Obsidian vault, not a claude-obsidian wiki) and
-the vaults directory (default `~/Documents/Vaults`).
+`~/.claude-atlas/` holds only internal state the user rarely opens: config and
+derived state. Anything the user views lives under `~/Documents`: the atlas
+vault (default `~/Documents/Atlas`, a plain Obsidian vault, not a
+claude-obsidian wiki) and the vaults directory (default `~/Documents/Vaults`).
+
+The tree is the user's: under `tree/`, every folder is a category with no data
+of its own, and every markdown file is a project pointing at one vault. Users
+make, nest, and move these by hand in Obsidian. `refresh` must tolerate any
+file it cannot read as a project and report it instead of failing.
 
 ## Constraints
 
@@ -62,7 +68,7 @@ the vaults directory (default `~/Documents/Vaults`).
 - `product.TestedVersion` names the claude-obsidian release atlas was verified
   against. Atlas does not pin the install; it warns when the versions differ.
 - `refresh` is read-only toward every vault, offline, and idempotent.
-- Atlas never writes `node.md` after creating it. Users edit it.
+- Atlas never writes a project page after creating it. Users edit it.
 - Tests never install a plugin or touch a real `~/.claude-atlas`. Integration
   tests find claude-obsidian through `internal/testutil` (the installed plugin,
   or `CLAUDE_ATLAS_TEST_PRODUCT`) and skip otherwise.

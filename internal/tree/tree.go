@@ -1,10 +1,9 @@
-// Package tree reads and writes the node tree: node.md (authored) and state.json (derived).
+// Package tree reads the project tree: directories are categories, markdown files are projects.
 package tree
 
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -19,10 +18,8 @@ import (
 )
 
 const (
-	NodeSchema  = "atlas.node.v1"
-	StateSchema = "atlas.state.v1"
-	NodeFile    = "node.md"
-	StateFile   = "state.json"
+	ProjectSchema = "atlas.project.v1"
+	StateSchema   = "atlas.state.v1"
 )
 
 var (
@@ -30,12 +27,11 @@ var (
 	States     = []string{"active", "paused", "blocked", "archived"}
 )
 
-// Frontmatter is the authored half of a node, edited by hand or in Obsidian.
+// Frontmatter is the authored half of a project, edited by hand or in Obsidian.
 type Frontmatter struct {
 	Schema           string   `yaml:"schema"`
-	Kind             string   `yaml:"kind"`
 	Name             string   `yaml:"name"`
-	Vault            string   `yaml:"vault,omitempty"`
+	Vault            string   `yaml:"vault"`
 	Purpose          string   `yaml:"purpose"`
 	DefinitionOfDone string   `yaml:"definition_of_done"`
 	Priority         string   `yaml:"priority"`
@@ -45,31 +41,40 @@ type Frontmatter struct {
 	Repos            []string `yaml:"repos"`
 }
 
-// Node is one directory under the tree root.
-type Node struct {
-	Dir  string
-	Rel  string // path relative to the tree root, forward slashes
+// Project is one markdown file under the tree root.
+type Project struct {
+	Path string // the markdown file
+	Rel  string // path relative to the tree root without .md, forward slashes
 	Body string // markdown after the frontmatter; not interpreted
 	Frontmatter
 }
 
-func (n *Node) ID() string   { return filepath.Base(n.Dir) }
-func (n *Node) IsLeaf() bool { return n.Kind == "leaf" }
-func (n *Node) Depth() int   { return strings.Count(n.Rel, "/") }
-func (n *Node) VaultPath() string {
-	if n.Vault == "" {
-		return ""
+// ID is the file name without extension.
+func (p *Project) ID() string { return strings.TrimSuffix(filepath.Base(p.Path), ".md") }
+
+// Category is the directory part of Rel, or "" at the top level.
+func (p *Project) Category() string {
+	if i := strings.LastIndex(p.Rel, "/"); i >= 0 {
+		return p.Rel[:i]
 	}
-	return home.Expand(n.Vault)
+	return ""
+}
+
+func (p *Project) VaultPath() string { return home.Expand(p.Vault) }
+
+// Problem is a markdown file under the tree that is not a valid project.
+type Problem struct {
+	Rel    string
+	Reason string
 }
 
 var slugPattern = regexp.MustCompile(`[^a-z0-9]+`)
 
-// Slugify derives a node id from a display name.
+// Slugify derives a file name from a display name.
 func Slugify(name string) (string, error) {
 	slug := strings.Trim(slugPattern.ReplaceAllString(strings.ToLower(name), "-"), "-")
 	if slug == "" {
-		return "", fmt.Errorf("cannot derive a node id from %q", name)
+		return "", fmt.Errorf("cannot derive a project id from %q", name)
 	}
 	return slug, nil
 }
@@ -92,145 +97,122 @@ func SplitFrontmatter(text string) (front, body string, ok bool) {
 	if strings.HasPrefix(rest, "---\n") {
 		return "", strings.TrimLeft(rest[4:], "\n"), true
 	}
-	if strings.HasPrefix(rest, "---") && len(rest) == 3 {
+	if rest == "---" {
 		return "", "", true
 	}
 	idx := strings.Index(rest, "\n---")
 	if idx < 0 {
 		return "", text, false
 	}
-	front = rest[:idx]
-	body = strings.TrimLeft(rest[idx+4:], "\n")
-	return front, body, true
+	return rest[:idx], strings.TrimLeft(rest[idx+4:], "\n"), true
 }
 
-// Load reads one node directory and validates it.
-func Load(dir, root string) (*Node, error) {
-	path := filepath.Join(dir, NodeFile)
+func relOf(root, path string) string {
+	rel, _ := filepath.Rel(root, path)
+	return strings.TrimSuffix(filepath.ToSlash(rel), ".md")
+}
+
+// Load reads and validates one project file.
+func Load(path, root string) (*Project, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 	front, body, ok := SplitFrontmatter(string(data))
 	if !ok {
-		return nil, fmt.Errorf("%s: missing frontmatter", path)
+		return nil, fmt.Errorf("missing frontmatter")
 	}
-	node := &Node{Dir: dir, Body: body}
-	if err := yaml.Unmarshal([]byte(front), &node.Frontmatter); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	rel, err := filepath.Rel(root, dir)
-	if err != nil {
+	p := &Project{Path: path, Rel: relOf(root, path), Body: body}
+	if err := yaml.Unmarshal([]byte(front), &p.Frontmatter); err != nil {
 		return nil, err
 	}
-	node.Rel = filepath.ToSlash(rel)
-	if node.Schema != NodeSchema {
-		return nil, fmt.Errorf("%s: unsupported schema %q", path, node.Schema)
+	if p.Schema != ProjectSchema {
+		return nil, fmt.Errorf("frontmatter needs `schema: %s`", ProjectSchema)
 	}
-	if node.Kind != "leaf" && node.Kind != "cluster" {
-		return nil, fmt.Errorf("%s: kind must be leaf or cluster", path)
+	if p.Vault == "" {
+		return nil, fmt.Errorf("frontmatter needs `vault: <path>`")
 	}
-	if node.Kind == "leaf" && node.Vault == "" {
-		return nil, fmt.Errorf("%s: a leaf must name a vault", path)
+	if p.Name == "" {
+		p.Name = p.ID()
 	}
-	if node.Kind == "cluster" && node.Vault != "" {
-		return nil, fmt.Errorf("%s: a cluster must not name a vault", path)
+	if p.Priority == "" {
+		p.Priority = "normal"
 	}
-	if node.Name == "" {
-		node.Name = node.ID()
+	if p.State == "" {
+		p.State = "active"
 	}
-	if node.Priority == "" {
-		node.Priority = "normal"
+	if !contains(Priorities, p.Priority) {
+		return nil, fmt.Errorf("priority must be one of %s", strings.Join(Priorities, ", "))
 	}
-	if node.State == "" {
-		node.State = "active"
+	if !contains(States, p.State) {
+		return nil, fmt.Errorf("state must be one of %s", strings.Join(States, ", "))
 	}
-	if !contains(Priorities, node.Priority) {
-		return nil, fmt.Errorf("%s: priority must be one of %s", path, strings.Join(Priorities, ", "))
-	}
-	if !contains(States, node.State) {
-		return nil, fmt.Errorf("%s: state must be one of %s", path, strings.Join(States, ", "))
-	}
-	return node, nil
+	return p, nil
 }
 
-// Walk lists every node below root, parents before children, and rejects two leaves on one vault.
-func Walk(root string) ([]*Node, error) {
-	var dirs []string
+// Walk lists every project under root, sorted by path. Invalid files are reported, not fatal.
+func Walk(root string) ([]*Project, []Problem, error) {
+	var files []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) && path == root {
+			if path == root {
 				return fs.SkipAll
 			}
 			return err
 		}
-		if !d.IsDir() && d.Name() == NodeFile && filepath.Dir(path) != root {
-			dirs = append(dirs, filepath.Dir(path))
+		if d.IsDir() && strings.HasPrefix(d.Name(), ".") && path != root {
+			return fs.SkipDir
+		}
+		if !d.IsDir() && strings.HasSuffix(d.Name(), ".md") {
+			files = append(files, path)
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	sort.Slice(dirs, func(i, j int) bool {
-		return relParts(root, dirs[i]) < relParts(root, dirs[j])
-	})
-	nodes := make([]*Node, 0, len(dirs))
-	byVault := map[string]*Node{}
-	for _, dir := range dirs {
-		node, err := Load(dir, root)
+	sort.Strings(files)
+	var projects []*Project
+	var problems []Problem
+	byVault := map[string]*Project{}
+	for _, file := range files {
+		p, err := Load(file, root)
 		if err != nil {
-			return nil, err
+			problems = append(problems, Problem{Rel: relOf(root, file), Reason: err.Error()})
+			continue
 		}
-		if vault := node.VaultPath(); vault != "" {
-			key := filepath.Clean(vault)
-			if other, dup := byVault[key]; dup {
-				return nil, fmt.Errorf("two leaves name the same vault %s: %s and %s", vault, other.Rel, node.Rel)
-			}
-			byVault[key] = node
+		key := filepath.Clean(p.VaultPath())
+		if other, dup := byVault[key]; dup {
+			problems = append(problems, Problem{Rel: p.Rel, Reason: fmt.Sprintf("names the same vault as %s", other.Rel)})
+			continue
 		}
-		nodes = append(nodes, node)
+		byVault[key] = p
+		projects = append(projects, p)
 	}
-	return nodes, nil
+	return projects, problems, nil
 }
 
-// relParts renders a path so that lexical order puts parents before children.
-func relParts(root, dir string) string {
-	rel, _ := filepath.Rel(root, dir)
-	return strings.ReplaceAll(filepath.ToSlash(rel), "/", "\x00")
-}
-
-func Leaves(nodes []*Node) []*Node {
-	var out []*Node
-	for _, n := range nodes {
-		if n.IsLeaf() {
-			out = append(out, n)
-		}
-	}
-	return out
-}
-
-func FindByVault(nodes []*Node, vault string) *Node {
+func FindByVault(projects []*Project, vault string) *Project {
 	target := filepath.Clean(vault)
-	for _, n := range nodes {
-		if v := n.VaultPath(); v != "" && filepath.Clean(v) == target {
-			return n
+	for _, p := range projects {
+		if filepath.Clean(p.VaultPath()) == target {
+			return p
 		}
 	}
 	return nil
 }
 
-func FindByRel(nodes []*Node, rel string) *Node {
-	rel = strings.Trim(rel, "/")
-	for _, n := range nodes {
-		if n.Rel == rel || n.ID() == rel {
-			return n
+func FindByRel(projects []*Project, rel string) *Project {
+	rel = strings.Trim(strings.TrimSuffix(rel, ".md"), "/")
+	for _, p := range projects {
+		if p.Rel == rel || p.ID() == rel {
+			return p
 		}
 	}
 	return nil
 }
 
-// Render produces the node.md text for a frontmatter and body.
+// Render produces the project file text for a frontmatter and body.
 func Render(front Frontmatter, body string) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteString("---\n")
@@ -244,86 +226,43 @@ func Render(front Frontmatter, body string) ([]byte, error) {
 	}
 	buf.WriteString("---\n")
 	if body != "" {
-		buf.WriteString("\n")
-		buf.WriteString(strings.TrimRight(body, "\n"))
-		buf.WriteString("\n")
+		buf.WriteString("\n" + strings.TrimRight(body, "\n") + "\n")
 	}
 	return buf.Bytes(), nil
 }
 
-func writeNode(dir string, front Frontmatter, body string) error {
-	data, err := Render(front, body)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, NodeFile), data, 0o644)
-}
-
-// EnsureClusters creates cluster nodes for each missing segment of parent and returns its directory.
-func EnsureClusters(root, parent string) (string, error) {
-	dir := root
-	for _, segment := range strings.Split(strings.Trim(parent, "/"), "/") {
-		if segment == "" {
-			continue
-		}
-		dir = filepath.Join(dir, segment)
-		if _, err := os.Stat(filepath.Join(dir, NodeFile)); err == nil {
-			existing, err := Load(dir, root)
-			if err != nil {
-				return "", err
-			}
-			if existing.IsLeaf() {
-				return "", fmt.Errorf("%s is a leaf and cannot hold children", existing.Rel)
-			}
-			continue
-		}
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return "", err
-		}
-		front := Frontmatter{Schema: NodeSchema, Kind: "cluster", Name: segment, Priority: "normal", State: "active", Repos: []string{}}
-		if err := writeNode(dir, front, "# "+segment+"\n"); err != nil {
-			return "", err
-		}
-	}
-	return dir, nil
-}
-
-// LeafOptions are the authored fields set when a leaf is created.
-type LeafOptions struct {
+// ProjectOptions are the authored fields set when a project is created.
+type ProjectOptions struct {
 	ID       string
 	Name     string
 	Vault    string
-	Parent   string
+	Category string
 	Purpose  string
 	Priority string
 }
 
-// CreateLeaf writes a new leaf node and its outputs directory; it returns the node directory.
-func CreateLeaf(root string, opts LeafOptions) (string, error) {
+// Create writes a new project file and returns its path. Missing category directories are created.
+func Create(root string, opts ProjectOptions) (string, error) {
 	if opts.Priority == "" {
 		opts.Priority = "normal"
 	}
 	if !contains(Priorities, opts.Priority) {
 		return "", fmt.Errorf("priority must be one of %s", strings.Join(Priorities, ", "))
 	}
-	container := root
-	if opts.Parent != "" {
-		var err error
-		if container, err = EnsureClusters(root, opts.Parent); err != nil {
-			return "", err
-		}
+	category := strings.Trim(filepath.ToSlash(opts.Category), "/")
+	if strings.Contains(category, "..") {
+		return "", fmt.Errorf("category %q must stay inside the tree", opts.Category)
 	}
-	dir := filepath.Join(container, opts.ID)
-	if _, err := os.Stat(filepath.Join(dir, NodeFile)); err == nil {
-		rel, _ := filepath.Rel(root, dir)
-		return "", fmt.Errorf("node %s already exists", filepath.ToSlash(rel))
+	dir := filepath.Join(root, filepath.FromSlash(category))
+	path := filepath.Join(dir, opts.ID+".md")
+	if _, err := os.Stat(path); err == nil {
+		return "", fmt.Errorf("project %s already exists", relOf(root, path))
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "outputs"), 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
 	front := Frontmatter{
-		Schema:   NodeSchema,
-		Kind:     "leaf",
+		Schema:   ProjectSchema,
 		Name:     opts.Name,
 		Vault:    opts.Vault,
 		Purpose:  opts.Purpose,
@@ -331,11 +270,15 @@ func CreateLeaf(root string, opts LeafOptions) (string, error) {
 		State:    "active",
 		Repos:    []string{},
 	}
-	body := "# " + opts.Name + "\n\nNotes about this project that belong to the atlas rather than the vault.\n"
-	if err := writeNode(dir, front, body); err != nil {
+	body := "# " + opts.Name + "\n\nNotes that belong to the atlas rather than the vault.\n"
+	data, err := Render(front, body)
+	if err != nil {
 		return "", err
 	}
-	return dir, nil
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // Unfinished counts work the vault still owes. nil means unknown.
@@ -345,10 +288,12 @@ type Unfinished struct {
 	DeadLinks     *int `json:"dead_links"`
 }
 
-// State is the derived half of a node, regenerated in full by refresh.
+// State is the derived half of a project, regenerated in full by refresh.
 type State struct {
 	Schema        string     `json:"schema"`
 	GeneratedAt   string     `json:"generated_at"`
+	Project       string     `json:"project"`
+	Vault         string     `json:"vault"`
 	VaultOK       bool       `json:"vault_ok"`
 	VaultError    string     `json:"vault_error"`
 	LastOperation string     `json:"last_operation"`
@@ -358,11 +303,15 @@ type State struct {
 	Pages         *int       `json:"pages"`
 	OpenThreads   []string   `json:"open_threads"`
 	Unfinished    Unfinished `json:"unfinished"`
-	Leaves        *int       `json:"leaves,omitempty"`
 }
 
-func ReadState(dir string) (*State, error) {
-	data, err := os.ReadFile(filepath.Join(dir, StateFile))
+// StatePath is where a project's derived state lives: the state dir mirrors the tree.
+func StatePath(stateDir, rel string) string {
+	return filepath.Join(stateDir, filepath.FromSlash(rel)+".json")
+}
+
+func ReadState(stateDir, rel string) (*State, error) {
+	data, err := os.ReadFile(StatePath(stateDir, rel))
 	if err != nil {
 		return nil, err
 	}
@@ -373,13 +322,17 @@ func ReadState(dir string) (*State, error) {
 	return &state, nil
 }
 
-func WriteState(dir string, state *State) error {
+func WriteState(stateDir, rel string, state *State) error {
 	if state.OpenThreads == nil {
 		state.OpenThreads = []string{}
+	}
+	path := StatePath(stateDir, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, StateFile), append(data, '\n'), 0o644)
+	return os.WriteFile(path, append(data, '\n'), 0o644)
 }

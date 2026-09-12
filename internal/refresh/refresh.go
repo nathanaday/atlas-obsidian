@@ -157,10 +157,12 @@ func baseState(generatedAt string) *tree.State {
 	return &tree.State{Schema: tree.StateSchema, GeneratedAt: generatedAt, OpenThreads: []string{}}
 }
 
-// DeriveLeaf observes one vault. A nil product records the vault as unverified.
-func DeriveLeaf(p *product.Product, node *tree.Node, today time.Time, generatedAt string) *tree.State {
+// Derive observes one project's vault. A nil product records the vault as unverified.
+func Derive(p *product.Product, project *tree.Project, today time.Time, generatedAt string) *tree.State {
 	state := baseState(generatedAt)
-	vault := node.VaultPath()
+	state.Project = project.Rel
+	vault := project.VaultPath()
+	state.Vault = vault
 	if _, err := os.Stat(filepath.Join(vault, ".claude-obsidian.json")); err != nil {
 		if _, err := os.Stat(vault); err != nil {
 			state.VaultError = "not found"
@@ -235,82 +237,36 @@ func sumPtr(values []*int) *int {
 	return ptr(total)
 }
 
-// DeriveCluster rolls children up: hottest heat, newest dates, summed counts.
-func DeriveCluster(children []*tree.State, generatedAt string) *tree.State {
-	state := baseState(generatedAt)
-	state.VaultOK = len(children) > 0
-	var pages, empty, seed, dead []*int
-	leaves := 0
-	for _, c := range children {
-		state.VaultOK = state.VaultOK && c.VaultOK
-		if c.LastOperation > state.LastOperation {
-			state.LastOperation = c.LastOperation
-		}
-		if c.LastTouched > state.LastTouched {
-			state.LastTouched = c.LastTouched
-		}
-		if c.DaysIdle != nil && (state.DaysIdle == nil || *c.DaysIdle < *state.DaysIdle) {
-			state.DaysIdle = ptr(*c.DaysIdle)
-		}
-		state.OpenThreads = append(state.OpenThreads, c.OpenThreads...)
-		pages = append(pages, c.Pages)
-		empty = append(empty, c.Unfinished.EmptySections)
-		seed = append(seed, c.Unfinished.SeedPages)
-		dead = append(dead, c.Unfinished.DeadLinks)
-		if c.Leaves != nil {
-			leaves += *c.Leaves
-		} else {
-			leaves++
-		}
-	}
-	if !state.VaultOK {
-		state.VaultError = "one or more vaults unreachable"
-	}
-	state.Heat = Heat(state.DaysIdle)
-	state.Pages = sumPtr(pages)
-	state.Unfinished = tree.Unfinished{EmptySections: sumPtr(empty), SeedPages: sumPtr(seed), DeadLinks: sumPtr(dead)}
-	state.Leaves = ptr(leaves)
-	return state
-}
-
-// Row pairs a node with its derived state.
+// Row pairs a project with its derived state.
 type Row struct {
-	Node  *tree.Node
-	State *tree.State
+	Project *tree.Project
+	State   *tree.State
 }
 
-// Tree derives and writes state for every node, leaves first, then clusters.
-func Tree(cfg *home.Config, p *product.Product, today time.Time, generatedAt string) ([]Row, error) {
-	nodes, err := tree.Walk(cfg.TreeRoot())
+// Result is one refresh: rows in tree order plus files that could not be read as projects.
+type Result struct {
+	Rows     []Row
+	Problems []tree.Problem
+}
+
+// Tree derives state for every project and rewrites the state directory from scratch.
+func Tree(cfg *home.Config, stateDir string, p *product.Product, today time.Time, generatedAt string) (*Result, error) {
+	projects, problems, err := tree.Walk(cfg.TreeRoot())
 	if err != nil {
 		return nil, err
 	}
-	states := map[string]*tree.State{}
-	order := append([]*tree.Node(nil), nodes...)
-	sort.SliceStable(order, func(i, j int) bool { return order[i].Depth() > order[j].Depth() })
-	for _, node := range order {
-		var state *tree.State
-		if node.IsLeaf() {
-			state = DeriveLeaf(p, node, today, generatedAt)
-		} else {
-			var children []*tree.State
-			for _, other := range nodes {
-				if strings.HasPrefix(other.Rel, node.Rel+"/") && other.Depth() == node.Depth()+1 {
-					children = append(children, states[other.Rel])
-				}
-			}
-			state = DeriveCluster(children, generatedAt)
-		}
-		if err := tree.WriteState(node.Dir, state); err != nil {
+	if err := os.RemoveAll(stateDir); err != nil {
+		return nil, err
+	}
+	rows := make([]Row, 0, len(projects))
+	for _, project := range projects {
+		state := Derive(p, project, today, generatedAt)
+		if err := tree.WriteState(stateDir, project.Rel, state); err != nil {
 			return nil, err
 		}
-		states[node.Rel] = state
+		rows = append(rows, Row{project, state})
 	}
-	rows := make([]Row, len(nodes))
-	for i, node := range nodes {
-		rows[i] = Row{node, states[node.Rel]}
-	}
-	return rows, nil
+	return &Result{Rows: rows, Problems: problems}, nil
 }
 
 var (
@@ -341,9 +297,9 @@ func unfinishedTotal(u tree.Unfinished) string {
 }
 
 // Signals crosses authored intent with derived state; these lines are the point of the page.
-func Signals(node *tree.Node, state *tree.State, today time.Time) []string {
+func Signals(node *tree.Project, state *tree.State, today time.Time) []string {
 	var notes []string
-	if !state.VaultOK && node.IsLeaf() {
+	if !state.VaultOK {
 		notes = append(notes, "vault unreachable: "+state.VaultError)
 	}
 	if state.Heat == "cold" && node.State == "active" && (node.Priority == "high" || node.Priority == "normal") {
@@ -367,17 +323,14 @@ func Signals(node *tree.Node, state *tree.State, today time.Time) []string {
 }
 
 // Render writes the overview page: callouts and tables, nothing else.
-func Render(rows []Row, generatedAt string, today time.Time) string {
+func Render(res *Result, generatedAt string, today time.Time) string {
+	rows := res.Rows
 	stamp, _ := time.Parse("2006-01-02T15:04:05Z", generatedAt)
-	var leafCount int
 	heats := map[string]int{}
 	for _, r := range rows {
-		if r.Node.IsLeaf() {
-			leafCount++
-			heats[r.State.Heat]++
-		}
+		heats[r.State.Heat]++
 	}
-	parts := []string{fmt.Sprintf("%d vault%s", leafCount, plural(leafCount))}
+	parts := []string{fmt.Sprintf("%d project%s", len(rows), plural(len(rows)))}
 	for _, h := range []string{"hot", "warm", "cold"} {
 		if heats[h] > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", heats[h], h))
@@ -389,68 +342,69 @@ func Render(rows []Row, generatedAt string, today time.Time) string {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "---\ntitle: Overview\ngenerated_at: %s\n---\n\n# Overview\n\n", generatedAt)
-	fmt.Fprintf(&b, "> [!info] Generated page\n> `claude-atlas refresh` rewrites this page from every registered vault. Edit intent in each project's `node.md` and refresh again; edits made here are lost.\n> **%s** · refreshed %s\n\n",
+	fmt.Fprintf(&b, "> [!info] Generated page\n> `claude-atlas refresh` rewrites this page from every project under `tree/`. Edit a project's own page and refresh again; edits made here are lost.\n> **%s** · refreshed %s\n\n",
 		strings.Join(parts, " · "), stamp.Local().Format("2006-01-02 15:04"))
 
-	b.WriteString("## All vaults\n\n")
-	b.WriteString("| Heat | Project | Priority | State | Idle | Pages | Threads | Unfinished |\n")
-	b.WriteString("|:--|:--|:--|:--|--:|--:|--:|--:|\n")
+	b.WriteString("## All projects\n\n")
+	b.WriteString("| Heat | Project | Category | Priority | State | Idle | Pages | Threads | Unfinished |\n")
+	b.WriteString("|:--|:--|:--|:--|:--|--:|--:|--:|--:|\n")
 	sorted := append([]Row(nil), rows...)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		a, c := sorted[i], sorted[j]
 		if heatOrder[a.State.Heat] != heatOrder[c.State.Heat] {
 			return heatOrder[a.State.Heat] < heatOrder[c.State.Heat]
 		}
-		if priorityOrder[a.Node.Priority] != priorityOrder[c.Node.Priority] {
-			return priorityOrder[a.Node.Priority] < priorityOrder[c.Node.Priority]
+		if priorityOrder[a.Project.Priority] != priorityOrder[c.Project.Priority] {
+			return priorityOrder[a.Project.Priority] < priorityOrder[c.Project.Priority]
 		}
-		return a.Node.Rel < c.Node.Rel
+		return a.Project.Rel < c.Project.Rel
 	})
 	for _, r := range sorted {
-		label := r.Node.Rel
-		if !r.Node.IsLeaf() {
-			label += "/"
-		}
-		fmt.Fprintf(&b, "| %s | [[tree/%s/node\\|%s]] | %s | %s | %s | %s | %d | %s |\n",
-			heatLabel(r.State.Heat), r.Node.Rel, label, r.Node.Priority, r.Node.State, idle(r.State),
+		fmt.Fprintf(&b, "| %s | [[tree/%s\\|%s]] | %s | %s | %s | %s | %s | %d | %s |\n",
+			heatLabel(r.State.Heat), r.Project.Rel, r.Project.Name, categoryLabel(r.Project.Category()),
+			r.Project.Priority, r.Project.State, idle(r.State),
 			intOr(r.State.Pages, "—"), len(r.State.OpenThreads), unfinishedTotal(r.State.Unfinished))
 	}
 
 	b.WriteString("\n## Signals\n\n")
 	flagged := 0
+	for _, problem := range res.Problems {
+		flagged++
+		fmt.Fprintf(&b, "> [!failure] tree/%s.md\n> Not a project: %s.\n\n", problem.Rel, problem.Reason)
+	}
 	for _, r := range rows {
-		for _, note := range Signals(r.Node, r.State, today) {
+		for _, note := range Signals(r.Project, r.State, today) {
 			flagged++
-			fmt.Fprintf(&b, "> [!%s] %s\n> %s\n\n", calloutFor(note), r.Node.Rel, capitalize(note))
+			fmt.Fprintf(&b, "> [!%s] %s\n> %s\n\n", calloutFor(note), r.Project.Rel, capitalize(note))
 		}
 	}
 	if flagged == 0 {
-		b.WriteString("> [!success] Nothing needs attention\n> No vault is cold against its declared priority, blocked, unreachable, or past its review date.\n\n")
+		b.WriteString("> [!success] Nothing needs attention\n> No project is cold against its declared priority, blocked, unreachable, or past its review date.\n\n")
 	}
 
-	b.WriteString("## Projects\n")
+	category := "\x00"
 	for _, r := range rows {
-		fmt.Fprintf(&b, "\n### %s\n\n", r.Node.Rel)
-		if r.Node.Purpose != "" {
-			title := r.Node.Name
-			if title == "" {
-				title = r.Node.ID()
+		if cat := r.Project.Category(); cat != category {
+			category = cat
+			if cat == "" {
+				b.WriteString("\n## Projects\n")
+			} else {
+				fmt.Fprintf(&b, "\n## %s\n", cat)
 			}
-			fmt.Fprintf(&b, "> [!abstract] %s\n> %s\n\n", title, strings.ReplaceAll(strings.TrimSpace(r.Node.Purpose), "\n", "\n> "))
+		}
+		fmt.Fprintf(&b, "\n### %s\n\n", r.Project.Name)
+		if r.Project.Purpose != "" {
+			fmt.Fprintf(&b, "> [!abstract] Purpose\n> %s\n\n", strings.ReplaceAll(strings.TrimSpace(r.Project.Purpose), "\n", "\n> "))
 		}
 		b.WriteString("| | |\n|:--|:--|\n")
-		if v := r.Node.VaultPath(); v != "" {
-			fmt.Fprintf(&b, "| Vault | `%s` |\n", home.Display(v))
-		} else {
-			fmt.Fprintf(&b, "| Cluster | %s vaults |\n", intOr(r.State.Leaves, "0"))
-		}
-		fmt.Fprintf(&b, "| Node | [[tree/%s/node\\|node.md]] |\n", r.Node.Rel)
-		fmt.Fprintf(&b, "| Priority | %s |\n| State | %s |\n", r.Node.Priority, r.Node.State)
-		if r.Node.BlockedOn != "" {
-			fmt.Fprintf(&b, "| Blocked on | %s |\n", r.Node.BlockedOn)
+		fmt.Fprintf(&b, "| Page | [[tree/%s\\|%s]] |\n", r.Project.Rel, r.Project.Rel)
+		fmt.Fprintf(&b, "| Vault | `%s` |\n", home.Display(r.Project.VaultPath()))
+		fmt.Fprintf(&b, "| Priority | %s |\n| State | %s |\n", r.Project.Priority, r.Project.State)
+		if r.Project.BlockedOn != "" {
+			fmt.Fprintf(&b, "| Blocked on | %s |\n", r.Project.BlockedOn)
 		}
 		switch {
-		case !r.State.VaultOK && r.Node.IsLeaf():
+		case !r.State.VaultOK:
 			fmt.Fprintf(&b, "| Heat | %s · %s |\n", heatLabel(""), r.State.VaultError)
 		case r.State.LastTouched != "":
 			fmt.Fprintf(&b, "| Heat | %s · last touched %s (%s) |\n", heatLabel(r.State.Heat), r.State.LastTouched, idle(r.State))
@@ -474,14 +428,14 @@ func Render(rows []Row, generatedAt string, today time.Time) string {
 			}
 			fmt.Fprintf(&b, "| Unfinished | %s |\n", strings.Join(bits, " · "))
 		}
-		if r.Node.ReviewAfter != "" {
-			fmt.Fprintf(&b, "| Review after | %s |\n", r.Node.ReviewAfter)
+		if r.Project.ReviewAfter != "" {
+			fmt.Fprintf(&b, "| Review after | %s |\n", r.Project.ReviewAfter)
 		}
-		if len(r.Node.Repos) > 0 {
-			fmt.Fprintf(&b, "| Repos | %s |\n", strings.Join(r.Node.Repos, " · "))
+		if len(r.Project.Repos) > 0 {
+			fmt.Fprintf(&b, "| Repos | %s |\n", strings.Join(r.Project.Repos, " · "))
 		}
-		if r.Node.DefinitionOfDone != "" {
-			fmt.Fprintf(&b, "\n> [!success] Done when\n> %s\n", strings.TrimSpace(r.Node.DefinitionOfDone))
+		if r.Project.DefinitionOfDone != "" {
+			fmt.Fprintf(&b, "\n> [!success] Done when\n> %s\n", strings.TrimSpace(r.Project.DefinitionOfDone))
 		}
 		if len(r.State.OpenThreads) > 0 {
 			b.WriteString("\n> [!todo] Open threads\n")
@@ -491,6 +445,13 @@ func Render(rows []Row, generatedAt string, today time.Time) string {
 		}
 	}
 	return b.String()
+}
+
+func categoryLabel(category string) string {
+	if category == "" {
+		return "—"
+	}
+	return category
 }
 
 func heatLabel(heat string) string {
@@ -533,10 +494,10 @@ func plural(n int) string {
 	return "s"
 }
 
-// Run refreshes every node and writes Overview.md; it returns the page path and rows.
-func Run(cfg *home.Config, p *product.Product, today time.Time) (string, []Row, error) {
+// Run refreshes every project and writes Overview.md; it returns the page path and the result.
+func Run(cfg *home.Config, stateDir string, p *product.Product, today time.Time) (string, *Result, error) {
 	generatedAt := product.NowUTC()
-	rows, err := Tree(cfg, p, today, generatedAt)
+	res, err := Tree(cfg, stateDir, p, today, generatedAt)
 	if err != nil {
 		return "", nil, err
 	}
@@ -544,8 +505,8 @@ func Run(cfg *home.Config, p *product.Product, today time.Time) (string, []Row, 
 		return "", nil, err
 	}
 	page := filepath.Join(cfg.AtlasVault, "Overview.md")
-	if err := os.WriteFile(page, []byte(Render(rows, generatedAt, today)), 0o644); err != nil {
+	if err := os.WriteFile(page, []byte(Render(res, generatedAt, today)), 0o644); err != nil {
 		return "", nil, err
 	}
-	return page, rows, nil
+	return page, res, nil
 }

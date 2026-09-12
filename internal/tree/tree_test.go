@@ -9,15 +9,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func rels(nodes []*Node) []string {
-	out := make([]string, len(nodes))
-	for i, n := range nodes {
-		out[i] = n.Rel
+func rels(projects []*Project) string {
+	out := make([]string, len(projects))
+	for i, p := range projects {
+		out[i] = p.Rel
 	}
-	return out
+	return strings.Join(out, ",")
 }
-
-func equal(a, b []string) bool { return strings.Join(a, ",") == strings.Join(b, ",") }
 
 func TestSlugify(t *testing.T) {
 	got, err := Slugify("Sensor Triage (2026)")
@@ -29,130 +27,136 @@ func TestSlugify(t *testing.T) {
 	}
 }
 
-func TestCreateLeafUnderParentCreatesClusters(t *testing.T) {
+func TestCreateUnderCategoryMakesDirectories(t *testing.T) {
 	root := t.TempDir()
-	dir, err := CreateLeaf(root, LeafOptions{ID: "triage", Name: "Triage", Vault: "/v", Parent: "technical/work"})
+	path, err := Create(root, ProjectOptions{ID: "capstone", Name: "Capstone", Vault: "/v", Category: "university/cs566"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dir != filepath.Join(root, "technical", "work", "triage") {
-		t.Fatalf("unexpected dir %s", dir)
+	if path != filepath.Join(root, "university", "cs566", "capstone.md") {
+		t.Fatalf("unexpected path %s", path)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "outputs")); err != nil {
-		t.Fatal("outputs directory missing")
+	projects, problems, err := Walk(root)
+	if err != nil || len(problems) != 0 {
+		t.Fatalf("walk: %v %v", err, problems)
 	}
-	nodes, err := Walk(root)
-	if err != nil {
-		t.Fatal(err)
+	if rels(projects) != "university/cs566/capstone" {
+		t.Fatalf("got %s", rels(projects))
 	}
-	if !equal(rels(nodes), []string{"technical", "technical/work", "technical/work/triage"}) {
-		t.Fatalf("order %v", rels(nodes))
-	}
-	if nodes[0].Kind != "cluster" || nodes[2].Kind != "leaf" || nodes[2].VaultPath() != "/v" {
-		t.Fatalf("kinds %s %s vault %s", nodes[0].Kind, nodes[2].Kind, nodes[2].VaultPath())
-	}
-	if len(Leaves(nodes)) != 1 {
-		t.Fatal("expected one leaf")
+	p := projects[0]
+	if p.ID() != "capstone" || p.Category() != "university/cs566" || p.Name != "Capstone" || p.VaultPath() != "/v" {
+		t.Fatalf("got %+v", p)
 	}
 }
 
-func TestWalkOrdersParentsBeforeChildrenRegardlessOfNames(t *testing.T) {
+func TestWalkSortsAndSkipsHiddenDirectories(t *testing.T) {
 	root := t.TempDir()
-	if _, err := CreateLeaf(root, LeafOptions{ID: "alpha", Name: "alpha", Vault: "/v1", Parent: "area"}); err != nil {
-		t.Fatal(err)
+	for _, spec := range []struct{ id, cat, vault string }{{"zeta", "", "/1"}, {"alpha", "b", "/2"}, {"mid", "a", "/3"}} {
+		if _, err := Create(root, ProjectOptions{ID: spec.id, Name: spec.id, Vault: spec.vault, Category: spec.cat}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err := CreateLeaf(root, LeafOptions{ID: "zeta", Name: "zeta", Vault: "/v2", Parent: "area/deep"}); err != nil {
-		t.Fatal(err)
+	os.MkdirAll(filepath.Join(root, ".obsidian"), 0o755)
+	os.WriteFile(filepath.Join(root, ".obsidian", "note.md"), []byte("x"), 0o644)
+	projects, problems, err := Walk(root)
+	if err != nil || len(problems) != 0 {
+		t.Fatalf("walk: %v %v", err, problems)
 	}
-	nodes, err := Walk(root)
-	if err != nil {
-		t.Fatal(err)
+	if rels(projects) != "a/mid,b/alpha,zeta" {
+		t.Fatalf("order %s", rels(projects))
 	}
-	if !equal(rels(nodes), []string{"area", "area/alpha", "area/deep", "area/deep/zeta"}) {
-		t.Fatalf("order %v", rels(nodes))
+	if p := projects[2]; p.Category() != "" {
+		t.Fatalf("top-level category should be empty, got %q", p.Category())
 	}
 }
 
-func TestCreateLeafRefusesDuplicateAndWalkRejectsSharedVault(t *testing.T) {
+func TestCreateRefusesDuplicateAndEscape(t *testing.T) {
 	root := t.TempDir()
-	if _, err := CreateLeaf(root, LeafOptions{ID: "a", Name: "a", Vault: "/v"}); err != nil {
+	if _, err := Create(root, ProjectOptions{ID: "a", Name: "a", Vault: "/v"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CreateLeaf(root, LeafOptions{ID: "a", Name: "a", Vault: "/v2"}); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if _, err := Create(root, ProjectOptions{ID: "a", Name: "a", Vault: "/v2"}); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected duplicate error, got %v", err)
 	}
-	if _, err := CreateLeaf(root, LeafOptions{ID: "b", Name: "b", Vault: "/v"}); err != nil {
+	if _, err := Create(root, ProjectOptions{ID: "b", Name: "b", Vault: "/v", Category: "../out"}); err == nil {
+		t.Fatal("expected escape error")
+	}
+	if _, err := Create(root, ProjectOptions{ID: "b", Name: "b", Vault: "/v", Priority: "urgent"}); err == nil {
+		t.Fatal("expected priority error")
+	}
+}
+
+func TestWalkReportsProblemsInsteadOfFailing(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Create(root, ProjectOptions{ID: "good", Name: "good", Vault: "/v"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Walk(root); err == nil || !strings.Contains(err.Error(), "same vault") {
-		t.Fatalf("expected shared vault error, got %v", err)
+	if _, err := Create(root, ProjectOptions{ID: "twin", Name: "twin", Vault: "/v"}); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(root, "plain.md"), []byte("# just notes\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "novault.md"), []byte("---\nschema: atlas.project.v1\n---\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "badprio.md"), []byte("---\nschema: atlas.project.v1\nvault: /x\npriority: urgent\n---\n"), 0o644)
+	projects, problems, err := Walk(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rels(projects) != "good" {
+		t.Fatalf("projects %s", rels(projects))
+	}
+	got := map[string]string{}
+	for _, p := range problems {
+		got[p.Rel] = p.Reason
+	}
+	for rel, want := range map[string]string{"plain": "missing frontmatter", "novault": "vault", "badprio": "priority", "twin": "same vault as good"} {
+		if !strings.Contains(got[rel], want) {
+			t.Errorf("%s: want %q in %q", rel, want, got[rel])
+		}
 	}
 }
 
 func TestWalkOfMissingRootIsEmpty(t *testing.T) {
-	nodes, err := Walk(filepath.Join(t.TempDir(), "absent"))
-	if err != nil || len(nodes) != 0 {
-		t.Fatalf("got %v, %v", nodes, err)
+	projects, problems, err := Walk(filepath.Join(t.TempDir(), "absent"))
+	if err != nil || len(projects) != 0 || len(problems) != 0 {
+		t.Fatalf("got %v %v %v", projects, problems, err)
 	}
 }
 
 func TestFindHelpers(t *testing.T) {
 	root := t.TempDir()
-	if _, err := CreateLeaf(root, LeafOptions{ID: "a", Name: "a", Vault: "/v", Parent: "x"}); err != nil {
+	if _, err := Create(root, ProjectOptions{ID: "a", Name: "a", Vault: "/v", Category: "x"}); err != nil {
 		t.Fatal(err)
 	}
-	nodes, _ := Walk(root)
-	if FindByVault(nodes, "/v").Rel != "x/a" || FindByRel(nodes, "x/a").ID() != "a" || FindByRel(nodes, "a").Rel != "x/a" {
+	projects, _, _ := Walk(root)
+	if FindByVault(projects, "/v").Rel != "x/a" || FindByRel(projects, "x/a").ID() != "a" || FindByRel(projects, "a").Rel != "x/a" || FindByRel(projects, "x/a.md").Rel != "x/a" {
 		t.Fatal("lookup failed")
 	}
-	if FindByRel(nodes, "missing") != nil || FindByVault(nodes, "/nope") != nil {
+	if FindByRel(projects, "missing") != nil || FindByVault(projects, "/nope") != nil {
 		t.Fatal("expected nil for unknown")
-	}
-}
-
-func TestLoadValidates(t *testing.T) {
-	cases := map[string]string{
-		"schema: nope\nkind: leaf\nvault: /v\n":                            "unsupported schema",
-		"schema: atlas.node.v1\nkind: leaf\n":                              "must name a vault",
-		"schema: atlas.node.v1\nkind: cluster\nvault: /v\n":                "must not name",
-		"schema: atlas.node.v1\nkind: leaf\nvault: /v\npriority: urgent\n": "priority",
-		"schema: atlas.node.v1\nkind: leaf\nvault: /v\nstate: done\n":      "state",
-		"schema: atlas.node.v1\nkind: bucket\n":                            "kind",
-	}
-	for front, want := range cases {
-		root := t.TempDir()
-		dir := filepath.Join(root, "n")
-		os.MkdirAll(dir, 0o755)
-		os.WriteFile(filepath.Join(dir, NodeFile), []byte("---\n"+front+"---\n"), 0o644)
-		_, err := Load(dir, root)
-		if err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("%q: expected %q, got %v", front, want, err)
-		}
 	}
 }
 
 func TestLoadDefaultsAndBody(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, "n")
-	os.MkdirAll(dir, 0o755)
-	os.WriteFile(filepath.Join(dir, NodeFile), []byte("---\nschema: atlas.node.v1\nkind: leaf\nvault: ~/v\n---\n\n# Notes\n"), 0o644)
-	node, err := Load(dir, root)
+	path := filepath.Join(root, "n.md")
+	os.WriteFile(path, []byte("---\nschema: atlas.project.v1\nvault: ~/v\n---\n\n# Notes\n"), 0o644)
+	p, err := Load(path, root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if node.Name != "n" || node.Priority != "normal" || node.State != "active" {
-		t.Fatalf("defaults not applied: %+v", node.Frontmatter)
+	if p.Name != "n" || p.Priority != "normal" || p.State != "active" || p.Rel != "n" {
+		t.Fatalf("defaults not applied: %+v", p)
 	}
-	if strings.HasPrefix(node.VaultPath(), "~") {
+	if strings.HasPrefix(p.VaultPath(), "~") {
 		t.Fatal("vault path not expanded")
 	}
-	if node.Body != "# Notes\n" {
-		t.Fatalf("body %q", node.Body)
+	if p.Body != "# Notes\n" {
+		t.Fatalf("body %q", p.Body)
 	}
 }
 
 func TestRenderRoundTrip(t *testing.T) {
-	front := Frontmatter{Schema: NodeSchema, Kind: "leaf", Name: "N: with colon", Vault: "/v", Purpose: "Two\nlines", Priority: "high", State: "blocked", BlockedOn: "hw", Repos: []string{"https://x"}}
+	front := Frontmatter{Schema: ProjectSchema, Name: "N: with colon", Vault: "/v", Purpose: "Two\nlines", Priority: "high", State: "blocked", BlockedOn: "hw", Repos: []string{"https://x"}}
 	data, err := Render(front, "body")
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +178,7 @@ func TestSplitFrontmatter(t *testing.T) {
 	if _, body, ok := SplitFrontmatter("no front\n"); ok || body != "no front\n" {
 		t.Fatal("plain text should not split")
 	}
-	if front, body, ok := SplitFrontmatter("---\n---\nrest\n"); !ok || front != "" || body != "rest\n" {
+	if front, body, ok := SplitFrontmatter("---\n---\n\nrest\n"); !ok || front != "" || body != "rest\n" {
 		t.Fatalf("empty front: %q %q %v", front, body, ok)
 	}
 	if front, _, ok := SplitFrontmatter("---\na: 1\n---"); !ok || front != "a: 1" {
@@ -182,17 +186,20 @@ func TestSplitFrontmatter(t *testing.T) {
 	}
 }
 
-func TestStateRoundTrip(t *testing.T) {
+func TestStateRoundTripMirrorsTree(t *testing.T) {
 	dir := t.TempDir()
 	one := 1
-	if err := WriteState(dir, &State{Schema: StateSchema, Heat: "hot", DaysIdle: &one}); err != nil {
+	if err := WriteState(dir, "uni/cs566/capstone", &State{Schema: StateSchema, Heat: "hot", DaysIdle: &one}); err != nil {
 		t.Fatal(err)
 	}
-	state, err := ReadState(dir)
+	if _, err := os.Stat(filepath.Join(dir, "uni", "cs566", "capstone.json")); err != nil {
+		t.Fatal("state file not where expected")
+	}
+	state, err := ReadState(dir, "uni/cs566/capstone")
 	if err != nil || state.Heat != "hot" || *state.DaysIdle != 1 || state.OpenThreads == nil || state.Pages != nil {
 		t.Fatalf("got %+v, %v", state, err)
 	}
-	if _, err := ReadState(t.TempDir()); err == nil {
+	if _, err := ReadState(dir, "missing"); err == nil {
 		t.Fatal("expected error for missing state")
 	}
 }

@@ -84,7 +84,7 @@ Create a vault. It lands in your vaults directory, the plan is shown, you
 confirm once, and the vault is registered in the atlas:
 
 ```bash
-claude-atlas vault new sensor-triage --parent work --purpose "Sort field sensor faults."
+claude-atlas vault new sensor-triage --category work --purpose "Sort field sensor faults."
 ```
 
 Register a vault you already have:
@@ -121,31 +121,34 @@ claude-atlas doctor
 ## What the atlas holds
 
 ```
-~/.claude-atlas/config.json   paths, plugin id, marketplace; you rarely open this
-
 ~/Documents/Atlas/            an Obsidian vault; open it like any other
-├── Overview.md               generated: every vault, its heat, threads, and signals
+├── Overview.md               generated: every project, its heat, threads, and signals
 ├── About.md                  orientation: what each part of the atlas is
 ├── Reference.md              every claude-atlas command with examples
-└── tree/
-    └── work/
-        └── sensor-triage/
-            ├── node.md       you write this: purpose, priority, blockers
-            ├── state.json    refresh writes this: heat, idle days, counts
-            └── outputs/      decks, images, exports for this project
+└── tree/                     yours: folders are categories, files are projects
+    ├── university/
+    │   └── cs566/
+    │       ├── capstone.md
+    │       └── course-material.md
+    └── personal/
+        └── reading-list.md
 
 ~/Documents/Vaults/           where `vault new` puts each vault
+
+~/.claude-atlas/              internal; you rarely open this
+├── config.json               paths, plugin id, marketplace
+└── state/                    derived state per project, mirroring tree/; safe to delete
 ```
 
-`node.md` is intent. Its frontmatter holds the fields the atlas reads, so you
-can edit priority and state in Obsidian's property panel; the body is yours.
-`state.json` is observation. They are separate files so a stale tracker can
-never masquerade as a fresh one. The most useful line on the atlas page is
-where the two disagree: a vault you marked `high` that has been cold for six
-weeks.
+Each project page is intent. Its frontmatter holds the fields the atlas
+reads, so you edit priority and state in Obsidian's property panel; the body
+is yours. The derived state lives outside the vault and is rebuilt on every
+refresh, so a stale tracker can never masquerade as a fresh one. The most
+useful line on the overview is where the two disagree: a project you marked
+`high` whose vault has been cold for six weeks.
 
-The tree is plain directories. To move a project under a different area, `mv`
-its directory and run `refresh`.
+Arrange `tree/` however you think: make folders, nest them, move files
+between them. Run `refresh` afterward.
 
 ## Configuration
 

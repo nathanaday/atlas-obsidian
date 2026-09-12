@@ -58,16 +58,16 @@ func Create(p *product.Product, path string, c *console.Console, confirm bool) e
 	return p.InitApply(path, generatedAt, operation, plan.Approval)
 }
 
-// RegisterOptions are the authored fields for a new leaf.
+// RegisterOptions are the authored fields for a new project.
 type RegisterOptions struct {
 	Name     string
-	Parent   string
+	Category string
 	Purpose  string
 	Priority string
 }
 
-// Register adds a leaf pointing at an existing claude-obsidian vault.
-func Register(cfg *home.Config, vault string, opts RegisterOptions) (*tree.Node, error) {
+// Register adds a project page pointing at an existing claude-obsidian vault.
+func Register(cfg *home.Config, vault string, opts RegisterOptions) (*tree.Project, error) {
 	vault, err := filepath.Abs(home.Expand(vault))
 	if err != nil {
 		return nil, err
@@ -76,11 +76,11 @@ func Register(cfg *home.Config, vault string, opts RegisterOptions) (*tree.Node,
 		return nil, fmt.Errorf("%s is not a claude-obsidian vault (no .claude-obsidian.json)", home.Display(vault))
 	}
 	root := cfg.TreeRoot()
-	nodes, err := tree.Walk(root)
+	projects, _, err := tree.Walk(root)
 	if err != nil {
 		return nil, err
 	}
-	if existing := tree.FindByVault(nodes, vault); existing != nil {
+	if existing := tree.FindByVault(projects, vault); existing != nil {
 		return nil, fmt.Errorf("%s is already registered as %s", home.Display(vault), existing.Rel)
 	}
 	name := opts.Name
@@ -91,11 +91,11 @@ func Register(cfg *home.Config, vault string, opts RegisterOptions) (*tree.Node,
 	if err != nil {
 		return nil, err
 	}
-	dir, err := tree.CreateLeaf(root, tree.LeafOptions{
-		ID: id, Name: name, Vault: vault, Parent: opts.Parent, Purpose: opts.Purpose, Priority: opts.Priority,
+	path, err := tree.Create(root, tree.ProjectOptions{
+		ID: id, Name: name, Vault: vault, Category: opts.Category, Purpose: opts.Purpose, Priority: opts.Priority,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return tree.Load(dir, root)
+	return tree.Load(path, root)
 }

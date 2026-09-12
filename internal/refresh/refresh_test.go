@@ -29,8 +29,8 @@ func fakeVault(t *testing.T, log, hot string, pages map[string]string) string {
 	return vault
 }
 
-func leaf(vault string) *tree.Node {
-	return &tree.Node{Dir: "/x", Rel: "x", Frontmatter: tree.Frontmatter{Kind: "leaf", Vault: vault, Priority: "normal", State: "active"}}
+func leaf(vault string) *tree.Project {
+	return &tree.Project{Path: "/x.md", Rel: "x", Frontmatter: tree.Frontmatter{Name: "x", Vault: vault, Priority: "normal", State: "active"}}
 }
 
 func TestHeat(t *testing.T) {
@@ -82,20 +82,20 @@ func TestPlainTextStripsWikilinks(t *testing.T) {
 	}
 }
 
-func TestDeriveLeafMarksMissingVault(t *testing.T) {
-	state := DeriveLeaf(nil, leaf(filepath.Join(t.TempDir(), "nope")), today, "t")
+func TestDeriveMarksMissingVault(t *testing.T) {
+	state := Derive(nil, leaf(filepath.Join(t.TempDir(), "nope")), today, "t")
 	if state.VaultOK || state.VaultError != "not found" || state.Heat != "" {
 		t.Fatalf("got %+v", state)
 	}
 	plain := t.TempDir()
-	if state := DeriveLeaf(nil, leaf(plain), today, "t"); state.VaultError != "not a claude-obsidian vault" {
+	if state := Derive(nil, leaf(plain), today, "t"); state.VaultError != "not a claude-obsidian vault" {
 		t.Fatalf("got %+v", state)
 	}
 }
 
-func TestDeriveLeafTakesLaterOfLogAndMtime(t *testing.T) {
+func TestDeriveTakesLaterOfLogAndMtime(t *testing.T) {
 	vault := fakeVault(t, "## 2026-08-01 — old\n", "", nil)
-	state := DeriveLeaf(nil, leaf(vault), time.Now(), "t")
+	state := Derive(nil, leaf(vault), time.Now(), "t")
 	if state.LastOperation != "2026-08-01" || state.LastTouched != time.Now().Format("2006-01-02") {
 		t.Fatalf("got %+v", state)
 	}
@@ -108,21 +108,6 @@ func TestDeriveLeafTakesLaterOfLogAndMtime(t *testing.T) {
 }
 
 func p(v int) *int { return &v }
-
-func TestDeriveClusterRollsUp(t *testing.T) {
-	hot := &tree.State{VaultOK: true, LastOperation: "2026-09-01", LastTouched: "2026-09-10", DaysIdle: p(1), Pages: p(4), OpenThreads: []string{"a"}, Unfinished: tree.Unfinished{EmptySections: p(1), SeedPages: p(0)}}
-	cold := &tree.State{VaultOK: true, LastTouched: "2026-07-01", DaysIdle: p(72), Pages: p(10), OpenThreads: []string{"b", "c"}, Unfinished: tree.Unfinished{EmptySections: p(2), SeedPages: p(3)}, Leaves: p(2)}
-	state := DeriveCluster([]*tree.State{hot, cold}, "t")
-	if !state.VaultOK || state.Heat != "hot" || *state.DaysIdle != 1 || state.LastOperation != "2026-09-01" || state.LastTouched != "2026-09-10" {
-		t.Fatalf("got %+v", state)
-	}
-	if *state.Pages != 14 || len(state.OpenThreads) != 3 || *state.Unfinished.EmptySections != 3 || *state.Unfinished.SeedPages != 3 || state.Unfinished.DeadLinks != nil || *state.Leaves != 3 {
-		t.Fatalf("got %+v", state)
-	}
-	if empty := DeriveCluster(nil, "t"); empty.VaultOK {
-		t.Fatal("empty cluster should not be ok")
-	}
-}
 
 func TestSignals(t *testing.T) {
 	node := leaf("/v")
@@ -142,11 +127,13 @@ func TestRenderListsRowsAndSignals(t *testing.T) {
 	node := leaf("/Users/me/v")
 	node.Rel, node.Purpose = "work/v", "Why."
 	state := &tree.State{VaultOK: true, LastTouched: "2026-08-01", DaysIdle: p(41), Heat: "cold", Pages: p(3), OpenThreads: []string{"thread [[one]]"}, Unfinished: tree.Unfinished{EmptySections: p(1), SeedPages: p(2), DeadLinks: p(0)}}
-	page := Render([]Row{{node, state}}, "2026-09-11T20:00:00Z", today)
+	res := &Result{Rows: []Row{{node, state}}, Problems: []tree.Problem{{Rel: "stray", Reason: "missing frontmatter"}}}
+	page := Render(res, "2026-09-11T20:00:00Z", today)
 	for _, want := range []string{
-		"| ❄️ cold | [[tree/work/v/node\\|work/v]] | normal | active | 41d | 3 | 1 | 3 |",
+		"| ❄️ cold | [[tree/work/v\\|x]] | work | normal | active | 41d | 3 | 1 | 3 |",
 		"| Vault | `/Users/me/v` |",
-		"## Signals", "> [!warning] work/v", "cold for 41 days", "### work/v", "> [!abstract] x\n> Why.", "> - thread one",
+		"## Signals", "> [!failure] tree/stray.md\n> Not a project: missing frontmatter.", "> [!warning] work/v", "cold for 41 days",
+		"## work\n\n### x\n\n> [!abstract] Purpose\n> Why.", "> - thread one",
 		"| Unfinished | 1 empty sections · 2 seed pages · 0 dead links |",
 	} {
 		if !strings.Contains(page, want) {
@@ -164,27 +151,29 @@ func TestRunAgainstARealVault(t *testing.T) {
 	if err := vaults.Create(prod, vault, console.NewWith(true, strings.NewReader(""), os.Stderr, false), false); err != nil {
 		t.Fatal(err)
 	}
-	node, err := vaults.Register(cfg, vault, vaults.RegisterOptions{Parent: "area"})
+	project, err := vaults.Register(cfg, vault, vaults.RegisterOptions{Category: "area"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, rows, err := Run(cfg, prod, time.Now())
+	stateDir := filepath.Join(root, "state")
+	os.MkdirAll(stateDir, 0o755)
+	os.WriteFile(filepath.Join(stateDir, "stale.json"), []byte("{}"), 0o644)
+	page, res, err := Run(cfg, stateDir, prod, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	state, err := tree.ReadState(node.Dir)
+	state, err := tree.ReadState(stateDir, project.Rel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !state.VaultOK || *state.Pages != 4 || state.Heat != "hot" || len(state.OpenThreads) != 1 || *state.Unfinished.EmptySections != 0 {
+	if !state.VaultOK || *state.Pages != 4 || state.Heat != "hot" || len(state.OpenThreads) != 1 || *state.Unfinished.EmptySections != 0 || state.Project != "area/fresh" {
 		t.Fatalf("state %+v", state)
 	}
-	cluster, _ := tree.ReadState(filepath.Join(cfg.TreeRoot(), "area"))
-	if cluster == nil || *cluster.Leaves != 1 || *cluster.Pages != 4 {
-		t.Fatalf("cluster %+v", cluster)
+	if _, err := os.Stat(filepath.Join(stateDir, "stale.json")); err == nil {
+		t.Fatal("stale state should be pruned")
 	}
 	text, _ := os.ReadFile(page)
-	if filepath.Base(page) != "Overview.md" || !strings.Contains(string(text), "[[tree/area/fresh/node\\|area/fresh]]") || len(rows) != 2 {
+	if filepath.Base(page) != "Overview.md" || !strings.Contains(string(text), "[[tree/area/fresh\\|fresh]]") || len(res.Rows) != 1 {
 		t.Fatalf("page:\n%s", text)
 	}
 }
