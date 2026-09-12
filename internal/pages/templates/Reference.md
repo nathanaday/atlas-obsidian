@@ -32,6 +32,18 @@ claude-atlas new-vault my-project --category university/cs566
 claude-atlas refresh
 ```
 
+**Open a vault in Obsidian**
+
+> Opens the atlas with no argument, or a project's vault by name. If Obsidian does not know the folder yet, it offers to register it, and to restart Obsidian so the new entry is seen.
+
+```bash
+claude-atlas open-vault
+```
+
+```bash
+claude-atlas open-vault my-project
+```
+
 **View the atlas**
 
 > Navigate your projects as a tree, three category layers at a time; deeper categories open on Enter. Open a project to see everything the atlas knows about it.

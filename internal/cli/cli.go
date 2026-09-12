@@ -14,6 +14,7 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/claudecode"
 	"github.com/nathanaday/claude-atlas/internal/console"
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/obsidian"
 	"github.com/nathanaday/claude-atlas/internal/pages"
 	"github.com/nathanaday/claude-atlas/internal/product"
 	"github.com/nathanaday/claude-atlas/internal/refresh"
@@ -38,6 +39,7 @@ Commands:
   new-vault --from PATH  register a claude-obsidian vault that already exists
   view                   navigate the atlas as a tree; open a project for every detail
   manage-vaults          browse every project by category; rename, move, repoint, or remove
+  open-vault [NAME]      open the atlas, or a project's vault, in Obsidian
   list                   list every project
   refresh                read every vault and rewrite Overview.md
   info                   show every path and version the atlas uses
@@ -96,6 +98,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.view(rest[1:])
 	case "manage-vaults":
 		code, err = e.manageVaults(rest[1:])
+	case "open-vault":
+		code, err = e.openVault(rest[1:])
 	case "list":
 		code, err = e.list(rest[1:])
 	case "refresh":
@@ -345,6 +349,96 @@ func (e *env) manageVaults(args []string) (int, error) {
 		return 1, err
 	}
 	e.console.Step(console.OK, "refreshed", home.Display(page))
+	return 0, nil
+}
+
+// resolveVault turns an open-vault argument into a directory: nothing means the atlas,
+// a project name or tree path means its vault, and anything else is taken as a path.
+func resolveVault(cfg *home.Config, projects []*tree.Project, arg string) (string, string, error) {
+	if arg == "" {
+		return cfg.AtlasVault, "the atlas", nil
+	}
+	if p := tree.FindByRel(projects, arg); p != nil {
+		return p.VaultPath(), p.Name, nil
+	}
+	path, err := filepath.Abs(home.Expand(arg))
+	if err != nil {
+		return "", "", err
+	}
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return path, filepath.Base(path), nil
+	}
+	return "", "", fmt.Errorf("%q is neither a project nor a directory", arg)
+}
+
+func (e *env) openVault(args []string) (int, error) {
+	fs := newFlags("open-vault", e.stderr)
+	yes := fs.Bool("register", false, "register the vault with Obsidian without asking")
+	positional, err := parse(fs, args)
+	if err != nil {
+		return 2, nil
+	}
+	if len(positional) > 1 {
+		return 2, errors.New("usage: claude-atlas open-vault [NAME | PATH]")
+	}
+	cfg, err := e.home.Load()
+	if err != nil {
+		return 1, err
+	}
+	projects, _, err := tree.Walk(cfg.TreeRoot())
+	if err != nil {
+		return 1, err
+	}
+	arg := ""
+	if len(positional) == 1 {
+		arg = positional[0]
+	}
+	vault, label, err := resolveVault(cfg, projects, arg)
+	if err != nil {
+		return 1, err
+	}
+	c := e.console
+	reg, err := obsidian.LoadRegistry()
+	if err != nil {
+		return 1, err
+	}
+	if _, _, known := reg.Find(vault); !known {
+		c.Say("Obsidian does not know %s yet (%s).", label, home.Display(vault))
+		ok := *yes
+		if !ok {
+			ok, err = c.Confirm("Register it as a vault?", true)
+			if err != nil {
+				return 1, err
+			}
+		}
+		if !ok {
+			return 1, vaults.ErrCancelled
+		}
+		if _, err := reg.Register(vault); err != nil {
+			return 1, err
+		}
+		c.Step(console.OK, "registered", home.Display(vault))
+		if obsidian.Running() {
+			c.Say("Obsidian reads its vault list only when it starts.")
+			restart, err := c.Confirm("Restart Obsidian now?", true)
+			if err != nil {
+				return 1, err
+			}
+			if !restart {
+				c.Say("Restart Obsidian, then run this command again to open it.")
+				return 0, nil
+			}
+			if err := obsidian.Restart(); err != nil {
+				return 1, err
+			}
+			c.Step(console.OK, "restarted", "Obsidian")
+		}
+	}
+	if !obsidian.Open(vault) {
+		c.Say("Could not launch Obsidian. Open this link by hand: %s", obsidian.OpenURI(vault))
+		return 1, nil
+	}
+	c.Step(console.OK, "opened", fmt.Sprintf("%s in Obsidian", label))
 	return 0, nil
 }
 

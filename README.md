@@ -74,9 +74,9 @@ The claude-obsidian step runs the two commands from that project's own install
 guide: `claude plugin marketplace add` and `claude plugin install`. The plugin
 carries the whole product, skills and CLI alike, so nothing else is fetched.
 
-When setup finishes it prints the atlas path and your first vault's path. Open
-either one in Obsidian with "Open folder as vault". Run setup again at any
-time; finished steps are skipped.
+When setup finishes it prints the atlas path and your first vault's path. Run
+`claude-atlas open-vault` to open the atlas in Obsidian. Run setup again at
+any time; finished steps are skipped.
 
 ### Usage
 
@@ -93,6 +93,15 @@ The same thing without prompts, for scripts:
 
 ```bash
 claude-atlas new-vault sensor-triage --category work --purpose "Sort field sensor faults."
+```
+
+Open the atlas, or a project's vault, in Obsidian. Obsidian only opens folders it
+already knows, so the command offers to register the folder and, since Obsidian
+reads that list only at launch, to restart it.
+
+```bash
+claude-atlas open-vault
+claude-atlas open-vault sensor-triage
 ```
 
 Navigate the atlas as a tree. Categories nest three layers deep on screen;

@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	"github.com/nathanaday/claude-atlas/internal/console"
+	"github.com/nathanaday/claude-atlas/internal/home"
 	"github.com/nathanaday/claude-atlas/internal/testutil"
+	"github.com/nathanaday/claude-atlas/internal/tree"
 )
 
 type harness struct {
@@ -102,6 +104,24 @@ func TestVaultCommands(t *testing.T) {
 		if !strings.Contains(h.out.String(), want) {
 			t.Errorf("info missing %q:\n%s", want, h.out.String())
 		}
+	}
+}
+
+func TestResolveVault(t *testing.T) {
+	h, vaults := setup(t)
+	cfg, _ := home.Home{Root: h.home}.Load()
+	projects, _, _ := tree.Walk(cfg.TreeRoot())
+	if got, label, err := resolveVault(cfg, projects, ""); err != nil || got != cfg.AtlasVault || label != "the atlas" {
+		t.Fatalf("atlas: %s %s %v", got, label, err)
+	}
+	if got, _, err := resolveVault(cfg, projects, "welcome"); err != nil || got != filepath.Join(vaults, "welcome") {
+		t.Fatalf("project: %s %v", got, err)
+	}
+	if got, _, err := resolveVault(cfg, projects, vaults); err != nil || got != vaults {
+		t.Fatalf("path: %s %v", got, err)
+	}
+	if _, _, err := resolveVault(cfg, projects, "nope"); err == nil {
+		t.Fatal("unknown name should fail")
 	}
 }
 

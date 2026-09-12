@@ -46,6 +46,7 @@ internal/refresh/       derive state, render Overview.md
 internal/pages/         About.md and Reference.md from templates/*.md, paths filled in at write time
 internal/vaults/        create and register vaults (new-vault)
 internal/tui/           Bubble Tea screens: new-vault, manage-vaults, view
+internal/obsidian/      Obsidian's vault registry, obsidian:// URIs, restart
 internal/home/          ~/.claude-atlas and config.json
 internal/console/       prompts and step lines
 internal/testutil/      finds a real claude-obsidian for integration tests
@@ -103,8 +104,12 @@ file it cannot read as a project and report it instead of failing.
 - `seed_pages` is not a lint category; atlas counts `status: seed` frontmatter
   itself.
 - `wiki/hot.md` "Active Threads" is prose; treat it as best effort.
-- `obsidian://open?path=` only opens vaults Obsidian already knows. It cannot
-  register a new vault, so atlas never tries to launch Obsidian.
+- `obsidian://open?path=` only opens vaults Obsidian already knows, and Obsidian
+  reads its registry (`obsidian.json` under its config dir) once at launch and
+  prunes entries whose path is gone. So `open-vault` registers the folder by
+  writing that file, restarts Obsidian if it is running (macOS only, via
+  AppleScript), then opens the URI. Verified on Obsidian 1.8.7. The official
+  `obsidian` CLI (1.12.7+) has no command to register a path.
 
 ## Build and test
 
