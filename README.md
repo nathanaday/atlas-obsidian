@@ -108,8 +108,8 @@ claude-atlas open-vault sensor-triage
 
 Navigate the atlas as a tree. Categories nest three layers deep on screen;
 anything deeper opens on Enter. Each project is a card with its heat, page
-count, and unfinished work; Enter shows every detail and `o` opens the vault in
-Obsidian.
+count, and unfinished work; Enter shows every detail, `o` opens the vault in
+Obsidian, and `c` starts Claude Code in it.
 
 ```bash
 claude-atlas view
@@ -141,11 +141,13 @@ Show every path the atlas uses, and the claude-obsidian version it found:
 claude-atlas info
 ```
 
-Start working in a vault with Claude Code:
+Start Claude Code inside a project's vault. claude-obsidian's session hook
+gives Claude the vault's recent context at the start, and its skills
+(`/claude-obsidian:wiki-ingest`, `wiki-query`, `wiki-lint`, …) are on the
+slash menu:
 
 ```bash
-cd ~/Documents/Vaults/sensor-triage && claude
-# then /claude-obsidian:wiki
+claude-atlas open-claude sensor-triage
 ```
 
 Check the installation:
@@ -198,9 +200,18 @@ Everything lives in `~/.claude-atlas/config.json`:
   "claude_obsidian": {
     "plugin": "claude-obsidian@agricidaniel-claude-obsidian",
     "marketplace": "AgriciDaniel/claude-obsidian"
+  },
+  "claude_code": {
+    "command": "claude",
+    "session_context": true
   }
 }
 ```
+
+`claude_code.prompt` sends a first message on every launch, for example
+`/claude-obsidian:wiki`. `claude_code.args` adds flags such as `--model`.
+`session_context` sets `CLAUDE_OBSIDIAN_SESSION_CONTEXT=1`, which is
+claude-obsidian's own opt-in for handing Claude the vault's `hot.md`.
 
 Setup asks for both directories and accepts `--atlas-vault` and
 `--vaults-dir`. Set `claude_obsidian.path` to a claude-obsidian checkout to

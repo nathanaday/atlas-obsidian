@@ -39,7 +39,7 @@ out of scope; `new-vault --from` exists only for vaults made by hand later.
 cmd/claude-atlas/       main
 internal/cli/           argument parsing and one method per subcommand
 internal/wizard/        the setup flow
-internal/claudecode/    Claude Code's plugin registry and `claude plugin`
+internal/claudecode/    Claude Code's plugin registry, `claude plugin`, launching claude in a vault
 internal/product/       locate and run the claude-obsidian CLI
 internal/tree/          project pages (frontmatter) and derived state files
 internal/refresh/       derive state, render Overview.md
@@ -104,6 +104,13 @@ file it cannot read as a project and report it instead of failing.
 - `seed_pages` is not a lint category; atlas counts `status: seed` frontmatter
   itself.
 - `wiki/hot.md` "Active Threads" is prose; treat it as best effort.
+- The plugin's SessionStart hook is silent unless
+  `CLAUDE_OBSIDIAN_SESSION_CONTEXT=1`; a vault selected by workspace config
+  outside the project also needs `CLAUDE_OBSIDIAN_SESSION_CONTEXT_VAULT` set
+  to the exact path. `open-claude` sets both plus `CLAUDE_OBSIDIAN_VAULT`.
+  Atlas never invokes a skill on the user's behalf unless `claude_code.prompt`
+  is set; `/claude-obsidian:wiki` is a router and would start every session
+  with a routing exchange.
 - `obsidian://open?path=` only opens vaults Obsidian already knows, and Obsidian
   reads its registry (`obsidian.json` under its config dir) once at launch and
   prunes entries whose path is gone, and rewrites the file whenever its state

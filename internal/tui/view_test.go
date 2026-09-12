@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -201,5 +202,26 @@ func TestOpenFromDetail(t *testing.T) {
 	v = runCmd(next.(view), cmd)
 	if len(f.opened) != 1 || v.detail == nil {
 		t.Fatalf("opened=%v detail=%v", f.opened, v.detail)
+	}
+}
+
+func TestClaudeKeyHandsOffTheTerminal(t *testing.T) {
+	var got string
+	op := Opener{Claude: func(vault string) (*exec.Cmd, error) { got = vault; return exec.Command("true"), nil }}
+	v := newView(sample(), op)
+	v = pressV(v, tea.KeyDown) // p3
+	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	v = next.(view)
+	if got != "/v/p3" || cmd == nil || v.errMsg != "" {
+		t.Fatalf("vault=%q cmd=%v err=%q", got, cmd, v.errMsg)
+	}
+	next, _ = v.Update(claudeDoneMsg{name: "p3"})
+	if !strings.Contains(next.(view).View(), "back from Claude Code in p3") {
+		t.Fatal("status after return missing")
+	}
+	none := newView(sample(), Opener{})
+	next, _ = none.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	if next.(view).errMsg == "" {
+		t.Fatal("missing launcher should report an error")
 	}
 }

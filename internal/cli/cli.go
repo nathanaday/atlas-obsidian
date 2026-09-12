@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -40,6 +41,7 @@ Commands:
   view                   navigate the atlas as a tree; open a project for every detail
   manage-vaults          browse every project by category; rename, move, repoint, or remove
   open-vault [NAME]      open the atlas, or a project's vault, in Obsidian
+  open-claude NAME       start Claude Code inside a project's vault
   list                   list every project
   refresh                read every vault and rewrite Overview.md
   info                   show every path and version the atlas uses
@@ -100,6 +102,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.manageVaults(rest[1:])
 	case "open-vault":
 		code, err = e.openVault(rest[1:])
+	case "open-claude":
+		code, err = e.openClaude(rest[1:])
 	case "list":
 		code, err = e.list(rest[1:])
 	case "refresh":
@@ -307,7 +311,12 @@ func (e *env) view(args []string) (int, error) {
 		state, _ := tree.ReadState(e.home.StateDir(), p.Rel)
 		items = append(items, tui.Item{Project: p, State: state})
 	}
-	opener := tui.Opener{Status: obsidian.Status, Open: obsidian.Open, RegisterAndOpen: obsidian.RegisterAndOpen}
+	opener := tui.Opener{
+		Status:          obsidian.Status,
+		Open:            obsidian.Open,
+		RegisterAndOpen: obsidian.RegisterAndOpen,
+		Claude:          func(vault string) (*exec.Cmd, error) { return claudecode.LaunchCommand(cfg.ClaudeCode, vault) },
+	}
 	if err := tui.RunView(items, opener); err != nil {
 		return 1, err
 	}
@@ -438,6 +447,45 @@ func (e *env) openVault(args []string) (int, error) {
 		c.Step(console.OK, "restarted", "Obsidian")
 	}
 	c.Step(console.OK, "opened", fmt.Sprintf("%s in Obsidian", label))
+	return 0, nil
+}
+
+// skillHint is printed before handing the terminal to Claude Code.
+const skillHint = "claude-obsidian skills: /claude-obsidian:wiki  wiki-ingest  wiki-query  wiki-retrieve  wiki-lint  wiki-fold  canvas  save"
+
+func (e *env) openClaude(args []string) (int, error) {
+	if len(args) != 1 {
+		return 2, errors.New("usage: claude-atlas open-claude NAME")
+	}
+	cfg, err := e.home.Load()
+	if err != nil {
+		return 1, err
+	}
+	projects, _, err := tree.Walk(cfg.TreeRoot())
+	if err != nil {
+		return 1, err
+	}
+	project := tree.FindByRel(projects, args[0])
+	if project == nil {
+		return 1, fmt.Errorf("no project named %q; see `claude-atlas list`", args[0])
+	}
+	if !e.console.Interactive() {
+		return 2, errors.New("open-claude starts an interactive Claude Code session and needs a terminal")
+	}
+	cmd, err := claudecode.LaunchCommand(cfg.ClaudeCode, project.VaultPath())
+	if err != nil {
+		return 1, err
+	}
+	e.console.Say("  %s", home.Display(project.VaultPath()))
+	e.console.Say("  %s", skillHint)
+	e.console.Say("")
+	if err := cmd.Run(); err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return exit.ExitCode(), nil
+		}
+		return 1, err
+	}
 	return 0, nil
 }
 

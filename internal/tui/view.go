@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -19,11 +20,19 @@ type Item struct {
 	State   *tree.State
 }
 
-// Opener connects the view to Obsidian without the screen touching the registry itself.
+// Opener connects the view to Obsidian and Claude Code without the screen doing the work itself.
 type Opener struct {
 	Status          func(vault string) (registered, running bool, err error)
 	Open            func(vault string) error
 	RegisterAndOpen func(vault string) error
+	// Claude builds the Claude Code process for a vault; the view hands it the terminal.
+	Claude func(vault string) (*exec.Cmd, error)
+}
+
+// claudeDoneMsg reports that a Claude Code session ended and the view has the terminal back.
+type claudeDoneMsg struct {
+	name string
+	err  error
 }
 
 // openedMsg reports the outcome of an Obsidian open that ran in the background.
@@ -290,6 +299,13 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.layout()
 		v.ensureVisible()
 		return v, nil
+	case claudeDoneMsg:
+		if msg.err != nil {
+			v.errMsg = msg.err.Error()
+		} else {
+			v.status = "back from Claude Code in " + msg.name
+		}
+		return v, nil
 	case openedMsg:
 		v.busy = ""
 		if msg.err != nil {
@@ -317,14 +333,20 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return v, nil
 		}
 		v.status, v.errMsg = "", ""
-		if msg.String() == "o" {
+		if msg.String() == "o" || msg.String() == "c" {
+			var item *Item
 			if v.detail != nil {
-				return v.open(v.detail)
+				item = v.detail
+			} else if len(v.rows) > 0 && v.rows[v.cursor].kind == rowProject {
+				item = v.rows[v.cursor].item
 			}
-			if len(v.rows) > 0 && v.rows[v.cursor].kind == rowProject {
-				return v.open(v.rows[v.cursor].item)
+			if item == nil {
+				return v, nil
 			}
-			return v, nil
+			if msg.String() == "c" {
+				return v.claude(item)
+			}
+			return v.open(item)
 		}
 		if v.detail != nil {
 			if msg.Type == tea.KeyEsc || msg.Type == tea.KeyEnter || msg.Type == tea.KeyLeft {
@@ -369,6 +391,21 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.ensureVisible()
 	}
 	return v, nil
+}
+
+// claude hands the terminal to a Claude Code session in the project's vault and resumes after.
+func (v view) claude(item *Item) (tea.Model, tea.Cmd) {
+	if v.opener.Claude == nil {
+		v.errMsg = "starting Claude Code is not available here"
+		return v, nil
+	}
+	cmd, err := v.opener.Claude(item.Project.VaultPath())
+	if err != nil {
+		v.errMsg = err.Error()
+		return v, nil
+	}
+	name := item.Project.Name
+	return v, tea.ExecProcess(cmd, func(err error) tea.Msg { return claudeDoneMsg{name: name, err: err} })
 }
 
 // open starts opening a project's vault, asking first when Obsidian does not know it.
@@ -453,7 +490,7 @@ func (v view) View() string {
 	if end < len(v.lines) {
 		b.WriteString("  " + dim.Render(fmt.Sprintf("… %d more lines", len(v.lines)-end)) + "\n")
 	}
-	hints := "↑↓ move · Enter details · o open in Obsidian"
+	hints := "↑↓ move · Enter details · o Obsidian · c Claude Code"
 	if len(v.stack) > 0 {
 		hints += " · Esc back"
 	}
@@ -537,7 +574,7 @@ func (v view) viewDetail() string {
 			b.WriteString("    - " + r + "\n")
 		}
 	}
-	b.WriteString("\n" + v.footer("o open in Obsidian · Esc back · q quit"))
+	b.WriteString("\n" + v.footer("o Obsidian · c Claude Code · Esc back · q quit"))
 	return b.String()
 }
 

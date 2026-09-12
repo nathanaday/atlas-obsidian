@@ -28,12 +28,22 @@ type ProductConfig struct {
 	Path string `json:"path,omitempty"`
 }
 
+// LaunchConfig says how to start Claude Code inside a vault. It mirrors
+// claudecode.LaunchConfig; home cannot import that package.
+type LaunchConfig struct {
+	Command        string   `json:"command"`
+	Args           []string `json:"args,omitempty"`
+	Prompt         string   `json:"prompt,omitempty"`
+	SessionContext bool     `json:"session_context"`
+}
+
 // Config is the contents of config.json. Paths are absolute.
 type Config struct {
 	Schema         string        `json:"schema"`
 	VaultsDir      string        `json:"vaults_dir"`
 	AtlasVault     string        `json:"atlas_vault"`
 	ClaudeObsidian ProductConfig `json:"claude_obsidian"`
+	ClaudeCode     LaunchConfig  `json:"claude_code"`
 }
 
 // TreeRoot is the directory of nodes inside the atlas vault.
@@ -86,6 +96,7 @@ func (h Home) Default(vaultsDir, atlasVault string) *Config {
 			Plugin:      "claude-obsidian@agricidaniel-claude-obsidian",
 			Marketplace: "AgriciDaniel/claude-obsidian",
 		},
+		ClaudeCode: LaunchConfig{Command: "claude", SessionContext: true},
 	}
 }
 
@@ -109,6 +120,10 @@ func (h Home) Load() (*Config, error) {
 	cfg.VaultsDir = Expand(cfg.VaultsDir)
 	cfg.AtlasVault = Expand(cfg.AtlasVault)
 	cfg.ClaudeObsidian.Path = Expand(cfg.ClaudeObsidian.Path)
+	if cfg.ClaudeCode.Command == "" {
+		// Configs written before claude_code existed keep working with the defaults.
+		cfg.ClaudeCode = LaunchConfig{Command: "claude", SessionContext: true}
+	}
 	return &cfg, nil
 }
 

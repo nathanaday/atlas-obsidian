@@ -46,7 +46,7 @@ claude-atlas open-vault my-project
 
 **View the atlas**
 
-> Navigate your projects as a tree, three category layers at a time; deeper categories open on Enter. Enter shows everything the atlas knows about a project; `o` opens its vault in Obsidian.
+> Navigate your projects as a tree, three category layers at a time; deeper categories open on Enter. Enter shows everything the atlas knows about a project; `o` opens its vault in Obsidian; `c` starts Claude Code in it.
 
 ```bash
 claude-atlas view
@@ -74,17 +74,29 @@ claude-atlas list
 claude-atlas info
 ```
 
-## Working with Claude Code 
+## Working with Claude Code
 
-> Start Claude Code inside a vault, then use the wiki skills
+> Start Claude Code inside a project's vault. claude-obsidian's session hook hands Claude the vault's recent context (`wiki/hot.md`) at the start, and its skills are on the slash menu.
 
 ```bash
-cd %VAULTS%/my-project && claude
+claude-atlas open-claude my-project
+```
+
+> The skills, once inside:
+
+```text
+/claude-obsidian:wiki-ingest
 ```
 
 ```text
-/claude-obsidian:wiki
+/claude-obsidian:wiki-query
 ```
+
+```text
+/claude-obsidian:wiki-lint
+```
+
+> To invoke a skill on every launch, set `claude_code.prompt` in config.json, for example to `/claude-obsidian:wiki`. Set `claude_code.session_context` to `false` to keep the hook silent.
 
 
 ## Setup and health
