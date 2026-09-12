@@ -1,0 +1,143 @@
+
+> [!info] Generated page
+> `claude-atlas` writes this page on every refresh so it matches the installed version (%VERSION%). Each command sits in its own block so one click copies it.
+
+## Managing Vaults Quickstart
+
+>[!tip] You can also use the Obsidian file explorer in this vault
+>Use the `tree/` directory to organize your projects. 
+>- Every markdown file in that directory becomes a project by that name
+>- Nest named folders to categorize them
+>- Call the `refresh` command when you're done to commit it
+
+**Create a vault**
+
+> It lands in the vaults directory, the plan is shown, and one confirmation applies it.
+
+```bash
+claude-atlas vault new my-project
+```
+
+> Create and assign a category (missing directories are created)
+
+
+```bash
+claude-atlas vault new my-project --category university/cs566
+```
+
+**Refresh [[Overview]]**
+
+> Run it after editing anything under `tree/`.
+
+```bash
+claude-atlas refresh
+```
+
+**List projects**
+
+```bash
+claude-atlas vault list
+```
+
+**Info**
+
+> Show relevant file paths, version, etc.
+
+```bash
+claude-atlas info
+```
+
+## Working with Claude Code 
+
+> Start Claude Code inside a vault, then use the wiki skills
+
+```bash
+cd %VAULTS%/my-project && claude
+```
+
+```text
+/claude-obsidian:wiki
+```
+
+
+## Setup and health
+
+Install claude-obsidian into Claude Code, create the atlas, and create a first vault. Safe to run again; finished steps are skipped.
+
+```bash
+claude-atlas setup
+```
+
+Check the installation and reach every vault.
+
+```bash
+claude-atlas doctor
+```
+
+```bash
+claude-atlas version
+```
+
+## Advanced
+
+Set purpose and priority when creating a vault.
+
+```bash
+claude-atlas vault new sensor-triage --purpose "Sort field sensor faults." --priority high
+```
+
+Create a vault at an explicit path instead of the vaults directory.
+
+```bash
+claude-atlas vault new ~/Desktop/scratch-vault
+```
+
+Register an existing vault with a display name, a category, and a priority.
+
+```bash
+claude-atlas vault add ~/Documents/OldVault --name "Old Vault" --category archive --priority someday
+```
+
+Move a project by moving its page.
+
+```bash
+mv %ATLAS%/tree/capstone.md %ATLAS%/tree/university/cs566/
+```
+
+Register a claude-obsidian vault that already exists.
+
+```bash
+claude-atlas vault add ~/Documents/OldVault
+```
+
+
+Run setup with every location chosen up front.
+
+```bash
+claude-atlas setup --atlas-vault %ATLAS% --vaults-dir %VAULTS% --first-vault research
+```
+
+Run setup without touching Claude Code plugins.
+
+```bash
+claude-atlas setup --no-plugin
+```
+
+Answer yes to every prompt, for scripts.
+
+```bash
+claude-atlas -y setup
+```
+
+Use a different home directory for one command.
+
+```bash
+claude-atlas --home ~/other-atlas info
+```
+
+| Flag or setting | Effect |
+|:--|:--|
+| `--home DIR` | Use a different home instead of `~/.claude-atlas`. |
+| `-y`, `--yes` | Answer yes to every prompt. |
+| `CLAUDE_ATLAS_HOME` | Same as `--home`, as an environment variable. |
+| `claude_obsidian.path` in config.json | Use a claude-obsidian checkout instead of the installed plugin. |
