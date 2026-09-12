@@ -106,10 +106,13 @@ file it cannot read as a project and report it instead of failing.
 - `wiki/hot.md` "Active Threads" is prose; treat it as best effort.
 - `obsidian://open?path=` only opens vaults Obsidian already knows, and Obsidian
   reads its registry (`obsidian.json` under its config dir) once at launch and
-  prunes entries whose path is gone. So `open-vault` registers the folder by
-  writing that file, restarts Obsidian if it is running (macOS only, via
-  AppleScript), then opens the URI. Verified on Obsidian 1.8.7. The official
-  `obsidian` CLI (1.12.7+) has no command to register a path.
+  prunes entries whose path is gone, and rewrites the file whenever its state
+  changes. So `open-vault` quits Obsidian first (macOS only, via AppleScript),
+  adds one entry in the app's own format, relaunches, then opens the URI. The
+  write refuses a file that does not parse into the expected shape, keeps a
+  `.bak`, and renames a temp file into place. Verified on Obsidian 1.8.7 /
+  1.13.7. The official `obsidian` CLI (1.12 installer and up) has no command
+  to register a path; in-app updates do not install it, only a fresh installer.
 
 ## Build and test
 

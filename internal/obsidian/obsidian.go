@@ -1,8 +1,10 @@
 // Package obsidian reads and extends the desktop app's vault registry and opens vaults.
 //
-// Obsidian only opens vaults it already knows, and it reads its registry once at
-// launch. So opening a folder means: add it to the registry, restart the app if it
-// is running, then open it through the obsidian:// URI.
+// Obsidian only opens vaults it already knows. It keeps that list in obsidian.json,
+// reads it once at launch, and rewrites it whenever its state changes. So a folder
+// is registered by: quitting Obsidian if it runs, adding one entry in the app's own
+// format, relaunching, then opening the obsidian:// URI. Every write is validated,
+// backed up, and atomic; when the file does not look as expected nothing is written.
 package obsidian
 
 import (
@@ -51,23 +53,21 @@ func RegistryPath() (string, error) {
 	}
 }
 
-// Vault is one registry entry.
-type Vault struct {
-	Path string `json:"path"`
-	TS   int64  `json:"ts"`
-	Open bool   `json:"open,omitempty"`
-}
-
-// Registry is the app's vault list plus whatever else the file holds, kept verbatim.
+// Registry is the app's vault list. Everything is kept as raw JSON so a write changes
+// only the one entry it adds.
 type Registry struct {
 	path   string
 	raw    map[string]json.RawMessage
-	Vaults map[string]Vault
+	vaults map[string]json.RawMessage
+	paths  map[string]string // id -> path
 }
 
-var ErrNoRegistry = errors.New("Obsidian's vault registry was not found; open Obsidian once so it creates it")
+var (
+	ErrNoRegistry = errors.New("Obsidian's vault registry was not found; open Obsidian once so it creates it")
+	ErrUnexpected = errors.New("Obsidian's vault registry does not look as expected; refusing to change it")
+)
 
-// LoadRegistry reads the registry file.
+// LoadRegistry reads and validates the registry file.
 func LoadRegistry() (*Registry, error) {
 	path, err := RegistryPath()
 	if err != nil {
@@ -80,32 +80,46 @@ func LoadRegistry() (*Registry, error) {
 	if err != nil {
 		return nil, err
 	}
-	reg := &Registry{path: path, raw: map[string]json.RawMessage{}, Vaults: map[string]Vault{}}
+	reg := &Registry{path: path, raw: map[string]json.RawMessage{}, vaults: map[string]json.RawMessage{}, paths: map[string]string{}}
 	if err := json.Unmarshal(data, &reg.raw); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%w: %s: %v", ErrUnexpected, path, err)
 	}
 	if rawVaults, ok := reg.raw["vaults"]; ok {
-		if err := json.Unmarshal(rawVaults, &reg.Vaults); err != nil {
-			return nil, fmt.Errorf("%s: vaults: %w", path, err)
+		if err := json.Unmarshal(rawVaults, &reg.vaults); err != nil {
+			return nil, fmt.Errorf("%w: %s: vaults is not an object", ErrUnexpected, path)
 		}
+	}
+	for id, entry := range reg.vaults {
+		var v struct {
+			Path *string `json:"path"`
+			TS   *int64  `json:"ts"`
+		}
+		if err := json.Unmarshal(entry, &v); err != nil || v.Path == nil || *v.Path == "" || v.TS == nil {
+			return nil, fmt.Errorf("%w: %s: vault %s lacks path or ts", ErrUnexpected, path, id)
+		}
+		reg.paths[id] = *v.Path
 	}
 	return reg, nil
 }
 
-// Find returns the entry for a vault directory, if any.
-func (r *Registry) Find(vault string) (id string, entry Vault, ok bool) {
+// Path is the registry file's location.
+func (r *Registry) Path() string { return r.path }
+
+// Find returns the id of a vault directory, if registered.
+func (r *Registry) Find(vault string) (string, bool) {
 	target := filepath.Clean(vault)
-	for id, v := range r.Vaults {
-		if filepath.Clean(v.Path) == target {
-			return id, v, true
+	for id, p := range r.paths {
+		if filepath.Clean(p) == target {
+			return id, true
 		}
 	}
-	return "", Vault{}, false
+	return "", false
 }
 
-// Register adds a vault the way the app does: a random 16-hex id and a timestamp.
+// Register adds a vault the way the app does: a random 16-hex id, path, and timestamp.
+// The previous file is kept as obsidian.json.bak and the write is atomic.
 func (r *Registry) Register(vault string) (string, error) {
-	if id, _, ok := r.Find(vault); ok {
+	if id, ok := r.Find(vault); ok {
 		return id, nil
 	}
 	var b [8]byte
@@ -113,21 +127,35 @@ func (r *Registry) Register(vault string) (string, error) {
 		return "", err
 	}
 	id := hex.EncodeToString(b[:])
-	r.Vaults[id] = Vault{Path: filepath.Clean(vault), TS: time.Now().UnixMilli()}
-	return id, r.save()
-}
-
-func (r *Registry) save() error {
-	vaults, err := json.Marshal(r.Vaults)
+	entry, err := json.Marshal(map[string]any{"path": filepath.Clean(vault), "ts": time.Now().UnixMilli()})
 	if err != nil {
-		return err
+		return "", err
+	}
+	r.vaults[id] = entry
+	r.paths[id] = filepath.Clean(vault)
+	vaults, err := json.Marshal(r.vaults)
+	if err != nil {
+		return "", err
 	}
 	r.raw["vaults"] = vaults
 	data, err := json.Marshal(r.raw)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return os.WriteFile(r.path, data, 0o644)
+	if current, err := os.ReadFile(r.path); err == nil {
+		if err := os.WriteFile(r.path+".bak", current, 0o644); err != nil {
+			return "", fmt.Errorf("back up registry: %w", err)
+		}
+	}
+	tmp := r.path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp, r.path); err != nil {
+		os.Remove(tmp)
+		return "", err
+	}
+	return id, nil
 }
 
 // OpenURI is the link that opens a registered vault by path.
@@ -135,23 +163,37 @@ func OpenURI(vault string) string {
 	return "obsidian://open?path=" + url.QueryEscape(vault)
 }
 
-// Open asks the desktop to open a registered vault. False means nothing could launch it.
-func Open(vault string) bool {
-	uri := OpenURI(vault)
+func launch(args ...string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", uri)
+		cmd = exec.Command("open", args...)
 	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", uri)
+		cmd = exec.Command("cmd", append([]string{"/c", "start", ""}, args...)...)
 	default:
 		opener, err := exec.LookPath("xdg-open")
 		if err != nil {
-			return false
+			return errors.New("no xdg-open on PATH")
 		}
-		cmd = exec.Command(opener, uri)
+		cmd = exec.Command(opener, args...)
 	}
-	return cmd.Run() == nil
+	return cmd.Run()
+}
+
+// Open asks the desktop to open a registered vault.
+func Open(vault string) error {
+	if err := launch(OpenURI(vault)); err != nil {
+		return fmt.Errorf("could not launch Obsidian; open this link by hand: %s", OpenURI(vault))
+	}
+	return nil
+}
+
+// Reveal shows the folder in the file manager, for "Open folder as vault" by hand.
+func Reveal(vault string) error {
+	if runtime.GOOS == "darwin" {
+		return exec.Command("open", "-R", vault).Run()
+	}
+	return launch(filepath.Dir(vault))
 }
 
 // Running reports whether the desktop app has a process.
@@ -168,10 +210,12 @@ func Running() bool {
 	return false
 }
 
-// Restart quits and relaunches the desktop app so it rereads its registry.
-func Restart() error {
+var ErrManualRestart = errors.New("quitting Obsidian is only automated on macOS; quit it by hand and run the command again")
+
+// Quit closes the desktop app and waits for it to exit.
+func Quit() error {
 	if runtime.GOOS != "darwin" {
-		return errors.New("restarting Obsidian is only automated on macOS; restart it by hand, then run the command again")
+		return ErrManualRestart
 	}
 	if err := exec.Command("osascript", "-e", `quit app "Obsidian"`).Run(); err != nil {
 		return fmt.Errorf("quit Obsidian: %w", err)
@@ -179,10 +223,54 @@ func Restart() error {
 	for i := 0; i < 100 && Running(); i++ {
 		time.Sleep(100 * time.Millisecond)
 	}
+	if Running() {
+		return errors.New("Obsidian did not quit; close it by hand and run the command again")
+	}
+	return nil
+}
+
+// Launch starts the desktop app and gives it time to read its registry.
+func Launch() error {
+	if runtime.GOOS != "darwin" {
+		return ErrManualRestart
+	}
 	if err := exec.Command("open", "-a", "Obsidian").Run(); err != nil {
 		return fmt.Errorf("relaunch Obsidian: %w", err)
 	}
-	// Give the app time to load its registry before a URI arrives.
 	time.Sleep(4 * time.Second)
 	return nil
+}
+
+// Status says whether a vault is registered and whether the app is running.
+func Status(vault string) (registered, running bool, err error) {
+	reg, err := LoadRegistry()
+	if err != nil {
+		return false, false, err
+	}
+	_, registered = reg.Find(vault)
+	return registered, Running(), nil
+}
+
+// RegisterAndOpen makes Obsidian know a folder, restarting the app if it runs, then opens it.
+// The caller has already asked the user; this does the work in the only safe order.
+func RegisterAndOpen(vault string) error {
+	wasRunning := Running()
+	if wasRunning {
+		if err := Quit(); err != nil {
+			return err
+		}
+	}
+	reg, err := LoadRegistry()
+	if err != nil {
+		return err
+	}
+	if _, err := reg.Register(vault); err != nil {
+		return err
+	}
+	if wasRunning {
+		if err := Launch(); err != nil {
+			return err
+		}
+	}
+	return Open(vault)
 }

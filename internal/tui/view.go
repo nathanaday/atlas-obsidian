@@ -19,6 +19,19 @@ type Item struct {
 	State   *tree.State
 }
 
+// Opener connects the view to Obsidian without the screen touching the registry itself.
+type Opener struct {
+	Status          func(vault string) (registered, running bool, err error)
+	Open            func(vault string) error
+	RegisterAndOpen func(vault string) error
+}
+
+// openedMsg reports the outcome of an Obsidian open that ran in the background.
+type openedMsg struct {
+	name string
+	err  error
+}
+
 // maxLayers is how many category layers the tree shows before folding deeper ones.
 const maxLayers = 3
 
@@ -106,8 +119,14 @@ type frame struct {
 
 type view struct {
 	items     []Item
+	opener    Opener
 	root      string
 	stack     []frame
+	ask       *Item  // project awaiting a register-and-open confirmation
+	askRun    bool   // Obsidian was running when we asked, so it will restart
+	busy      string // message while an open runs in the background
+	status    string
+	errMsg    string
 	rows      []viewRow
 	lines     []string
 	cursor    int
@@ -125,8 +144,8 @@ var (
 	catSt    = lipgloss.NewStyle().Bold(true)
 )
 
-func newView(items []Item) view {
-	v := view{items: items, width: 100, height: 40}
+func newView(items []Item, opener Opener) view {
+	v := view{items: items, opener: opener, width: 100, height: 40}
 	for _, it := range items {
 		if it.State != nil && it.State.GeneratedAt > v.refreshed {
 			v.refreshed = it.State.GeneratedAt
@@ -271,9 +290,41 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.layout()
 		v.ensureVisible()
 		return v, nil
+	case openedMsg:
+		v.busy = ""
+		if msg.err != nil {
+			v.errMsg = msg.err.Error()
+		} else {
+			v.status = "opened " + msg.name + " in Obsidian"
+		}
+		return v, nil
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC || msg.String() == "q" {
 			return v, tea.Quit
+		}
+		if v.busy != "" {
+			return v, nil
+		}
+		if v.ask != nil {
+			switch strings.ToLower(msg.String()) {
+			case "y":
+				item := v.ask
+				v.ask = nil
+				return v.openAsync(item, true)
+			case "n", "esc":
+				v.ask = nil
+			}
+			return v, nil
+		}
+		v.status, v.errMsg = "", ""
+		if msg.String() == "o" {
+			if v.detail != nil {
+				return v.open(v.detail)
+			}
+			if len(v.rows) > 0 && v.rows[v.cursor].kind == rowProject {
+				return v.open(v.rows[v.cursor].item)
+			}
+			return v, nil
 		}
 		if v.detail != nil {
 			if msg.Type == tea.KeyEsc || msg.Type == tea.KeyEnter || msg.Type == tea.KeyLeft {
@@ -320,6 +371,61 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return v, nil
 }
 
+// open starts opening a project's vault, asking first when Obsidian does not know it.
+func (v view) open(item *Item) (tea.Model, tea.Cmd) {
+	if v.opener.Status == nil {
+		v.errMsg = "opening vaults is not available here"
+		return v, nil
+	}
+	registered, running, err := v.opener.Status(item.Project.VaultPath())
+	if err != nil {
+		v.errMsg = err.Error()
+		return v, nil
+	}
+	if registered {
+		return v.openAsync(item, false)
+	}
+	v.ask = item
+	v.askRun = running
+	return v, nil
+}
+
+func (v view) openAsync(item *Item, register bool) (tea.Model, tea.Cmd) {
+	name, vault := item.Project.Name, item.Project.VaultPath()
+	fn := v.opener.Open
+	v.busy = "opening " + name + " in Obsidian…"
+	if register {
+		fn = v.opener.RegisterAndOpen
+		v.busy = "registering " + name + " with Obsidian…"
+		if v.askRun {
+			v.busy = "registering " + name + " and restarting Obsidian…"
+		}
+	}
+	return v, func() tea.Msg { return openedMsg{name: name, err: fn(vault)} }
+}
+
+// footer renders the prompt, progress, or status lines under a screen.
+func (v view) footer(hints string) string {
+	switch {
+	case v.ask != nil:
+		msg := fmt.Sprintf("Obsidian does not know %s. Register it as a vault", v.ask.Project.Name)
+		if v.askRun {
+			msg += "? Obsidian will quit and relaunch"
+		}
+		return "  " + errSt.Render("▲") + " " + msg + "?  " + title.Render("y") + " / " + title.Render("n") + "\n"
+	case v.busy != "":
+		return "  " + okSt.Render(v.busy) + "\n"
+	}
+	out := "  " + dim.Render(hints) + "\n"
+	if v.status != "" {
+		out += "  " + okSt.Render(v.status) + "\n"
+	}
+	if v.errMsg != "" {
+		out += "  " + errSt.Render(v.errMsg) + "\n"
+	}
+	return out
+}
+
 func (v view) View() string {
 	if v.detail != nil {
 		return v.viewDetail()
@@ -346,11 +452,11 @@ func (v view) View() string {
 	if end < len(v.lines) {
 		b.WriteString("  " + dim.Render(fmt.Sprintf("… %d more lines", len(v.lines)-end)) + "\n")
 	}
-	hints := "↑↓ move · Enter open"
+	hints := "↑↓ move · Enter details · o open in Obsidian"
 	if len(v.stack) > 0 {
 		hints += " · Esc back"
 	}
-	b.WriteString("\n  " + dim.Render(hints+" · q quit") + "\n")
+	b.WriteString("\n" + v.footer(hints+" · q quit"))
 	return b.String()
 }
 
@@ -430,13 +536,13 @@ func (v view) viewDetail() string {
 			b.WriteString("    - " + r + "\n")
 		}
 	}
-	b.WriteString("\n  " + dim.Render("Esc back · q quit") + "\n")
+	b.WriteString("\n" + v.footer("o open in Obsidian · Esc back · q quit"))
 	return b.String()
 }
 
 // RunView shows the tree until the user quits.
-func RunView(items []Item) error {
-	_, err := tea.NewProgram(newView(items), tea.WithAltScreen()).Run()
+func RunView(items []Item, opener Opener) error {
+	_, err := tea.NewProgram(newView(items, opener), tea.WithAltScreen()).Run()
 	if err != nil {
 		return fmt.Errorf("interactive screen failed: %w", err)
 	}

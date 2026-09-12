@@ -39,7 +39,7 @@ func sample() []Item {
 }
 
 func TestTreeShowsThreeLayersAndFoldsDeeper(t *testing.T) {
-	v := newView(sample())
+	v := newView(sample(), Opener{})
 	out := v.View()
 	t.Logf("\n%s", out)
 	for _, want := range []string{"▾ engineering", "▾ itl", "▾ usc", "▾ cs566", "▸ deep", "2 projects", "welcome", "p3", "course"} {
@@ -67,7 +67,7 @@ func TestTreeShowsThreeLayersAndFoldsDeeper(t *testing.T) {
 }
 
 func TestEnterOnFoldedZoomsAndEscReturns(t *testing.T) {
-	v := newView(sample())
+	v := newView(sample(), Opener{})
 	v = pressV(v, tea.KeyUp) // wraps to the folded row
 	if v.rows[v.cursor].kind != rowFolded {
 		t.Fatalf("cursor on %+v", v.rows[v.cursor])
@@ -88,7 +88,7 @@ func TestEnterOnFoldedZoomsAndEscReturns(t *testing.T) {
 }
 
 func TestDetailShowsEverything(t *testing.T) {
-	v := newView(sample())
+	v := newView(sample(), Opener{})
 	v = pressV(v, tea.KeyDown, tea.KeyEnter) // p3
 	out := v.View()
 	t.Logf("\n%s", out)
@@ -104,7 +104,7 @@ func TestDetailShowsEverything(t *testing.T) {
 }
 
 func TestScrollKeepsCursorVisible(t *testing.T) {
-	v := newView(sample())
+	v := newView(sample(), Opener{})
 	next, _ := v.Update(tea.WindowSizeMsg{Width: 80, Height: 14})
 	v = next.(view)
 	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyDown)
@@ -118,9 +118,88 @@ func TestScrollKeepsCursorVisible(t *testing.T) {
 }
 
 func TestEmptyTree(t *testing.T) {
-	v := newView(nil)
+	v := newView(nil, Opener{})
 	if !strings.Contains(v.View(), "no projects yet") {
 		t.Fatal("empty message missing")
 	}
 	v = pressV(v, tea.KeyDown, tea.KeyEnter) // must not panic
+}
+
+type fakeOpener struct {
+	registered      map[string]bool
+	running         bool
+	opened          []string
+	registeredCalls []string
+}
+
+func (f *fakeOpener) opener() Opener {
+	return Opener{
+		Status: func(vault string) (bool, bool, error) { return f.registered[vault], f.running, nil },
+		Open:   func(vault string) error { f.opened = append(f.opened, vault); return nil },
+		RegisterAndOpen: func(vault string) error {
+			f.registeredCalls = append(f.registeredCalls, vault)
+			f.opened = append(f.opened, vault)
+			return nil
+		},
+	}
+}
+
+func runCmd(v view, cmd tea.Cmd) view {
+	if cmd == nil {
+		return v
+	}
+	next, _ := v.Update(cmd())
+	return next.(view)
+}
+
+func TestOpenRegisteredVaultDirectly(t *testing.T) {
+	f := &fakeOpener{registered: map[string]bool{"/v/p3": true}}
+	v := newView(sample(), f.opener())
+	v = pressV(v, tea.KeyDown) // p3
+	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+	v = next.(view)
+	if v.busy == "" || cmd == nil {
+		t.Fatalf("expected a background open, busy=%q", v.busy)
+	}
+	v = runCmd(v, cmd)
+	if len(f.opened) != 1 || f.opened[0] != "/v/p3" || len(f.registeredCalls) != 0 || !strings.Contains(v.View(), "opened p3 in Obsidian") {
+		t.Fatalf("opened=%v registered=%v\n%s", f.opened, f.registeredCalls, v.View())
+	}
+}
+
+func TestOpenUnknownVaultAsksThenRegisters(t *testing.T) {
+	f := &fakeOpener{registered: map[string]bool{}, running: true}
+	v := newView(sample(), f.opener())
+	next, _ := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")}) // welcome
+	v = next.(view)
+	if v.ask == nil || !strings.Contains(v.View(), "quit and relaunch") {
+		t.Fatalf("expected a confirmation\n%s", v.View())
+	}
+	next, _ = v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	v = next.(view)
+	if v.ask != nil || len(f.registeredCalls) != 0 {
+		t.Fatal("n should cancel without registering")
+	}
+	next, _ = v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+	v = next.(view)
+	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	v = next.(view)
+	if !strings.Contains(v.busy, "restarting Obsidian") {
+		t.Fatalf("busy=%q", v.busy)
+	}
+	v = runCmd(v, cmd)
+	if len(f.registeredCalls) != 1 || f.registeredCalls[0] != "/v/welcome" || v.busy != "" {
+		t.Fatalf("registered=%v busy=%q", f.registeredCalls, v.busy)
+	}
+}
+
+func TestOpenFromDetail(t *testing.T) {
+	f := &fakeOpener{registered: map[string]bool{"/v/p3": true}}
+	v := newView(sample(), f.opener())
+	v = pressV(v, tea.KeyDown, tea.KeyEnter)
+	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+	v = runCmd(next.(view), cmd)
+	if len(f.opened) != 1 || v.detail == nil {
+		t.Fatalf("opened=%v detail=%v", f.opened, v.detail)
+	}
 }

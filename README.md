@@ -96,8 +96,10 @@ claude-atlas new-vault sensor-triage --category work --purpose "Sort field senso
 ```
 
 Open the atlas, or a project's vault, in Obsidian. Obsidian only opens folders it
-already knows, so the command offers to register the folder and, since Obsidian
-reads that list only at launch, to restart it.
+already knows, so the command offers to register the folder. Obsidian reads that
+list only at launch, so it quits and relaunches when it is running. The registry
+write is validated, backed up, and atomic; if the file does not look as expected
+nothing is written and the folder is revealed for "Open folder as vault" instead.
 
 ```bash
 claude-atlas open-vault
@@ -106,7 +108,8 @@ claude-atlas open-vault sensor-triage
 
 Navigate the atlas as a tree. Categories nest three layers deep on screen;
 anything deeper opens on Enter. Each project is a card with its heat, page
-count, and unfinished work; open one for every detail.
+count, and unfinished work; Enter shows every detail and `o` opens the vault in
+Obsidian.
 
 ```bash
 claude-atlas view

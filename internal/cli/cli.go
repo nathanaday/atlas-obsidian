@@ -307,7 +307,8 @@ func (e *env) view(args []string) (int, error) {
 		state, _ := tree.ReadState(e.home.StateDir(), p.Rel)
 		items = append(items, tui.Item{Project: p, State: state})
 	}
-	if err := tui.RunView(items); err != nil {
+	opener := tui.Opener{Status: obsidian.Status, Open: obsidian.Open, RegisterAndOpen: obsidian.RegisterAndOpen}
+	if err := tui.RunView(items, opener); err != nil {
 		return 1, err
 	}
 	return 0, nil
@@ -373,7 +374,6 @@ func resolveVault(cfg *home.Config, projects []*tree.Project, arg string) (strin
 
 func (e *env) openVault(args []string) (int, error) {
 	fs := newFlags("open-vault", e.stderr)
-	yes := fs.Bool("register", false, "register the vault with Obsidian without asking")
 	positional, err := parse(fs, args)
 	if err != nil {
 		return 2, nil
@@ -398,45 +398,44 @@ func (e *env) openVault(args []string) (int, error) {
 		return 1, err
 	}
 	c := e.console
-	reg, err := obsidian.LoadRegistry()
+	registered, running, err := obsidian.Status(vault)
+	if err != nil {
+		c.Say("%v", err)
+		c.Say("Open it by hand: in Obsidian choose \"Open folder as vault\" and pick %s.", home.Display(vault))
+		obsidian.Reveal(vault)
+		return 1, nil
+	}
+	if registered {
+		if err := obsidian.Open(vault); err != nil {
+			return 1, err
+		}
+		c.Step(console.OK, "opened", fmt.Sprintf("%s in Obsidian", label))
+		return 0, nil
+	}
+	c.Say("Obsidian does not know %s yet (%s).", label, home.Display(vault))
+	question := "Register it as a vault and open it?"
+	if running {
+		question = "Register it as a vault? Obsidian will quit and relaunch so it sees the new entry."
+	}
+	ok, err := c.Confirm(question, true)
 	if err != nil {
 		return 1, err
 	}
-	if _, _, known := reg.Find(vault); !known {
-		c.Say("Obsidian does not know %s yet (%s).", label, home.Display(vault))
-		ok := *yes
-		if !ok {
-			ok, err = c.Confirm("Register it as a vault?", true)
-			if err != nil {
-				return 1, err
-			}
-		}
-		if !ok {
-			return 1, vaults.ErrCancelled
-		}
-		if _, err := reg.Register(vault); err != nil {
-			return 1, err
-		}
-		c.Step(console.OK, "registered", home.Display(vault))
-		if obsidian.Running() {
-			c.Say("Obsidian reads its vault list only when it starts.")
-			restart, err := c.Confirm("Restart Obsidian now?", true)
-			if err != nil {
-				return 1, err
-			}
-			if !restart {
-				c.Say("Restart Obsidian, then run this command again to open it.")
-				return 0, nil
-			}
-			if err := obsidian.Restart(); err != nil {
-				return 1, err
-			}
-			c.Step(console.OK, "restarted", "Obsidian")
-		}
+	if !ok {
+		c.Say("Open it by hand: in Obsidian choose \"Open folder as vault\" and pick %s.", home.Display(vault))
+		obsidian.Reveal(vault)
+		return 1, vaults.ErrCancelled
 	}
-	if !obsidian.Open(vault) {
-		c.Say("Could not launch Obsidian. Open this link by hand: %s", obsidian.OpenURI(vault))
-		return 1, nil
+	if err := obsidian.RegisterAndOpen(vault); err != nil {
+		if errors.Is(err, obsidian.ErrManualRestart) {
+			c.Say("%v", err)
+			return 1, nil
+		}
+		return 1, err
+	}
+	c.Step(console.OK, "registered", home.Display(vault))
+	if running {
+		c.Step(console.OK, "restarted", "Obsidian")
 	}
 	c.Step(console.OK, "opened", fmt.Sprintf("%s in Obsidian", label))
 	return 0, nil
