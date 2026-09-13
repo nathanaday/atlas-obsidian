@@ -128,7 +128,7 @@ func TestApplyCommitsOneOperation(t *testing.T) {
 		t.Fatalf("result %+v", res)
 	}
 	log := read(t, v, vault.LogPage)
-	entry := "## 2026-09-12 — " + plan.OperationID + "\n\nadd A and more\n\n- Created: [[A]]\n- Updated: [[index]]\n"
+	entry := "## 2026-09-12 — " + plan.OperationID + "\n\nadd A and more\n\n- Created: [[A]]\n- Updated: [[index|Wiki Index]]\n"
 	if !strings.Contains(log, entry) || !strings.Contains(log, "updated: 2026-09-12") {
 		t.Fatalf("log:\n%s", log)
 	}

@@ -133,8 +133,18 @@ make install    # go install into $(go env GOPATH)/bin
 make test
 ```
 
-End-to-end against Claude Code, by hand: `claude --plugin-dir . -p "..."`
-inside a vault, with `--allowedTools "mcp__plugin_claude-atlas_atlas__*"`.
+The installed plugin is a git clone of this repository at a commit, so skill
+edits reach Claude Code only after a commit and an update:
+
+```
+claude plugin marketplace update nathanaday-claude-atlas
+claude plugin update claude-atlas@nathanaday-claude-atlas
+```
+
+Uncommitted skill edits can be tried with `claude --plugin-dir .` from inside
+a vault. Binary changes need only `make install`. End-to-end by hand:
+`claude -p "..."` inside a vault with
+`--allowedTools "mcp__plugin_claude-atlas_atlas__*,Read,Grep,Glob,Skill"`.
 
 ## Open questions
 

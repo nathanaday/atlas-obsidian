@@ -328,9 +328,7 @@ func Run(root string, opts Options) (*Report, error) {
 	for _, n := range report.Summary.CategoryCounts {
 		report.Summary.IssuesFound += n
 	}
-	if report.DeadLinks == nil {
-		report.DeadLinks = []LinkFinding{}
-	}
+	report.fillEmpty()
 	return report, nil
 }
 
@@ -790,6 +788,40 @@ func linkLess(a, b LinkFinding) bool {
 		return a.Line < b.Line
 	}
 	return pathLess(a.Target, b.Target)
+}
+
+// fillEmpty turns nil slices into empty ones so the JSON reads as lists, not null.
+func (r *Report) fillEmpty() {
+	if r.DeadLinks == nil {
+		r.DeadLinks = []LinkFinding{}
+	}
+	if r.AmbiguousTargets == nil {
+		r.AmbiguousTargets = []Ambiguous{}
+	}
+	if r.DuplicateBasenames == nil {
+		r.DuplicateBasenames = []Duplicate{}
+	}
+	if r.Orphans == nil {
+		r.Orphans = []PathFinding{}
+	}
+	if r.UnindexedPages == nil {
+		r.UnindexedPages = []PathFinding{}
+	}
+	if r.MissingFrontmatter == nil {
+		r.MissingFrontmatter = []FrontmatterFinding{}
+	}
+	if r.EmptySections == nil {
+		r.EmptySections = []SectionFinding{}
+	}
+	if r.StaleIndexEntries == nil {
+		r.StaleIndexEntries = []LinkFinding{}
+	}
+	if r.ReadErrors == nil {
+		r.ReadErrors = []PathFinding{}
+	}
+	if r.LedgerErrors == nil {
+		r.LedgerErrors = []PathFinding{}
+	}
 }
 
 // JSON renders the report.

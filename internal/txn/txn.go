@@ -92,6 +92,8 @@ type Change struct {
 	Mode   WriteMode `json:"mode"`
 	Bytes  int       `json:"bytes"`
 	Before int       `json:"before_bytes,omitempty"`
+	// Title is the page's frontmatter title, when the write is a wiki page that has one.
+	Title string `json:"title,omitempty"`
 }
 
 // Preview is what the user reviews before apply.
@@ -337,7 +339,7 @@ func Prepare(v *vault.Vault, req Request, now time.Time) (*Plan, error) {
 		}
 		pw := prepared{Path: p, Mode: w.Mode, Content: w.Content, Base: current, Existed: exists}
 		plan.writes = append(plan.writes, pw)
-		change := Change{Path: p, Mode: w.Mode, Bytes: len(w.Content), Before: size}
+		change := Change{Path: p, Mode: w.Mode, Bytes: len(w.Content), Before: size, Title: pageTitleOf(p, w.Content)}
 		switch w.Mode {
 		case Create:
 			plan.Preview.Creates = append(plan.Preview.Creates, change)
@@ -670,7 +672,7 @@ func logEntry(plan *Plan, now time.Time) string {
 		}
 		var refs []string
 		for _, c := range changes {
-			refs = append(refs, pageRef(c.Path, deleted))
+			refs = append(refs, pageRef(c, deleted))
 		}
 		fmt.Fprintf(&b, "- %s: %s\n", label, strings.Join(refs, ", "))
 	}
@@ -686,10 +688,28 @@ func logEntry(plan *Plan, now time.Time) string {
 	return b.String()
 }
 
-// pageRef links a wiki page by its stem, and quotes anything else.
-func pageRef(p string, deleted bool) string {
+// pageTitleOf reads the frontmatter title of a wiki page being written.
+func pageTitleOf(p string, content []byte) string {
+	if !strings.HasPrefix(p, "wiki/") || !strings.EqualFold(path.Ext(p), ".md") || len(content) == 0 {
+		return ""
+	}
+	fields, _, err := vault.Frontmatter(string(content))
+	if err != nil || fields == nil {
+		return ""
+	}
+	return strings.TrimSpace(vault.StringField(fields, "title"))
+}
+
+// pageRef links a wiki page by its stem, showing its title when that differs, and
+// quotes anything else.
+func pageRef(c Change, deleted bool) string {
+	p := c.Path
 	if !deleted && strings.HasPrefix(p, "wiki/") && strings.EqualFold(path.Ext(p), ".md") {
-		return "[[" + vault.PageTitle(p) + "]]"
+		stem := vault.PageTitle(p)
+		if c.Title != "" && c.Title != stem && !strings.ContainsAny(c.Title, "[]|#") {
+			return "[[" + stem + "|" + c.Title + "]]"
+		}
+		return "[[" + stem + "]]"
 	}
 	return "`" + p + "`"
 }
