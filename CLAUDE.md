@@ -133,16 +133,20 @@ make install    # go install into $(go env GOPATH)/bin
 make test
 ```
 
-The installed plugin is a git clone of this repository at a commit, so skill
-edits reach Claude Code only after a commit and an update:
+The installed plugin is a git clone of this repository at a commit, and
+`claude plugin update` fetches a new one only when the version in
+`.claude-plugin/plugin.json` and `marketplace.json` went up. So a skill change
+reaches Claude Code after: bump both versions, commit, then
 
 ```
 claude plugin marketplace update nathanaday-claude-atlas
 claude plugin update claude-atlas@nathanaday-claude-atlas
+make install
 ```
 
-Uncommitted skill edits can be tried with `claude --plugin-dir .` from inside
-a vault. Binary changes need only `make install`. End-to-end by hand:
+`make install` stamps the binary with the same version, so `doctor` and
+`status` can tell when the two drift. Uncommitted skill edits can be tried
+with `claude --plugin-dir .` from inside a vault. End-to-end by hand:
 `claude -p "..."` inside a vault with
 `--allowedTools "mcp__plugin_claude-atlas_atlas__*,Read,Grep,Glob,Skill"`.
 
