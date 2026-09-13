@@ -2,6 +2,11 @@
 
 Knowledge vaults for Claude Code, and one view across all of them.
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-2563eb.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.24+-00ADD8.svg?logo=go&logoColor=white)](go.mod)
+[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-7c3aed.svg)](.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-0.2.1-d97745.svg)](.claude-plugin/plugin.json)
+
 ## About
 
 Reading piles up faster than notes get written, and what Claude learns in one
@@ -212,4 +217,4 @@ AgriciDaniel (MIT), which follows
 [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
 Obsidian syntax references draw on
 [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills).
-claude-atlas is MIT licensed.
+claude-atlas is released under the [MIT License](LICENSE).
