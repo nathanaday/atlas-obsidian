@@ -1,0 +1,217 @@
+# Usage
+
+Every command, with examples. `claude-atlas help` prints the short form.
+
+## Create a vault
+
+With no arguments, `new-vault` asks for a name, a category, and a one-line
+purpose:
+
+```bash
+claude-atlas new-vault
+claude-atlas new-vault sensor-triage --category work --purpose "Sort field sensor faults."
+claude-atlas new-vault reading --mode lyt
+claude-atlas new-vault ~/Desktop/scratch-vault
+```
+
+## Work in a vault with Claude Code
+
+Put a source in the inbox and start Claude Code inside the vault:
+
+```bash
+cp ~/Downloads/dinov2.pdf ~/Documents/Vaults/sensor-triage/inbox/
+claude-atlas open-claude sensor-triage
+```
+
+In the session, the skills are on the slash menu:
+
+| Skill | What it does |
+|---|---|
+| `/claude-atlas:wiki` | orient in the vault and route to the right skill |
+| `/claude-atlas:wiki-ingest` | read what is in the inbox and write cited pages |
+| `/claude-atlas:wiki-query` | answer from the vault, with citations |
+| `/claude-atlas:save` | keep an answer or decision as a page |
+| `/claude-atlas:wiki-lint` | check the wiki's health |
+| `/claude-atlas:wiki-mode` | read or change the filing mode |
+| `/claude-atlas:wiki-fold` | roll up log entries |
+| `/claude-atlas:canvas` | create and update Obsidian Canvas boards |
+| `/claude-atlas:obsidian-bases` | draft Bases `.base` views |
+| `/claude-atlas:obsidian-markdown` | Obsidian syntax help |
+| `/claude-atlas:think` | a structured review before a consequential change |
+
+Claude shows a preview of every change before it applies it. Each applied
+change is one git commit in the vault.
+
+## History and undo
+
+```bash
+claude-atlas history sensor-triage
+claude-atlas undo sensor-triage ingest-20260912-150405-ab12
+```
+
+Inside a vault, the vault argument can be omitted:
+
+```bash
+cd ~/Documents/Vaults/sensor-triage
+claude-atlas history
+claude-atlas lint
+```
+
+## Health check
+
+```bash
+claude-atlas lint sensor-triage
+claude-atlas lint sensor-triage --json
+claude-atlas lint sensor-triage --strict     # exit 1 when there are findings
+```
+
+## Filing mode
+
+`generic` files pages by type into `wiki/sources/`, `entities/`, `concepts/`,
+`questions/`, and `sessions/`. `lyt` keeps atomic notes in `wiki/notes/` and
+navigates them through Maps of Content in `wiki/mocs/`.
+
+```bash
+claude-atlas mode sensor-triage
+claude-atlas mode sensor-triage lyt
+```
+
+Changing the mode affects future pages only.
+
+## Recover
+
+If an operation was interrupted, the vault says so at the next session start.
+Restore it:
+
+```bash
+claude-atlas recover sensor-triage
+```
+
+## Open in Obsidian
+
+Opens a project's vault, or the atlas with no argument. If Obsidian does not
+know the folder yet, the command offers to register it; Obsidian quits and
+relaunches so it sees the new entry.
+
+```bash
+claude-atlas open-vault sensor-triage
+claude-atlas open-vault
+```
+
+## The atlas
+
+`view` is an interactive tree of every project, three category layers at a
+time. Enter shows everything the atlas knows about a project, `o` opens its
+vault in Obsidian, `c` starts Claude Code in it.
+
+```bash
+claude-atlas view
+```
+
+`refresh` reads every vault and rewrites `Overview.md`. Run it after editing
+anything under `tree/`.
+
+```bash
+claude-atlas refresh
+```
+
+`manage-vaults` browses projects by category. Open one to rename it, edit its
+purpose, move it to another category, change its priority or state, repoint or
+move its vault, or remove it from the atlas. Removing never touches the vault.
+
+```bash
+claude-atlas manage-vaults
+claude-atlas list
+```
+
+### Link repos and material
+
+Link the folders a project works with: a git repository (detected by its
+`.git`) or a folder of static material such as slides, PDFs, and images.
+Nothing is copied. Refresh reports the repo's branch, uncommitted changes, and
+last commit, and the folder's file count and newest file. A commit or a new
+file counts as touching the project.
+
+```bash
+claude-atlas link sensor-triage ~/code/sensor-triage
+claude-atlas link sensor-triage ~/Documents/sensor-datasheets --kind materials
+claude-atlas links sensor-triage
+claude-atlas unlink sensor-triage ~/code/sensor-triage
+```
+
+### Edit the tree by hand
+
+Under `~/Documents/Atlas/tree/`, every folder is a category and every markdown
+file is a project. Make, nest, and move them in Obsidian or the shell, then
+refresh.
+
+```bash
+mv ~/Documents/Atlas/tree/capstone.md ~/Documents/Atlas/tree/university/cs566/
+claude-atlas refresh
+```
+
+A project page's properties are what the atlas reads: `vault`, `priority`
+(high, normal, low, someday), `state` (active, paused, blocked, archived),
+`blocked_on`, `review_after`, `purpose`, `definition_of_done`, `repos`,
+`materials`. The body is yours.
+
+## Adopt an existing vault
+
+Turn an Obsidian vault, or a vault made with claude-obsidian, into a
+claude-atlas vault and register it. It gains an identity file and git history;
+nothing in it is replaced.
+
+```bash
+claude-atlas adopt ~/Documents/MyKnowledgeVault --category personal
+claude-atlas adopt ~/Documents/OldVault --name "Old Vault" --priority someday --mode lyt
+```
+
+## Setup and health
+
+```bash
+claude-atlas setup
+claude-atlas setup --atlas-vault ~/Documents/Atlas --vaults-dir ~/Documents/Vaults --first-vault research
+claude-atlas setup --plugin-source ~/SoftwareProjects/claude-atlas   # install the plugin from a checkout
+claude-atlas setup --no-plugin
+claude-atlas doctor
+claude-atlas info
+claude-atlas version
+```
+
+## Scripts
+
+Apply a plan file without Claude. The file has the shape of the `plan` tool's
+arguments; `content_file` may replace `content`.
+
+```bash
+claude-atlas apply sensor-triage plan.json
+```
+
+## Configuration
+
+`~/.claude-atlas/config.json`:
+
+```json
+{
+  "schema": "claude-atlas.config.v1",
+  "vaults_dir": "/Users/you/Documents/Vaults",
+  "atlas_vault": "/Users/you/Documents/Atlas",
+  "plugin": {
+    "id": "claude-atlas@nathanaday-claude-atlas",
+    "source": "nathanaday/claude-atlas"
+  },
+  "claude_code": {
+    "command": "claude",
+    "session_context": true
+  }
+}
+```
+
+| Setting | Effect |
+|---|---|
+| `claude_code.prompt` | a first message sent on every `open-claude`, for example `/claude-atlas:wiki` |
+| `claude_code.args` | flags for `claude`, such as `--model` |
+| `claude_code.session_context` | whether the session-start hook hands Claude the vault's `hot.md` |
+| `plugin.source` | where `claude plugin marketplace add` gets the plugin: a GitHub slug or a local path |
+| `--home DIR`, `CLAUDE_ATLAS_HOME` | use a different home instead of `~/.claude-atlas` |
+| `-y`, `--yes` | answer yes to every prompt |
