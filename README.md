@@ -23,6 +23,10 @@ commit you can undo. The atlas is the page that shows all your vaults at once.
   declared priority, side by side.
 - **Native Obsidian.** Plain Markdown, wikilinks, Canvas boards, Bases views.
 
+
+https://github.com/user-attachments/assets/1697fa0e-59fd-4f14-95e6-d259c15c8a33
+
+
 ## Quickstart
 
 ### Prerequisites
