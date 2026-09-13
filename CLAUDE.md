@@ -42,6 +42,16 @@ safety net, and adds the cross-vault view.
 3. The atlas never stores a fact it can compute. `~/.claude-atlas/state/` is
    rebuilt in full by `refresh`.
 
+## Two layers, one backend
+
+`view` is the whole atlas as one screen; every command is one thing from it.
+The rule: an action lives once, as a function in `internal/vaults`,
+`internal/refresh`, `internal/vault`, or `internal/txn`. The CLI exposes it as
+one subcommand. The TUI reaches it through `tui.Hooks`, which `cli.hooks`
+builds in one place. The TUI is a subset of the CLI, never the reverse: a new
+key gets a command in the same change, and `docs/usage.md` carries the table
+that maps them.
+
 ## Layout
 
 ```
@@ -68,7 +78,7 @@ internal/refresh/       derive state, render Overview.md
 internal/pages/         About.md and Reference.md from templates
 internal/vaults/        create, register, edit project pages, link folders
 internal/links/         inspect linked git repos and material folders
-internal/tui/           Bubble Tea screens: new-vault, view (with the project editor)
+internal/tui/           Bubble Tea screens: the tree (view), the project editor, the add and adopt screens
 internal/obsidian/      Obsidian's vault registry, obsidian:// URIs, restart
 internal/home/          ~/.claude-atlas and config.json
 internal/console/       prompts and step lines

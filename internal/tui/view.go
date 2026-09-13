@@ -42,6 +42,11 @@ type openedMsg struct {
 	err  error
 }
 
+// refreshedMsg reports that a background refresh finished.
+type refreshedMsg struct {
+	err error
+}
+
 // maxLayers is how many category layers the tree shows before folding deeper ones.
 const maxLayers = 3
 
@@ -133,6 +138,7 @@ type view struct {
 	opener    Opener
 	hooks     Hooks
 	edit      *editor
+	add       *model // the add-vault or adopt screen while open
 	changed   bool
 	collapsed map[string]bool // category paths folded by the user
 	root      string
@@ -489,12 +495,30 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			v.status = "opened " + msg.name + " in Obsidian"
 		}
 		return v, nil
+	case refreshedMsg:
+		v.busy = ""
+		if msg.err != nil {
+			v.errMsg = msg.err.Error()
+			return v, nil
+		}
+		rel := ""
+		if v.detail != nil {
+			rel = v.detail.Project.Rel
+		} else if r := v.current(); r != nil && r.kind == rowProject {
+			rel = r.item.Project.Rel
+		}
+		v.reload(rel)
+		v.status = "refreshed"
+		return v, nil
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC {
 			return v, tea.Quit
 		}
 		if v.edit != nil {
 			return v.updateEdit(msg)
+		}
+		if v.add != nil {
+			return v.updateAdd(msg)
 		}
 		if msg.String() == "q" {
 			return v, tea.Quit
@@ -514,6 +538,14 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return v, nil
 		}
 		v.status, v.errMsg = "", ""
+		switch msg.String() {
+		case "n":
+			return v.openAdd(false)
+		case "a":
+			return v.openAdd(true)
+		case "R":
+			return v.refresh()
+		}
 		if key := msg.String(); key == "o" || key == "c" || key == "e" {
 			var item *Item
 			if v.detail != nil {
@@ -585,6 +617,67 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.ensureVisible()
 	}
 	return v, nil
+}
+
+// openAdd starts the add-vault screen, or the adopt screen, in place.
+func (v view) openAdd(adopt bool) (tea.Model, tea.Cmd) {
+	if v.hooks.Create == nil || v.hooks.Load == nil {
+		v.errMsg = "creating vaults is not available here"
+		return v, nil
+	}
+	var known []string
+	if v.hooks.Categories != nil {
+		known = v.hooks.Categories()
+	}
+	var m model
+	if adopt {
+		m = newAdoptModel(known)
+	} else {
+		m = newModel(v.hooks.VaultsDir, known)
+	}
+	v.add = &m
+	return v, m.Init()
+}
+
+// updateAdd forwards keys to the add screen and creates the vault once confirmed.
+func (v view) updateAdd(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := v.add.Update(msg)
+	m := next.(model)
+	if m.cancelled {
+		v.add = nil
+		return v, nil
+	}
+	choice := m.result()
+	if choice == nil {
+		v.add = &m
+		return v, cmd
+	}
+	v.add = nil
+	rel, err := v.hooks.Create(*choice)
+	if err != nil {
+		v.errMsg = err.Error()
+		return v, nil
+	}
+	v.changed = true
+	if choice.Adopt {
+		v.status = "adopted " + choice.Name
+	} else {
+		v.status = "created " + choice.Name
+	}
+	v.reload(rel)
+	v.detail = nil
+	return v, nil
+}
+
+// refresh rebuilds derived state in the background, then reloads the tree.
+func (v view) refresh() (tea.Model, tea.Cmd) {
+	if v.hooks.Refresh == nil || v.hooks.Load == nil {
+		v.errMsg = "refresh is not available here"
+		return v, nil
+	}
+	v.busy = "refreshing every vault…"
+	fn := v.hooks.Refresh
+	return v, func() tea.Msg { return refreshedMsg{err: fn()} }
 }
 
 // openEditor starts editing a project's page in place.
@@ -671,7 +764,7 @@ func (v view) openAsync(item *Item, register bool) (tea.Model, tea.Cmd) {
 }
 
 // footer renders the prompt, progress, or status lines under a screen.
-func (v view) footer(hints string) string {
+func (v view) footer(hints ...string) string {
 	switch {
 	case v.ask != nil:
 		question := "Register it as a vault?"
@@ -683,7 +776,10 @@ func (v view) footer(hints string) string {
 	case v.busy != "":
 		return "  " + okSt.Render(v.busy) + "\n"
 	}
-	out := "  " + dim.Render(hints) + "\n"
+	out := ""
+	for _, line := range hints {
+		out += "  " + dim.Render(line) + "\n"
+	}
 	if v.status != "" {
 		out += "  " + okSt.Render(v.status) + "\n"
 	}
@@ -696,6 +792,9 @@ func (v view) footer(hints string) string {
 func (v view) View() string {
 	if v.edit != nil {
 		return v.edit.view()
+	}
+	if v.add != nil {
+		return v.add.View()
 	}
 	if v.detail != nil {
 		return v.viewDetail()
@@ -722,8 +821,13 @@ func (v view) View() string {
 	if end < len(v.lines) {
 		b.WriteString("  " + dim.Render(fmt.Sprintf("… %d more lines", len(v.lines)-end)) + "\n")
 	}
-	b.WriteString("\n" + v.footer(v.treeHints()))
+	b.WriteString("\n" + v.footer(v.treeHints(), v.globalHints()))
 	return b.String()
+}
+
+// globalHints lists the keys that work anywhere in the tree.
+func (v view) globalHints() string {
+	return "n new vault · a adopt · R refresh · - + fold all · q quit"
 }
 
 // treeHints lists the keys that do something for the row under the cursor.
@@ -739,17 +843,14 @@ func (v view) treeHints() string {
 			} else {
 				hints += " · Enter fold"
 			}
-			hints += " · - + fold all"
 		case rowFolded:
 			hints += " · Enter open"
 		}
-	} else if len(v.rows) > 0 {
-		hints += " · - + fold all"
 	}
 	if len(v.stack) > 0 {
 		hints += " · Esc back"
 	}
-	return hints + " · q quit"
+	return hints
 }
 
 func dash(s string) string {
@@ -840,7 +941,7 @@ func (v view) viewDetail() string {
 			b.WriteString("    - " + t + "\n")
 		}
 	}
-	b.WriteString("\n" + v.footer("o Obsidian · c Claude Code · e edit · Esc back · q quit"))
+	b.WriteString("\n" + v.footer("o Obsidian · c Claude Code · e edit · R refresh · Esc back · q quit"))
 	return b.String()
 }
 

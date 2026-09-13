@@ -71,8 +71,9 @@ In the session, `/claude-atlas:wiki-ingest` reads the inbox and writes cited
 pages; `/claude-atlas:wiki-query` answers from the vault. Claude shows a
 preview before every change, and `claude-atlas undo` takes one back.
 
-See every vault at once. In the tree, `o` opens a vault in Obsidian, `c`
-starts Claude Code in it, and `e` edits its project page:
+See every vault at once. The tree does everything the commands do: `o` opens
+a vault in Obsidian, `c` starts Claude Code in it, `e` edits its project page,
+`n` creates a vault, `a` adopts one, `R` refreshes:
 
 ```bash
 claude-atlas view
