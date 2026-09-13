@@ -54,22 +54,103 @@ func TestTreeShowsThreeLayersAndFoldsDeeper(t *testing.T) {
 	if !strings.HasSuffix(v.lines[len(v.lines)-1], "(end)") {
 		t.Fatal("tree should end with an explicit (end) marker")
 	}
-	kinds := ""
+	if got := kinds(v); got != "PCCPCCPF" {
+		t.Fatalf("rows %s", got)
+	}
+}
+
+func kinds(v view) string {
+	out := ""
 	for _, r := range v.rows {
-		if r.kind == rowFolded {
-			kinds += "F"
-		} else {
-			kinds += "P"
+		switch r.kind {
+		case rowFolded:
+			out += "F"
+		case rowCategory:
+			out += "C"
+		default:
+			out += "P"
 		}
 	}
-	if kinds != "PPPF" {
-		t.Fatalf("rows %s", kinds)
+	return out
+}
+
+func TestDownRevealsTheEndAndNeverWraps(t *testing.T) {
+	v := newView(sample(), Opener{}, Hooks{})
+	next, _ := v.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	v = next.(view)
+	v = pressV(v, tea.KeyUp)
+	if v.cursor != 0 {
+		t.Fatal("up at the top must stay at the top")
+	}
+	for i := 0; i < len(v.rows)-1; i++ {
+		v = pressV(v, tea.KeyDown)
+	}
+	if v.cursor != len(v.rows)-1 || !strings.Contains(v.View(), "more lines") {
+		t.Fatalf("last row should be selected with the end still hidden: cursor=%d\n%s", v.cursor, v.View())
+	}
+	v = pressV(v, tea.KeyDown)
+	out := v.View()
+	if !v.atEnd() || strings.Contains(out, "more lines") || !strings.Contains(out, "(end)") {
+		t.Fatalf("one more down should reveal the end marker: cursor=%d\n%s", v.cursor, out)
+	}
+	v = pressV(v, tea.KeyDown)
+	if !v.atEnd() {
+		t.Fatal("down at the end must stay at the end")
+	}
+	v = pressV(v, tea.KeyEnter) // nothing to open here
+	if v.detail != nil {
+		t.Fatal("enter on the end marker opens nothing")
+	}
+	v = pressV(v, tea.KeyUp)
+	if v.atEnd() || v.cursor != len(v.rows)-1 {
+		t.Fatal("up from the end returns to the last row")
+	}
+}
+
+func TestFoldBranchAndFoldAll(t *testing.T) {
+	v := newView(sample(), Opener{}, Hooks{})
+	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyDown) // welcome, engineering, itl, p3
+	if r := v.current(); r.kind != rowProject || r.item.Project.Name != "p3" {
+		t.Fatalf("cursor on %+v", r)
+	}
+	v = pressV(v, tea.KeySpace) // collapses itl and moves onto it
+	if r := v.current(); r.kind != rowCategory || r.path != "engineering/itl" || !v.collapsed["engineering/itl"] {
+		t.Fatalf("after fold: %+v collapsed=%v", r, v.collapsed)
+	}
+	out := v.View()
+	if strings.Contains(out, "p3") || !strings.Contains(out, "▸ itl") || !strings.Contains(out, "1 project") {
+		t.Fatalf("folded branch still shows its project:\n%s", out)
+	}
+	v = pressV(v, tea.KeyEnter) // enter on a category expands it again
+	if v.collapsed["engineering/itl"] || !strings.Contains(v.View(), "p3") {
+		t.Fatal("enter should expand the category")
+	}
+	v = keyV(v, "-")
+	if got := kinds(v); got != "PC" || !strings.Contains(v.View(), "▸ engineering") {
+		t.Fatalf("collapse all: rows %s\n%s", got, v.View())
+	}
+	if r := v.current(); r == nil || r.path != "engineering" {
+		t.Fatalf("collapse all should leave the cursor on the visible ancestor: %+v", r)
+	}
+	v = keyV(v, "+")
+	if got := kinds(v); got != "PCCPCCPF" || v.current().path != "engineering" {
+		t.Fatalf("expand all: rows %s cursor %+v", got, v.current())
+	}
+	v = pressV(v, tea.KeyLeft) // left on a category folds it
+	if r := v.current(); r.path != "engineering" || !v.collapsed["engineering"] || kinds(v) != "PC" {
+		t.Fatalf("left on category: %+v rows %s", r, kinds(v))
+	}
+	v = pressV(v, tea.KeyUp, tea.KeySpace) // a top-level project has no branch to fold
+	if kinds(v) != "PC" || v.cursor != 0 {
+		t.Fatal("space on a top-level project changes nothing")
 	}
 }
 
 func TestEnterOnFoldedZoomsAndEscReturns(t *testing.T) {
 	v := newView(sample(), Opener{}, Hooks{})
-	v = pressV(v, tea.KeyUp) // wraps to the folded row
+	for i := 0; i < len(v.rows)-1; i++ {
+		v = pressV(v, tea.KeyDown) // down to the folded row at the bottom
+	}
 	if v.rows[v.cursor].kind != rowFolded {
 		t.Fatalf("cursor on %+v", v.rows[v.cursor])
 	}
@@ -90,7 +171,7 @@ func TestEnterOnFoldedZoomsAndEscReturns(t *testing.T) {
 
 func TestDetailShowsEverything(t *testing.T) {
 	v := newView(sample(), Opener{}, Hooks{})
-	v = pressV(v, tea.KeyDown, tea.KeyEnter) // p3
+	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyDown, tea.KeyEnter) // p3
 	out := v.View()
 	t.Logf("\n%s", out)
 	for _, want := range []string{"p3", "tree/engineering/itl/p3.md", "🔥 hot", "Vault", "/v/p3", "Pages", "4", "Open threads", "- thread", "Vault check", "Esc back"} {
@@ -156,7 +237,7 @@ func runCmd(v view, cmd tea.Cmd) view {
 func TestOpenRegisteredVaultDirectly(t *testing.T) {
 	f := &fakeOpener{registered: map[string]bool{"/v/p3": true}}
 	v := newView(sample(), f.opener(), Hooks{})
-	v = pressV(v, tea.KeyDown) // p3
+	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyDown) // p3
 	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
 	v = next.(view)
 	if v.busy == "" || cmd == nil {
@@ -197,7 +278,7 @@ func TestOpenUnknownVaultAsksThenRegisters(t *testing.T) {
 func TestOpenFromDetail(t *testing.T) {
 	f := &fakeOpener{registered: map[string]bool{"/v/p3": true}}
 	v := newView(sample(), f.opener(), Hooks{})
-	v = pressV(v, tea.KeyDown, tea.KeyEnter)
+	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyDown, tea.KeyEnter)
 	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
 	v = runCmd(next.(view), cmd)
 	if len(f.opened) != 1 || v.detail == nil {
@@ -209,7 +290,7 @@ func TestClaudeKeyHandsOffTheTerminal(t *testing.T) {
 	var got string
 	op := Opener{Claude: func(vault string) (*exec.Cmd, error) { got = vault; return exec.Command("true"), nil }}
 	v := newView(sample(), op, Hooks{})
-	v = pressV(v, tea.KeyDown) // p3
+	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyDown) // p3
 	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	v = next.(view)
 	if got != "/v/p3" || cmd == nil || v.errMsg != "" {

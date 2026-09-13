@@ -44,7 +44,7 @@ func fakeAtlas(t *testing.T) (*home.Config, Hooks) {
 	return cfg, hooks
 }
 
-// atlasView opens the tree over the fake atlas with the cursor on "reading" (row 1: welcome, reading, capstone).
+// atlasView opens the tree over the fake atlas with the cursor on "reading" (rows: welcome, personal, reading, ...).
 func atlasView(t *testing.T) (*home.Config, view) {
 	t.Helper()
 	cfg, hooks := fakeAtlas(t)
@@ -54,8 +54,8 @@ func atlasView(t *testing.T) (*home.Config, view) {
 		items = append(items, Item{Project: p, State: hooks.State(p.Rel)})
 	}
 	v := newView(items, Opener{}, hooks)
-	v = pressV(v, tea.KeyDown)
-	if v.rows[v.cursor].item.Project.ID() != "reading" {
+	v = pressV(v, tea.KeyDown, tea.KeyDown)
+	if r := v.current(); r.kind != rowProject || r.item.Project.ID() != "reading" {
 		t.Fatalf("cursor on %s", v.rows[v.cursor].item.Project.Rel)
 	}
 	return cfg, v

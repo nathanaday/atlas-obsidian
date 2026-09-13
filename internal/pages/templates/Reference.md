@@ -46,7 +46,7 @@ claude-atlas open-vault my-project
 
 **View the atlas**
 
-> Navigate your projects as a tree, three category layers at a time; deeper categories open on Enter. Enter shows everything the atlas knows about a project; `o` opens its vault in Obsidian; `c` starts Claude Code in it; `e` edits it: rename, purpose, category, priority, state, vault path, links, or remove it from the atlas (the vault stays on disk).
+> Navigate your projects as a tree, three category layers at a time; deeper categories open on Enter. Space folds the branch under the cursor; `-` and `+` fold and unfold everything. Enter shows everything the atlas knows about a project; `o` opens its vault in Obsidian; `c` starts Claude Code in it; `e` edits it: rename, purpose, category, priority, state, vault path, links, or remove it from the atlas (the vault stays on disk).
 
 ```bash
 claude-atlas view

@@ -108,6 +108,7 @@ type rowKind int
 const (
 	rowProject rowKind = iota
 	rowFolded
+	rowCategory
 )
 
 // viewRow is a selectable element of the rendered tree with its line span.
@@ -133,6 +134,7 @@ type view struct {
 	hooks     Hooks
 	edit      *editor
 	changed   bool
+	collapsed map[string]bool // category paths folded by the user
 	root      string
 	stack     []frame
 	ask       *Item  // project awaiting a register-and-open confirmation
@@ -158,7 +160,7 @@ var (
 )
 
 func newView(items []Item, opener Opener, hooks Hooks) view {
-	v := view{items: items, opener: opener, hooks: hooks, width: 100, height: 40}
+	v := view{items: items, opener: opener, hooks: hooks, collapsed: map[string]bool{}, width: 100, height: 40}
 	v.stamp()
 	v.layout()
 	return v
@@ -265,11 +267,30 @@ func (v *view) layout() {
 	top := buildTree(v.items, v.root)
 	v.renderNode(top, 0)
 	if len(v.lines) > 0 {
-		v.lines = append(v.lines, dim.Render("(end)"))
+		v.lines = append(v.lines, v.endLine())
 	}
-	if v.cursor >= len(v.rows) {
-		v.cursor = max(0, len(v.rows)-1)
+	if v.cursor > len(v.rows) {
+		v.cursor = len(v.rows)
 	}
+}
+
+// atEnd reports whether the cursor sits on the end marker below the last row.
+func (v view) atEnd() bool { return len(v.rows) > 0 && v.cursor == len(v.rows) }
+
+// endLine is the marker after the last row; it takes the cursor so the user knows the tree stops here.
+func (v view) endLine() string {
+	if v.atEnd() {
+		return selSt.Render("(end)")
+	}
+	return dim.Render("(end)")
+}
+
+// current is the row under the cursor, or nil on the end marker or an empty tree.
+func (v view) current() *viewRow {
+	if v.cursor < 0 || v.cursor >= len(v.rows) {
+		return nil
+	}
+	return &v.rows[v.cursor]
 }
 
 func (v *view) guide(depth int) string {
@@ -287,8 +308,118 @@ func (v *view) renderNode(n *catNode, depth int) {
 			v.rows = append(v.rows, viewRow{kind: rowFolded, path: child.path, count: child.count(), start: start, end: start})
 			continue
 		}
-		v.lines = append(v.lines, v.guide(depth)+"▾ "+catSt.Render(child.name))
-		v.renderNode(child, depth+1)
+		v.renderCategory(child, depth)
+	}
+}
+
+// renderCategory writes a selectable category header and, unless folded, its contents.
+func (v *view) renderCategory(n *catNode, depth int) {
+	selected := len(v.rows) == v.cursor
+	folded := v.collapsed[n.path]
+	arrow, name := "▾ ", catSt.Render(n.name)
+	if folded {
+		arrow = "▸ "
+	}
+	if selected {
+		arrow, name = selSt.Render(arrow), selSt.Render(n.name)
+	}
+	line := v.guide(depth) + arrow + name
+	if folded {
+		line += dim.Render(fmt.Sprintf("  %d project%s", n.count(), plural(n.count())))
+	}
+	start := len(v.lines)
+	v.lines = append(v.lines, line)
+	v.rows = append(v.rows, viewRow{kind: rowCategory, path: n.path, count: n.count(), start: start, end: start})
+	if !folded {
+		v.renderNode(n, depth+1)
+	}
+}
+
+// parentPath is the category a row sits in, relative to the tree shown; "" at the root.
+func (v view) parentPath(r viewRow) string {
+	switch r.kind {
+	case rowProject:
+		return r.item.Project.Category()
+	default:
+		if i := strings.LastIndex(r.path, "/"); i >= 0 {
+			return r.path[:i]
+		}
+		return ""
+	}
+}
+
+// moveTo puts the cursor on the row for a category path, when it is visible.
+func (v *view) moveTo(path string) {
+	for i, r := range v.rows {
+		if r.kind != rowProject && r.path == path {
+			v.cursor = i
+			return
+		}
+	}
+}
+
+// fold collapses or expands the branch at the cursor. On a project it collapses the
+// project's category and moves the cursor there.
+func (v *view) fold() {
+	r := v.current()
+	if r == nil {
+		return
+	}
+	switch r.kind {
+	case rowCategory:
+		v.collapsed[r.path] = !v.collapsed[r.path]
+	case rowProject:
+		parent := v.parentPath(*r)
+		if parent == "" || parent == v.root {
+			return
+		}
+		v.collapsed[parent] = true
+		v.layout()
+		v.moveTo(parent)
+		return
+	default:
+		return
+	}
+	v.layout()
+}
+
+// foldAll collapses or expands every category in the tree shown. The cursor stays on
+// the nearest visible ancestor of where it was.
+func (v *view) foldAll(collapse bool) {
+	anchor := ""
+	if r := v.current(); r != nil {
+		anchor = r.path
+		if r.kind == rowProject {
+			anchor = r.item.Project.Category()
+		}
+	}
+	if !collapse {
+		v.collapsed = map[string]bool{}
+	} else {
+		var mark func(n *catNode)
+		mark = func(n *catNode) {
+			for _, c := range n.children {
+				v.collapsed[c.path] = true
+				mark(c)
+			}
+		}
+		mark(buildTree(v.items, v.root))
+	}
+	v.layout()
+	best := -1
+	for i, r := range v.rows {
+		if r.kind == rowProject || r.path == "" {
+			continue
+		}
+		if (anchor == r.path || strings.HasPrefix(anchor, r.path+"/")) && (best < 0 || len(r.path) > len(v.rows[best].path)) {
+			best = i
+		}
+	}
+	switch {
+	case best >= 0:
+		v.cursor = best
+	case v.cursor > len(v.rows):
+		v.cursor = len(v.rows)
 	}
 }
 
@@ -319,12 +450,15 @@ func (v *view) ensureVisible() {
 		return
 	}
 	avail := v.bodyHeight()
-	r := v.rows[v.cursor]
-	if r.start < v.offset {
-		v.offset = r.start
+	start, end := len(v.lines)-1, len(v.lines)-1
+	if r := v.current(); r != nil {
+		start, end = r.start, r.end
 	}
-	if r.end >= v.offset+avail {
-		v.offset = r.end - avail + 1
+	if start < v.offset {
+		v.offset = start
+	}
+	if end >= v.offset+avail {
+		v.offset = end - avail + 1
 	}
 	if v.offset < 0 {
 		v.offset = 0
@@ -384,8 +518,8 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var item *Item
 			if v.detail != nil {
 				item = v.detail
-			} else if len(v.rows) > 0 && v.rows[v.cursor].kind == rowProject {
-				item = v.rows[v.cursor].item
+			} else if r := v.current(); r != nil && r.kind == rowProject {
+				item = r.item
 			}
 			if item == nil {
 				return v, nil
@@ -406,36 +540,46 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.Type {
 		case tea.KeyUp:
-			if len(v.rows) > 0 {
-				v.cursor = (v.cursor + len(v.rows) - 1) % len(v.rows)
+			if v.cursor > 0 {
+				v.cursor--
 			}
 		case tea.KeyDown:
-			if len(v.rows) > 0 {
-				v.cursor = (v.cursor + 1) % len(v.rows)
+			// One step past the last row lands on the end marker, so the bottom is unmistakable.
+			if v.cursor < len(v.rows) {
+				v.cursor++
 			}
 		case tea.KeyEnter, tea.KeyRight:
-			if len(v.rows) == 0 {
+			r := v.current()
+			if r == nil {
 				return v, nil
 			}
-			r := v.rows[v.cursor]
-			if r.kind == rowFolded {
+			switch r.kind {
+			case rowFolded:
 				v.stack = append(v.stack, frame{root: v.root, cursor: v.cursor, offset: v.offset})
 				v.root = r.path
 				v.cursor = 0
 				v.offset = 0
-			} else {
+			case rowCategory:
+				v.collapsed[r.path] = !v.collapsed[r.path]
+			default:
 				v.detail = r.item
 			}
-		case tea.KeyEsc, tea.KeyLeft:
+		case tea.KeySpace, tea.KeyLeft:
+			v.fold()
+		case tea.KeyEsc:
 			if len(v.stack) == 0 {
-				if msg.Type == tea.KeyEsc {
-					return v, tea.Quit
-				}
-				return v, nil
+				return v, tea.Quit
 			}
 			last := v.stack[len(v.stack)-1]
 			v.stack = v.stack[:len(v.stack)-1]
 			v.root, v.cursor, v.offset = last.root, last.cursor, last.offset
+		default:
+			switch msg.String() {
+			case "-":
+				v.foldAll(true)
+			case "+", "=":
+				v.foldAll(false)
+			}
 		}
 		v.layout()
 		v.ensureVisible()
@@ -578,7 +722,7 @@ func (v view) View() string {
 	if end < len(v.lines) {
 		b.WriteString("  " + dim.Render(fmt.Sprintf("… %d more lines", len(v.lines)-end)) + "\n")
 	}
-	hints := "↑↓ move · Enter details · o Obsidian · c Claude Code · e edit"
+	hints := "↑↓ move · Enter open · Space fold · - + fold all · o Obsidian · c Claude · e edit"
 	if len(v.stack) > 0 {
 		hints += " · Esc back"
 	}
