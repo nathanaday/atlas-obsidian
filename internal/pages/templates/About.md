@@ -1,5 +1,5 @@
 > [!info] Orientation
-> This vault is your atlas: one place that looks across every claude-obsidian vault you keep. claude-atlas generates and maintains it. Source and issues: %REPO%
+> This vault is your atlas: one place that looks across every claude-atlas vault you keep. claude-atlas generates and maintains it. Source and issues: %REPO%
 
 ## What is here
 
@@ -13,12 +13,28 @@
 
 | Piece | Where | Who writes it |
 |:--|:--|:--|
-| Your vaults | `%VAULTS%` | claude-obsidian, through Claude Code |
+| Your vaults | `%VAULTS%` | You in Obsidian, and Claude Code through the claude-atlas plugin. Every change is one git commit. |
 | This atlas | `%ATLAS%` | You, in `tree/`; claude-atlas writes [[Overview]], [[About]], and [[Reference]] |
 | Settings and derived state | `%HOME%` | claude-atlas. Derived state is rebuilt on every refresh and safe to delete. |
 
 > [!tip] Three rules
 > The atlas never writes into a vault. A vault never learns the atlas exists. The atlas never stores a fact it can compute; derived state and [[Overview]] are rebuilt from scratch on every refresh.
+
+## A vault
+
+```
+sensor-triage/
+├── .claude-atlas.json        identity and filing mode
+├── .git/                     one commit per operation
+├── inbox/                    sources waiting to be ingested
+├── .raw/captured/            immutable copies of ingested sources
+└── wiki/
+    ├── index.md  log.md  hot.md  overview.md
+    ├── sources/ entities/ concepts/ questions/ sessions/
+    └── meta/ledgers/source-ledger.json
+```
+
+Drop a file into `inbox/`, start Claude Code in the vault, and run `/claude-atlas:wiki-ingest`. Claude captures the file, writes pages, shows you what it will change, and applies it as one commit. Edits you make in Obsidian are committed under their own message before any operation, so `claude-atlas undo` never touches them.
 
 ## The tree
 
@@ -36,7 +52,7 @@ Folders are categories and carry no data of their own; make, rename, and nest th
 
 ## Heat
 
-[[Overview]] gives every project a heat from how recently its vault changed, counting both claude-obsidian operations and edits you make by hand.
+[[Overview]] gives every project a heat from how recently its vault changed, counting operations and edits you make by hand alike.
 
 | Heat | Meaning |
 |:--|:--|
@@ -44,7 +60,7 @@ Folders are categories and carry no data of their own; make, rename, and nest th
 | 🔥 hot | Touched within the last 7 days. |
 | 🌤️ warm | Touched within the last 30 days. |
 | ❄️ cold | Untouched for 30 days or more. |
-| ⛔ unreachable | The vault is missing, moved, or fails claude-obsidian's checks. |
+| ⛔ unreachable | The vault is missing, moved, or has no `wiki/`. |
 
 ## Editing a project
 
@@ -52,7 +68,7 @@ Open its page under `tree/`. The properties panel shows the fields the atlas rea
 
 | Property | Values | Meaning |
 |:--|:--|:--|
-| vault | a path | The claude-obsidian vault this project tracks. Required. |
+| vault | a path | The vault this project tracks. Required. |
 | priority | high, normal, low, someday | What you intend, not what you did. |
 | state | active, paused, blocked, archived | Where the project stands. |
 | blocked_on | free text | What you are waiting for, when state is blocked. |

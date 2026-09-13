@@ -40,7 +40,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if back.VaultsDir != filepath.Join(userHome, "Docs", "Vaults") || back.AtlasVault != filepath.Join(userHome, "Documents", "Atlas") {
 		t.Fatalf("got %+v", back)
 	}
-	if back.ClaudeObsidian.Plugin == "" || back.TreeRoot() != filepath.Join(userHome, "Documents", "Atlas", "tree") {
+	if back.Plugin.ID == "" || back.TreeRoot() != filepath.Join(userHome, "Documents", "Atlas", "tree") {
 		t.Fatalf("got %+v", back)
 	}
 }

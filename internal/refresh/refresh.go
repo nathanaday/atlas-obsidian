@@ -13,8 +13,10 @@ import (
 
 	"github.com/nathanaday/claude-atlas/internal/home"
 	"github.com/nathanaday/claude-atlas/internal/links"
-	"github.com/nathanaday/claude-atlas/internal/product"
+	"github.com/nathanaday/claude-atlas/internal/lint"
 	"github.com/nathanaday/claude-atlas/internal/tree"
+	"github.com/nathanaday/claude-atlas/internal/txn"
+	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
 const (
@@ -76,11 +78,16 @@ func NewestLogDate(vault string) (time.Time, bool) {
 	return newest, found
 }
 
-// CreatedDate is the day claude-obsidian initialized the vault: the `created:` field it
-// writes into wiki/index.md (or wiki/overview.md) from its template.
-func CreatedDate(vault string) (time.Time, bool) {
+// CreatedDate is the day the vault was created: the identity file's date, or for a
+// claude-obsidian vault the `created:` field its template wrote into wiki/index.md.
+func CreatedDate(root string) (time.Time, bool) {
+	if v, err := vault.Open(root); err == nil && v.Config.Created != "" {
+		if t, ok := parseDate(v.Config.Created); ok {
+			return t, true
+		}
+	}
 	for _, name := range []string{"index.md", "overview.md", "log.md"} {
-		data, err := os.ReadFile(filepath.Join(vault, "wiki", name))
+		data, err := os.ReadFile(filepath.Join(root, "wiki", name))
 		if err != nil {
 			continue
 		}
@@ -185,27 +192,29 @@ func baseState(generatedAt string) *tree.State {
 	return &tree.State{Schema: tree.StateSchema, GeneratedAt: generatedAt, OpenThreads: []string{}}
 }
 
-// Derive observes one project's vault. A nil product records the vault as unverified.
-func Derive(p *product.Product, project *tree.Project, today time.Time, generatedAt string) *tree.State {
+// Derive observes one project's vault: a claude-atlas vault, or a claude-obsidian vault
+// that has not been adopted yet, which reads the same way but is marked legacy.
+func Derive(project *tree.Project, today time.Time, generatedAt string) *tree.State {
 	state := baseState(generatedAt)
 	state.Project = project.Rel
-	vault := project.VaultPath()
-	state.Vault = vault
-	if _, err := os.Stat(filepath.Join(vault, ".claude-obsidian.json")); err != nil {
-		if _, err := os.Stat(vault); err != nil {
+	root := project.VaultPath()
+	state.Vault = root
+	if !vault.IsVault(root) && !vault.IsLegacy(root) {
+		if _, err := os.Stat(root); err != nil {
 			state.VaultError = "not found"
 		} else {
-			state.VaultError = "not a claude-obsidian vault"
+			state.VaultError = "not a claude-atlas vault"
 		}
 		return state
 	}
+	state.Legacy = vault.IsLegacy(root)
 	var touched time.Time
 	touchedFound := false
-	if op, ok := NewestLogDate(vault); ok {
+	if op, ok := NewestLogDate(root); ok {
 		state.LastOperation = op.Format("2006-01-02")
 		touched, touchedFound = op, true
 	}
-	if mt, ok := NewestWikiMtime(vault); ok && (!touchedFound || mt.After(touched)) {
+	if mt, ok := NewestWikiMtime(root); ok && (!touchedFound || mt.After(touched)) {
 		touched, touchedFound = mt, true
 	}
 	// Work in a linked repo or on linked material counts as work on the project.
@@ -216,7 +225,7 @@ func Derive(p *product.Product, project *tree.Project, today time.Time, generate
 		}
 	}
 	var daysOld *int
-	if created, ok := CreatedDate(vault); ok {
+	if created, ok := CreatedDate(root); ok {
 		state.Created = created.Format("2006-01-02")
 		daysOld = ptr(int(dateOf(today).Sub(dateOf(created)).Hours() / 24))
 	}
@@ -226,41 +235,31 @@ func Derive(p *product.Product, project *tree.Project, today time.Time, generate
 		state.DaysIdle = ptr(days)
 		state.Heat = Heat(state.DaysIdle, daysOld)
 	}
-	state.OpenThreads = ActiveThreads(vault)
+	state.OpenThreads = ActiveThreads(root)
 	if state.OpenThreads == nil {
 		state.OpenThreads = []string{}
 	}
-	state.Unfinished.SeedPages = ptr(SeedPages(vault))
-
-	if p == nil {
-		state.VaultError = "claude-obsidian is not installed"
+	state.Unfinished.SeedPages = ptr(SeedPages(root))
+	if info, err := os.Stat(filepath.Join(root, "wiki")); err != nil || !info.IsDir() {
+		state.VaultError = "no wiki/ directory"
 		return state
 	}
-	doctor, err := p.Doctor(vault)
+	report, err := lint.Run(root, lint.Options{AsOf: today})
 	if err != nil {
 		state.VaultError = err.Error()
 		return state
 	}
-	if !doctor.OK {
-		var failed []string
-		for name, ok := range doctor.Checks {
-			if !ok {
-				failed = append(failed, name)
+	if !state.Legacy {
+		if v, err := vault.Open(root); err == nil {
+			if pending, _ := txn.Pending(v); pending != nil {
+				state.PendingRecovery = true
 			}
 		}
-		sort.Strings(failed)
-		state.VaultError = "doctor: " + strings.Join(failed, ", ")
-		return state
-	}
-	summary, err := p.Lint(vault)
-	if err != nil {
-		state.VaultError = err.Error()
-		return state
 	}
 	state.VaultOK = true
-	state.Pages = ptr(summary.PagesScanned)
-	state.Unfinished.EmptySections = ptr(summary.CategoryCounts["empty_sections"])
-	state.Unfinished.DeadLinks = ptr(summary.CategoryCounts["dead_links"])
+	state.Pages = ptr(report.Summary.PagesScanned)
+	state.Unfinished.EmptySections = ptr(report.Summary.CategoryCounts["empty_sections"])
+	state.Unfinished.DeadLinks = ptr(report.Summary.CategoryCounts["dead_links"])
 	return state
 }
 
@@ -338,7 +337,7 @@ type Result struct {
 }
 
 // Tree derives state for every project and rewrites the state directory from scratch.
-func Tree(cfg *home.Config, stateDir string, p *product.Product, today time.Time, generatedAt string) (*Result, error) {
+func Tree(cfg *home.Config, stateDir string, today time.Time, generatedAt string) (*Result, error) {
 	projects, problems, err := tree.Walk(cfg.TreeRoot())
 	if err != nil {
 		return nil, err
@@ -348,7 +347,7 @@ func Tree(cfg *home.Config, stateDir string, p *product.Product, today time.Time
 	}
 	rows := make([]Row, 0, len(projects))
 	for _, project := range projects {
-		state := Derive(p, project, today, generatedAt)
+		state := Derive(project, today, generatedAt)
 		if err := tree.WriteState(stateDir, project.Rel, state); err != nil {
 			return nil, err
 		}
@@ -389,6 +388,12 @@ func Signals(node *tree.Project, state *tree.State, today time.Time) []string {
 	var notes []string
 	if !state.VaultOK {
 		notes = append(notes, "vault unreachable: "+state.VaultError)
+	}
+	if state.Legacy {
+		notes = append(notes, "claude-obsidian vault; adopt it with `claude-atlas adopt "+home.Display(state.Vault)+"`")
+	}
+	if state.PendingRecovery {
+		notes = append(notes, "an operation was interrupted; run `claude-atlas recover "+node.Rel+"`")
 	}
 	if state.Heat == "cold" && node.State == "active" && (node.Priority == "high" || node.Priority == "normal") {
 		notes = append(notes, fmt.Sprintf("declared priority %s, active, but cold for %d days", node.Priority, *state.DaysIdle))
@@ -573,8 +578,10 @@ func calloutFor(note string) string {
 	switch {
 	case strings.HasPrefix(note, "vault unreachable"), strings.HasPrefix(note, "repo "), strings.HasPrefix(note, "materials "):
 		return "failure"
-	case strings.HasPrefix(note, "blocked on"):
+	case strings.HasPrefix(note, "blocked on"), strings.HasPrefix(note, "an operation was interrupted"):
 		return "danger"
+	case strings.HasPrefix(note, "claude-obsidian vault"):
+		return "info"
 	case strings.HasPrefix(note, "review"):
 		return "question"
 	default:
@@ -596,10 +603,15 @@ func plural(n int) string {
 	return "s"
 }
 
+// NowUTC is the timestamp format derived state records.
+func NowUTC() string {
+	return time.Now().UTC().Truncate(time.Second).Format("2006-01-02T15:04:05Z")
+}
+
 // Run refreshes every project and writes Overview.md; it returns the page path and the result.
-func Run(cfg *home.Config, stateDir string, p *product.Product, today time.Time) (string, *Result, error) {
-	generatedAt := product.NowUTC()
-	res, err := Tree(cfg, stateDir, p, today, generatedAt)
+func Run(cfg *home.Config, stateDir string, today time.Time) (string, *Result, error) {
+	generatedAt := NowUTC()
+	res, err := Tree(cfg, stateDir, today, generatedAt)
 	if err != nil {
 		return "", nil, err
 	}

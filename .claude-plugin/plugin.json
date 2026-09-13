@@ -1,0 +1,13 @@
+{
+  "name": "claude-atlas",
+  "version": "0.2.0",
+  "description": "Source-cited Obsidian knowledge vaults for Claude Code: an inbox to ingest from, one reviewed operation per change, git history in every vault, and skills for ingesting, querying, linting, canvases, and Bases. Pairs with the claude-atlas binary, which serves the tools.",
+  "author": {
+    "name": "nathanaday",
+    "url": "https://github.com/nathanaday"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/nathanaday/claude-atlas",
+  "repository": "https://github.com/nathanaday/claude-atlas",
+  "keywords": ["obsidian", "knowledge-base", "wiki", "vault", "markdown", "second-brain", "pkm", "canvas"]
+}

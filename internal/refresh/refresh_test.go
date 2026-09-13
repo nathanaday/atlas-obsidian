@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/console"
+	"github.com/nathanaday/claude-atlas/internal/gitx"
 	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/testutil"
 	"github.com/nathanaday/claude-atlas/internal/tree"
+	"github.com/nathanaday/claude-atlas/internal/vault"
 	"github.com/nathanaday/claude-atlas/internal/vaults"
 )
 
@@ -20,7 +20,7 @@ func fakeVault(t *testing.T, log, hot string, pages map[string]string) string {
 	t.Helper()
 	vault := filepath.Join(t.TempDir(), "vault")
 	os.MkdirAll(filepath.Join(vault, "wiki"), 0o755)
-	os.WriteFile(filepath.Join(vault, ".claude-obsidian.json"), []byte("{}"), 0o644)
+	os.WriteFile(filepath.Join(vault, ".claude-atlas.json"), []byte(`{"schema":"claude-atlas.vault.v1","mode":"generic"}`), 0o644)
 	os.WriteFile(filepath.Join(vault, "wiki", "log.md"), []byte(log), 0o644)
 	os.WriteFile(filepath.Join(vault, "wiki", "hot.md"), []byte(hot), 0o644)
 	for name, text := range pages {
@@ -67,7 +67,7 @@ func TestCreatedDateComesFromTheIndexPage(t *testing.T) {
 
 func TestDeriveMarksAFreshVaultNew(t *testing.T) {
 	vault := fakeVault(t, "", "", map[string]string{"index.md": "---\ncreated: " + time.Now().Format("2006-01-02") + "\n---\n"})
-	state := Derive(nil, leaf(vault), time.Now(), "t")
+	state := Derive(leaf(vault), time.Now(), "t")
 	if state.Heat != "new" || state.Created != time.Now().Format("2006-01-02") {
 		t.Fatalf("got heat %q created %q", state.Heat, state.Created)
 	}
@@ -111,26 +111,36 @@ func TestPlainTextStripsWikilinks(t *testing.T) {
 }
 
 func TestDeriveMarksMissingVault(t *testing.T) {
-	state := Derive(nil, leaf(filepath.Join(t.TempDir(), "nope")), today, "t")
+	state := Derive(leaf(filepath.Join(t.TempDir(), "nope")), today, "t")
 	if state.VaultOK || state.VaultError != "not found" || state.Heat != "" {
 		t.Fatalf("got %+v", state)
 	}
 	plain := t.TempDir()
-	if state := Derive(nil, leaf(plain), today, "t"); state.VaultError != "not a claude-obsidian vault" {
+	if state := Derive(leaf(plain), today, "t"); state.VaultError != "not a claude-atlas vault" {
 		t.Fatalf("got %+v", state)
+	}
+	legacy := t.TempDir()
+	os.MkdirAll(filepath.Join(legacy, "wiki"), 0o755)
+	os.WriteFile(filepath.Join(legacy, ".claude-obsidian.json"), []byte("{}"), 0o644)
+	state = Derive(leaf(legacy), today, "t")
+	if !state.VaultOK || !state.Legacy {
+		t.Fatalf("legacy vault should read: %+v", state)
+	}
+	if notes := strings.Join(Signals(leaf(legacy), state, today), "\n"); !strings.Contains(notes, "claude-obsidian vault; adopt it") {
+		t.Fatalf("signals %q", notes)
 	}
 }
 
 func TestDeriveTakesLaterOfLogAndMtime(t *testing.T) {
 	vault := fakeVault(t, "## 2026-08-01 — old\n", "", nil)
-	state := Derive(nil, leaf(vault), time.Now(), "t")
+	state := Derive(leaf(vault), time.Now(), "t")
 	if state.LastOperation != "2026-08-01" || state.LastTouched != time.Now().Format("2006-01-02") {
 		t.Fatalf("got %+v", state)
 	}
 	if state.DaysIdle == nil || *state.DaysIdle != 0 || state.Heat != "hot" {
 		t.Fatalf("idle %v heat %s", state.DaysIdle, state.Heat)
 	}
-	if state.VaultOK || state.VaultError != "claude-obsidian is not installed" {
+	if !state.VaultOK || state.Pages == nil || *state.Pages != 2 {
 		t.Fatalf("got %+v", state)
 	}
 }
@@ -171,22 +181,24 @@ func TestRenderListsRowsAndSignals(t *testing.T) {
 }
 
 func TestRunAgainstARealVault(t *testing.T) {
-	prod := testutil.Product(t)
+	if !gitx.Available() {
+		t.Skip("git is not installed")
+	}
 	root := t.TempDir()
 	cfg := &home.Config{Schema: home.ConfigSchema, VaultsDir: filepath.Join(root, "Vaults"), AtlasVault: filepath.Join(root, "atlas")}
 	os.MkdirAll(cfg.TreeRoot(), 0o755)
-	vault := filepath.Join(cfg.VaultsDir, "fresh")
-	if err := vaults.Create(prod, vault, console.NewWith(true, strings.NewReader(""), os.Stderr, false), false); err != nil {
+	fresh := filepath.Join(cfg.VaultsDir, "fresh")
+	if _, err := vault.Init(fresh, vault.Generic, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	project, err := vaults.Register(cfg, vault, vaults.RegisterOptions{Category: "area"})
+	project, err := vaults.Register(cfg, fresh, vaults.RegisterOptions{Category: "area"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	stateDir := filepath.Join(root, "state")
 	os.MkdirAll(stateDir, 0o755)
 	os.WriteFile(filepath.Join(stateDir, "stale.json"), []byte("{}"), 0o644)
-	page, res, err := Run(cfg, stateDir, prod, time.Now())
+	page, res, err := Run(cfg, stateDir, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +226,7 @@ func TestLinksCountAsActivityAndMissingOnesSignal(t *testing.T) {
 	node := leaf(vault)
 	node.Materials = []string{docs}
 	node.Repos = []string{filepath.Join(t.TempDir(), "gone")}
-	state := Derive(nil, node, time.Now(), "t")
+	state := Derive(node, time.Now(), "t")
 	if len(state.Links) != 2 || !state.Links[1].OK || state.Links[0].OK {
 		t.Fatalf("links %+v", state.Links)
 	}

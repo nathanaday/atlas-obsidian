@@ -74,6 +74,44 @@ claude-atlas list
 claude-atlas info
 ```
 
+## Working with Claude Code
+
+> Start Claude Code inside a project's vault. The plugin's session hook hands Claude the vault's recent context (`wiki/hot.md`) at the start, and its skills are on the slash menu.
+
+```bash
+claude-atlas open-claude my-project
+```
+
+> The workflow, once inside: put a source in `inbox/`, ingest it, ask the vault questions, keep what matters.
+
+```text
+/claude-atlas:wiki-ingest
+```
+
+```text
+/claude-atlas:wiki-query
+```
+
+```text
+/claude-atlas:save
+```
+
+```text
+/claude-atlas:wiki-lint
+```
+
+> Every change Claude makes is a plan you review, then one git commit in the vault. Take one back from the terminal:
+
+```bash
+claude-atlas history my-project
+```
+
+```bash
+claude-atlas undo my-project ingest-20260912-150405-ab12
+```
+
+> To invoke a skill on every launch, set `claude_code.prompt` in config.json, for example to `/claude-atlas:wiki`. Set `claude_code.session_context` to `false` to keep the hook silent.
+
 ## Linking repos and material
 
 > Link a folder to a project: a git repository (detected by its `.git`) or a folder of static material such as slides, PDFs, and images. Nothing is copied; the atlas remembers the path and reports on it at every refresh.
@@ -98,40 +136,37 @@ claude-atlas links my-project
 claude-atlas unlink my-project ~/code/my-project
 ```
 
-## Working with Claude Code
+## Inside a vault
 
-> Start Claude Code inside a project's vault. claude-obsidian's session hook hands Claude the vault's recent context (`wiki/hot.md`) at the start, and its skills are on the slash menu.
+> These take a project name or a path; inside a vault they need no argument.
+
+> Run the wiki health check: dead links, orphans, pages missing from the index, empty sections.
 
 ```bash
-claude-atlas open-claude my-project
+claude-atlas lint my-project
 ```
 
-> The skills, once inside:
+> Show or change the filing mode: `generic` files pages by type; `lyt` keeps atomic notes under Maps of Content.
 
-```text
-/claude-obsidian:wiki-ingest
+```bash
+claude-atlas mode my-project lyt
 ```
 
-```text
-/claude-obsidian:wiki-query
+> Restore a vault after an interrupted operation.
+
+```bash
+claude-atlas recover my-project
 ```
-
-```text
-/claude-obsidian:wiki-lint
-```
-
-> To invoke a skill on every launch, set `claude_code.prompt` in config.json, for example to `/claude-obsidian:wiki`. Set `claude_code.session_context` to `false` to keep the hook silent.
-
 
 ## Setup and health
 
-Install claude-obsidian into Claude Code, create the atlas, and create a first vault. Safe to run again; finished steps are skipped.
+Install the plugin into Claude Code, create the atlas, and create a first vault. Safe to run again; finished steps are skipped.
 
 ```bash
 claude-atlas setup
 ```
 
-Check the installation and reach every vault.
+Check the installation, the plugin, git, and reach every vault.
 
 ```bash
 claude-atlas doctor
@@ -149,16 +184,22 @@ Set purpose and priority when creating a vault.
 claude-atlas new-vault sensor-triage --purpose "Sort field sensor faults." --priority high
 ```
 
+Create a vault in LYT mode.
+
+```bash
+claude-atlas new-vault reading --mode lyt
+```
+
 Create a vault at an explicit path instead of the vaults directory.
 
 ```bash
 claude-atlas new-vault ~/Desktop/scratch-vault
 ```
 
-Register an existing vault with a display name, a category, and a priority.
+Bring in a vault that already exists, including one made by claude-obsidian. It gains an identity file and git history; nothing in it is replaced.
 
 ```bash
-claude-atlas new-vault --from ~/Documents/OldVault --name "Old Vault" --category archive --priority someday
+claude-atlas adopt ~/Documents/OldVault --name "Old Vault" --category archive --priority someday
 ```
 
 Move a project by moving its page.
@@ -167,17 +208,16 @@ Move a project by moving its page.
 mv %ATLAS%/tree/capstone.md %ATLAS%/tree/university/cs566/
 ```
 
-Register a claude-obsidian vault that already exists.
-
-```bash
-claude-atlas new-vault --from ~/Documents/OldVault
-```
-
-
 Run setup with every location chosen up front.
 
 ```bash
 claude-atlas setup --atlas-vault %ATLAS% --vaults-dir %VAULTS% --first-vault research
+```
+
+Install the plugin from a local checkout while developing it.
+
+```bash
+claude-atlas setup --plugin-source ~/SoftwareProjects/claude-atlas
 ```
 
 Run setup without touching Claude Code plugins.
@@ -203,4 +243,4 @@ claude-atlas --home ~/other-atlas info
 | `--home DIR` | Use a different home instead of `~/.claude-atlas`. |
 | `-y`, `--yes` | Answer yes to every prompt. |
 | `CLAUDE_ATLAS_HOME` | Same as `--home`, as an environment variable. |
-| `claude_obsidian.path` in config.json | Use a claude-obsidian checkout instead of the installed plugin. |
+| `plugin.source` in config.json | Where `claude plugin marketplace add` gets the plugin: a GitHub slug or a local path. |

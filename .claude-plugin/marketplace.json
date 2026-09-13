@@ -1,0 +1,20 @@
+{
+  "name": "nathanaday-claude-atlas",
+  "owner": {
+    "name": "nathanaday",
+    "url": "https://github.com/nathanaday"
+  },
+  "metadata": {
+    "description": "claude-atlas: knowledge vaults for Claude Code, and one view across them.",
+    "version": "0.2.0"
+  },
+  "plugins": [
+    {
+      "name": "claude-atlas",
+      "source": "./",
+      "description": "Source-cited Obsidian knowledge vaults for Claude Code, backed by the claude-atlas binary.",
+      "version": "0.2.0",
+      "category": "productivity"
+    }
+  ]
+}

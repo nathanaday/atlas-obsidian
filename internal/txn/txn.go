@@ -1,0 +1,825 @@
+// Package txn turns a requested change into a reviewed plan and applies it as one git
+// commit. Git is the safety net: hand edits are committed before an operation runs, a
+// failed operation is restored from HEAD, and undo is a revert.
+package txn
+
+import (
+	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/nathanaday/claude-atlas/internal/gitx"
+	"github.com/nathanaday/claude-atlas/internal/ledger"
+	"github.com/nathanaday/claude-atlas/internal/lint"
+	"github.com/nathanaday/claude-atlas/internal/vault"
+)
+
+// Kind names the workflow that produced a plan. It bounds what the plan may write.
+type Kind string
+
+const (
+	Ingest   Kind = "ingest"
+	Save     Kind = "save"
+	Markdown Kind = "markdown"
+	Repair   Kind = "repair"
+	Fold     Kind = "fold"
+	Canvas   Kind = "canvas"
+	Base     Kind = "base"
+	Config   Kind = "config"
+	Capture  Kind = "capture"
+	Undo     Kind = "undo"
+)
+
+// ModelKinds are the kinds a plan from the model may use. Capture and undo are the core's own.
+var ModelKinds = []Kind{Ingest, Save, Markdown, Repair, Fold, Canvas, Base, Config}
+
+func validKind(k Kind) bool {
+	switch k {
+	case Ingest, Save, Markdown, Repair, Fold, Canvas, Base, Config, Capture:
+		return true
+	}
+	return false
+}
+
+// WriteMode says what a write does to its path.
+type WriteMode string
+
+const (
+	Create  WriteMode = "create"
+	Replace WriteMode = "replace"
+	Delete  WriteMode = "delete"
+)
+
+// Write is one requested file change.
+type Write struct {
+	Path    string
+	Mode    WriteMode
+	Content []byte
+	// BaseSHA256 is the hash of the content the author last saw. Empty means "whatever is
+	// there now"; the plan then pins the current hash.
+	BaseSHA256 string
+}
+
+// Request is what a workflow asks for.
+type Request struct {
+	Kind    Kind
+	Summary string
+	Writes  []Write
+	Sources []ledger.Update
+}
+
+const (
+	MaxWrites    = 256
+	MaxWriteSize = 64 << 20
+)
+
+// Change is one line of a preview.
+type Change struct {
+	Path   string    `json:"path"`
+	Mode   WriteMode `json:"mode"`
+	Bytes  int       `json:"bytes"`
+	Before int       `json:"before_bytes,omitempty"`
+}
+
+// Preview is what the user reviews before apply.
+type Preview struct {
+	Creates  []Change `json:"creates"`
+	Replaces []Change `json:"replaces"`
+	Deletes  []Change `json:"deletes"`
+	Sources  []string `json:"sources,omitempty"`
+}
+
+type prepared struct {
+	Path    string
+	Mode    WriteMode
+	Content []byte
+	Base    string // sha256 of the current content, "" when absent
+	Existed bool
+}
+
+// Plan is a validated request bound to one vault and the state it saw.
+type Plan struct {
+	ID          string    `json:"id"`
+	OperationID string    `json:"operation_id"`
+	Vault       string    `json:"vault"`
+	Kind        Kind      `json:"kind"`
+	Summary     string    `json:"summary"`
+	Preview     Preview   `json:"preview"`
+	Warnings    []string  `json:"warnings"`
+	CreatedAt   time.Time `json:"created_at"`
+
+	writes  []prepared
+	sources []ledger.Update
+}
+
+// Result reports an applied operation.
+type Result struct {
+	OperationID  string   `json:"operation_id"`
+	Commit       string   `json:"commit"`
+	ChangedPaths []string `json:"changed_paths"`
+	// ManualCommit is the commit that captured hand edits before this operation, if any.
+	ManualCommit string `json:"manual_commit,omitempty"`
+}
+
+// ErrConflict means a file changed after the plan was made.
+var ErrConflict = errors.New("conflict")
+
+func sha(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func newPlanID() string {
+	var b [3]byte
+	rand.Read(b[:])
+	return "plan-" + hex.EncodeToString(b[:])
+}
+
+// normalizePath validates a vault-relative path from a request.
+func normalizePath(p string) (string, error) {
+	if p == "" {
+		return "", errors.New("path is empty")
+	}
+	if strings.ContainsAny(p, "\x00\n\r\\") {
+		return "", fmt.Errorf("path %q contains a forbidden character", p)
+	}
+	if strings.HasPrefix(p, "/") || strings.HasPrefix(p, "~") {
+		return "", fmt.Errorf("path %q must be relative to the vault", p)
+	}
+	if path.Clean(p) != p || strings.HasPrefix(p, "../") || p == ".." || p == "." {
+		return "", fmt.Errorf("path %q must be a clean vault-relative path", p)
+	}
+	if len(p) > 1024 {
+		return "", fmt.Errorf("path %q is too long", p)
+	}
+	return p, nil
+}
+
+// allowed enforces each kind's write scope.
+func allowed(kind Kind, p string, mode WriteMode) error {
+	switch {
+	case p == ".git" || strings.HasPrefix(p, ".git/"),
+		p == vault.MetaDir || strings.HasPrefix(p, vault.MetaDir+"/"):
+		return fmt.Errorf("%s is internal and cannot be written", p)
+	case p == vault.LogPage:
+		return fmt.Errorf("%s is written by the core from the plan's summary; do not write it", p)
+	case p == vault.LedgerPath:
+		return fmt.Errorf("%s is updated through the plan's sources field; do not write it", p)
+	}
+	under := func(dir string) bool { return strings.HasPrefix(p, dir+"/") }
+	switch kind {
+	case Config:
+		if p != vault.Marker || mode != Replace {
+			return fmt.Errorf("a config operation replaces only %s", vault.Marker)
+		}
+	case Capture:
+		if !under(vault.CapturedDir) || mode != Create || strings.Count(p, "/") != 2 {
+			return fmt.Errorf("a capture operation creates only files under %s/", vault.CapturedDir)
+		}
+	case Ingest:
+		if under(vault.InboxDir) {
+			if mode != Delete {
+				return fmt.Errorf("an ingest may only remove files from %s/, not write them", vault.InboxDir)
+			}
+			return nil
+		}
+		if !under(vault.WikiDir) {
+			return fmt.Errorf("an ingest writes only under wiki/ (and removes from inbox/): %s", p)
+		}
+	case Canvas:
+		if !(under("wiki/canvases") && strings.HasSuffix(p, ".canvas")) && p != "wiki/canvases/index.md" {
+			return fmt.Errorf("a canvas operation writes only wiki/canvases/*.canvas and wiki/canvases/index.md: %s", p)
+		}
+	case Base:
+		if !under(vault.WikiDir) || !strings.HasSuffix(p, ".base") {
+			return fmt.Errorf("a base operation writes only .base files under wiki/: %s", p)
+		}
+	case Save, Markdown, Repair, Fold:
+		if !under(vault.WikiDir) {
+			return fmt.Errorf("a %s operation writes only under wiki/: %s", kind, p)
+		}
+	default:
+		return fmt.Errorf("unknown operation kind %q", kind)
+	}
+	return nil
+}
+
+func validateContent(p string, content []byte) error {
+	ext := strings.ToLower(path.Ext(p))
+	switch {
+	case strings.HasPrefix(p, "wiki/") && ext == ".md":
+		if !utf8Valid(content) {
+			return fmt.Errorf("%s is not UTF-8", p)
+		}
+		fields, _, err := vault.Frontmatter(string(content))
+		if err != nil {
+			return fmt.Errorf("%s: %w", p, err)
+		}
+		if fields == nil {
+			return fmt.Errorf("%s has no frontmatter; wiki pages start with a YAML block", p)
+		}
+		if missing := vault.MissingFrontmatter(fields); len(missing) > 0 {
+			return fmt.Errorf("%s frontmatter lacks %s", p, strings.Join(missing, ", "))
+		}
+	case ext == ".json" || ext == ".canvas":
+		if !json.Valid(content) {
+			return fmt.Errorf("%s is not valid JSON", p)
+		}
+	case ext == ".base":
+		var doc any
+		if err := yaml.Unmarshal(content, &doc); err != nil {
+			return fmt.Errorf("%s is not valid YAML: %w", p, err)
+		}
+	}
+	return nil
+}
+
+func utf8Valid(b []byte) bool { return strings.ToValidUTF8(string(b), "�") == string(b) }
+
+// fileState returns the hash of a vault file, or "" and false when it is absent.
+func fileState(v *vault.Vault, rel string) (string, int, bool, error) {
+	info, err := os.Lstat(v.Path(rel))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", 0, false, nil
+	}
+	if err != nil {
+		return "", 0, false, err
+	}
+	if !info.Mode().IsRegular() {
+		return "", 0, false, fmt.Errorf("%s is not a regular file", rel)
+	}
+	data, err := os.ReadFile(v.Path(rel))
+	if err != nil {
+		return "", 0, false, err
+	}
+	return sha(data), len(data), true, nil
+}
+
+// Prepare validates a request against the vault's current state and returns a plan.
+func Prepare(v *vault.Vault, req Request, now time.Time) (*Plan, error) {
+	if !validKind(req.Kind) {
+		return nil, fmt.Errorf("unknown operation kind %q", req.Kind)
+	}
+	summary := strings.Join(strings.Fields(req.Summary), " ")
+	if summary == "" {
+		return nil, errors.New("summary is required: one line saying what the operation does")
+	}
+	if len(req.Writes) == 0 && len(req.Sources) == 0 {
+		return nil, errors.New("a plan needs at least one write or source update")
+	}
+	if len(req.Writes) > MaxWrites {
+		return nil, fmt.Errorf("a plan may hold at most %d writes", MaxWrites)
+	}
+	plan := &Plan{ID: newPlanID(), OperationID: vault.NewOperationID(string(req.Kind), now), Vault: v.Root, Kind: req.Kind, Summary: summary, CreatedAt: now, Warnings: []string{}}
+	seen := map[string]string{}
+	overlay := map[string][]byte{}
+	led, err := ledger.Load(v.Path(vault.LedgerPath), now)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range req.Writes {
+		p, err := normalizePath(w.Path)
+		if err != nil {
+			return nil, err
+		}
+		if prior, dup := seen[strings.ToLower(p)]; dup {
+			return nil, fmt.Errorf("plan writes %s twice (as %s and %s)", p, prior, p)
+		}
+		seen[strings.ToLower(p)] = p
+		if w.Mode != Create && w.Mode != Replace && w.Mode != Delete {
+			return nil, fmt.Errorf("%s: mode must be create, replace, or delete", p)
+		}
+		if err := allowed(req.Kind, p, w.Mode); err != nil {
+			return nil, err
+		}
+		current, size, exists, err := fileState(v, p)
+		if err != nil {
+			return nil, err
+		}
+		switch w.Mode {
+		case Create:
+			if exists {
+				return nil, fmt.Errorf("%s already exists; use replace with its base hash", p)
+			}
+		case Replace, Delete:
+			if !exists {
+				return nil, fmt.Errorf("%s does not exist; use create", p)
+			}
+			if w.BaseSHA256 != "" && strings.ToLower(w.BaseSHA256) != current {
+				return nil, fmt.Errorf("%w: %s changed since it was read; read it again", ErrConflict, p)
+			}
+		}
+		if w.Mode != Delete {
+			if len(w.Content) > MaxWriteSize {
+				return nil, fmt.Errorf("%s exceeds %d bytes", p, MaxWriteSize)
+			}
+			if err := validateContent(p, w.Content); err != nil {
+				return nil, err
+			}
+		}
+		if req.Kind == Ingest && strings.HasPrefix(p, vault.InboxDir+"/") {
+			if id, _ := led.FindBySHA(current); id == "" {
+				return nil, fmt.Errorf("%s has not been captured; capture it before removing it from the inbox", p)
+			}
+		}
+		pw := prepared{Path: p, Mode: w.Mode, Content: w.Content, Base: current, Existed: exists}
+		plan.writes = append(plan.writes, pw)
+		change := Change{Path: p, Mode: w.Mode, Bytes: len(w.Content), Before: size}
+		switch w.Mode {
+		case Create:
+			plan.Preview.Creates = append(plan.Preview.Creates, change)
+			overlay[p] = w.Content
+		case Replace:
+			plan.Preview.Replaces = append(plan.Preview.Replaces, change)
+			overlay[p] = w.Content
+		case Delete:
+			change.Bytes = 0
+			plan.Preview.Deletes = append(plan.Preview.Deletes, change)
+			overlay[p] = nil
+		}
+	}
+	if len(req.Sources) > 0 {
+		trial, err := ledger.Parse(led.Encode())
+		if err != nil {
+			return nil, err
+		}
+		if err := trial.Apply(req.Sources, now); err != nil {
+			return nil, err
+		}
+		for _, u := range req.Sources {
+			plan.Preview.Sources = append(plan.Preview.Sources, u.ID)
+			for _, page := range u.Pages {
+				if _, planned := overlay[page]; planned {
+					continue
+				}
+				if _, _, exists, _ := fileState(v, page); !exists {
+					plan.Warnings = append(plan.Warnings, fmt.Sprintf("source %s lists %s, which does not exist", u.ID, page))
+				}
+			}
+		}
+		plan.sources = req.Sources
+	}
+	var written []string
+	for p := range overlay {
+		if strings.HasPrefix(p, "wiki/") && strings.HasSuffix(strings.ToLower(p), ".md") && overlay[p] != nil {
+			written = append(written, p)
+		}
+	}
+	if len(written) > 0 {
+		report, err := lint.Run(v.Root, lint.Options{Overlay: overlay, AsOf: now})
+		if err == nil {
+			plan.Warnings = append(plan.Warnings, report.Problems(written)...)
+		}
+	}
+	sort.Strings(plan.Warnings)
+	return plan, nil
+}
+
+// ConfigRequest builds the request that changes the vault's mode.
+func ConfigRequest(v *vault.Vault, mode vault.Mode) Request {
+	cfg := v.Config
+	cfg.Mode = mode
+	return Request{Kind: Config, Summary: fmt.Sprintf("set mode to %s", mode), Writes: []Write{{Path: vault.Marker, Mode: Replace, Content: cfg.Encode()}}}
+}
+
+// Inflight marks an apply that has started writing. It exists only until the commit.
+type Inflight struct {
+	OperationID string         `json:"operation_id"`
+	Kind        Kind           `json:"kind"`
+	Started     string         `json:"started"`
+	Paths       []InflightPath `json:"paths"`
+}
+
+type InflightPath struct {
+	Path    string `json:"path"`
+	Existed bool   `json:"existed"`
+}
+
+func inflightPath(v *vault.Vault) string { return v.Path(vault.MetaDir + "/inflight.json") }
+
+// Pending returns the in-flight marker if an apply was interrupted.
+func Pending(v *vault.Vault) (*Inflight, error) {
+	data, err := os.ReadFile(inflightPath(v))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var in Inflight
+	if err := json.Unmarshal(data, &in); err != nil {
+		return nil, fmt.Errorf("inflight marker is unreadable: %w", err)
+	}
+	return &in, nil
+}
+
+// RecoverResult reports what recovery restored.
+type RecoverResult struct {
+	OperationID string   `json:"operation_id"`
+	Restored    []string `json:"restored"`
+}
+
+// Recover restores every path an interrupted apply touched from HEAD and removes the marker.
+// It returns nil, nil when nothing was pending.
+func Recover(v *vault.Vault) (*RecoverResult, error) {
+	unlock, err := lock(v)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	return recoverLocked(v)
+}
+
+func recoverLocked(v *vault.Vault) (*RecoverResult, error) {
+	in, err := Pending(v)
+	if err != nil {
+		return nil, err
+	}
+	if in == nil {
+		return nil, nil
+	}
+	res := &RecoverResult{OperationID: in.OperationID}
+	repo := v.Repo()
+	var restore []string
+	for _, p := range in.Paths {
+		if p.Existed {
+			restore = append(restore, p.Path)
+		} else if err := os.Remove(v.Path(p.Path)); err == nil {
+			res.Restored = append(res.Restored, p.Path)
+		}
+	}
+	if len(restore) > 0 {
+		if err := repo.RestoreFromHead(restore...); err != nil {
+			return nil, fmt.Errorf("recovery could not restore %s: %w", strings.Join(restore, ", "), err)
+		}
+		res.Restored = append(res.Restored, restore...)
+	}
+	sort.Strings(res.Restored)
+	return res, os.Remove(inflightPath(v))
+}
+
+func requireHistory(repo gitx.Repo) error {
+	if !repo.IsRepo() || !repo.HasHead() {
+		return errors.New("the vault has no git history; run `claude-atlas adopt` on it first")
+	}
+	return nil
+}
+
+// commitManualEdits records whatever changed outside atlas so the tree is clean.
+func commitManualEdits(repo gitx.Repo, now time.Time) (string, error) {
+	entries, err := repo.Status()
+	if err != nil {
+		return "", err
+	}
+	if len(entries) == 0 {
+		return "", nil
+	}
+	if err := repo.AddAll(); err != nil {
+		return "", err
+	}
+	id := vault.NewOperationID("manual", now)
+	noun := "file"
+	if len(entries) != 1 {
+		noun = "files"
+	}
+	return repo.Commit(vault.CommitMessage("manual", fmt.Sprintf("%d %s changed outside atlas", len(entries), noun), id))
+}
+
+// Apply writes the plan as one commit. The plan is consumed whether or not it succeeds.
+func Apply(v *vault.Vault, plan *Plan, now time.Time) (*Result, error) {
+	if plan.Vault != v.Root {
+		return nil, fmt.Errorf("plan belongs to %s, not %s", plan.Vault, v.Root)
+	}
+	unlock, err := lock(v)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	repo := v.Repo()
+	if err := requireHistory(repo); err != nil {
+		return nil, err
+	}
+	if _, err := recoverLocked(v); err != nil {
+		return nil, err
+	}
+	res := &Result{OperationID: plan.OperationID}
+	if res.ManualCommit, err = commitManualEdits(repo, now); err != nil {
+		return nil, err
+	}
+	for _, w := range plan.writes {
+		current, _, exists, err := fileState(v, w.Path)
+		if err != nil {
+			return nil, err
+		}
+		if exists != w.Existed || current != w.Base {
+			return nil, fmt.Errorf("%w: %s changed after the plan was made; plan again", ErrConflict, w.Path)
+		}
+	}
+	led, err := ledger.Load(v.Path(vault.LedgerPath), now)
+	if err != nil {
+		return nil, err
+	}
+	if err := led.Apply(plan.sources, now); err != nil {
+		return nil, err
+	}
+	logData, err := os.ReadFile(v.Path(vault.LogPage))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	logExisted := err == nil
+	_, _, ledgerExisted, _ := fileState(v, vault.LedgerPath)
+
+	in := Inflight{OperationID: plan.OperationID, Kind: plan.Kind, Started: now.UTC().Format(time.RFC3339)}
+	for _, w := range plan.writes {
+		in.Paths = append(in.Paths, InflightPath{Path: w.Path, Existed: w.Existed})
+	}
+	in.Paths = append(in.Paths, InflightPath{Path: vault.LogPage, Existed: logExisted})
+	if len(plan.sources) > 0 {
+		in.Paths = append(in.Paths, InflightPath{Path: vault.LedgerPath, Existed: ledgerExisted})
+	}
+	if err := writeInflight(v, in); err != nil {
+		return nil, err
+	}
+	rollback := func(cause error) error {
+		if _, rerr := recoverLocked(v); rerr != nil {
+			return fmt.Errorf("%v; recovery also failed: %v", cause, rerr)
+		}
+		return cause
+	}
+	var changed []string
+	for _, w := range plan.writes {
+		changed = append(changed, w.Path)
+		if w.Mode == Delete {
+			if err := os.Remove(v.Path(w.Path)); err != nil {
+				return nil, rollback(err)
+			}
+			continue
+		}
+		if err := writeAtomic(v.Path(w.Path), w.Content); err != nil {
+			return nil, rollback(err)
+		}
+	}
+	entry := logEntry(plan, now)
+	if err := writeAtomic(v.Path(vault.LogPage), prependLog(logData, entry, now)); err != nil {
+		return nil, rollback(err)
+	}
+	changed = append(changed, vault.LogPage)
+	if len(plan.sources) > 0 {
+		if err := writeAtomic(v.Path(vault.LedgerPath), led.Encode()); err != nil {
+			return nil, rollback(err)
+		}
+		changed = append(changed, vault.LedgerPath)
+	}
+	if err := repo.Add(changed...); err != nil {
+		return nil, rollback(err)
+	}
+	commit, err := repo.Commit(vault.CommitMessage(string(plan.Kind), plan.Summary, plan.OperationID))
+	if err != nil {
+		return nil, rollback(err)
+	}
+	if err := os.Remove(inflightPath(v)); err != nil {
+		return nil, err
+	}
+	sort.Strings(changed)
+	res.Commit = commit
+	res.ChangedPaths = changed
+	return res, nil
+}
+
+func writeInflight(v *vault.Vault, in Inflight) error {
+	if err := os.MkdirAll(v.Path(vault.MetaDir), 0o755); err != nil {
+		return err
+	}
+	data, _ := json.MarshalIndent(in, "", "  ")
+	return writeAtomic(inflightPath(v), append(data, '\n'))
+}
+
+func writeAtomic(target string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(target), ".atlas-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return err
+	}
+	if err := os.Chmod(name, 0o644); err != nil {
+		os.Remove(name)
+		return err
+	}
+	return os.Rename(name, target)
+}
+
+var updatedLine = regexp.MustCompile(`(?m)^updated: .*$`)
+
+// prependLog inserts an entry before the first existing entry and bumps `updated:`.
+func prependLog(existing []byte, entry string, now time.Time) []byte {
+	text := string(existing)
+	if text == "" {
+		text = "---\ntype: meta\ntitle: Wiki Log\nstatus: evergreen\ncreated: " + now.Format("2006-01-02") + "\nupdated: " + now.Format("2006-01-02") + "\ntags:\n  - meta\n  - log\n---\n\n# Wiki Log\n\nNewest completed operations appear first.\n"
+	}
+	if front, _, ok, err := vault.SplitFrontmatter(text); ok && err == nil {
+		newFront := updatedLine.ReplaceAllString(front, "updated: "+now.Format("2006-01-02"))
+		text = "---\n" + newFront + "---" + text[len("---\n")+len(front)+len("---"):]
+	}
+	idx := strings.Index(text, "\n## ")
+	var b strings.Builder
+	if idx < 0 {
+		b.WriteString(strings.TrimRight(text, "\n"))
+		b.WriteString("\n\n")
+		b.WriteString(entry)
+	} else {
+		b.WriteString(strings.TrimRight(text[:idx], "\n"))
+		b.WriteString("\n\n")
+		b.WriteString(entry)
+		b.WriteString("\n")
+		b.WriteString(strings.TrimLeft(text[idx:], "\n"))
+	}
+	out := strings.TrimRight(b.String(), "\n") + "\n"
+	return []byte(out)
+}
+
+func logEntry(plan *Plan, now time.Time) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "## %s — %s\n\n%s\n", now.Format("2006-01-02"), plan.OperationID, plan.Summary)
+	line := func(label string, changes []Change, deleted bool) {
+		if len(changes) == 0 {
+			return
+		}
+		var refs []string
+		for _, c := range changes {
+			refs = append(refs, pageRef(c.Path, deleted))
+		}
+		fmt.Fprintf(&b, "- %s: %s\n", label, strings.Join(refs, ", "))
+	}
+	if len(plan.Preview.Creates)+len(plan.Preview.Replaces)+len(plan.Preview.Deletes)+len(plan.Preview.Sources) > 0 {
+		b.WriteString("\n")
+	}
+	line("Created", plan.Preview.Creates, false)
+	line("Updated", plan.Preview.Replaces, false)
+	line("Removed", plan.Preview.Deletes, true)
+	if len(plan.Preview.Sources) > 0 {
+		fmt.Fprintf(&b, "- Sources: %s\n", strings.Join(plan.Preview.Sources, ", "))
+	}
+	return b.String()
+}
+
+// pageRef links a wiki page by its stem, and quotes anything else.
+func pageRef(p string, deleted bool) string {
+	if !deleted && strings.HasPrefix(p, "wiki/") && strings.EqualFold(path.Ext(p), ".md") {
+		return "[[" + vault.PageTitle(p) + "]]"
+	}
+	return "`" + p + "`"
+}
+
+// Operation is one entry of the vault's history.
+type Operation struct {
+	ID      string    `json:"id"`
+	Kind    string    `json:"kind"`
+	Summary string    `json:"summary"`
+	Commit  string    `json:"commit"`
+	Date    time.Time `json:"date"`
+	Paths   []string  `json:"paths,omitempty"`
+	Undoes  string    `json:"undoes,omitempty"`
+}
+
+// History lists the newest operations, most recent first. Manual-edit commits are included.
+func History(v *vault.Vault, limit int, withPaths bool) ([]Operation, error) {
+	repo := v.Repo()
+	commits, err := repo.Log(0)
+	if err != nil {
+		return nil, err
+	}
+	var ops []Operation
+	for _, c := range commits {
+		id, ok := c.Trailers["atlas-operation"]
+		if !ok {
+			continue
+		}
+		kind, summary, _ := strings.Cut(c.Subject, ": ")
+		op := Operation{ID: id, Kind: kind, Summary: summary, Commit: c.SHA, Date: c.Date, Undoes: c.Trailers["atlas-undoes"]}
+		if withPaths {
+			op.Paths, _ = repo.ChangedPaths(c.SHA)
+		}
+		ops = append(ops, op)
+		if limit > 0 && len(ops) >= limit {
+			break
+		}
+	}
+	return ops, nil
+}
+
+// Find returns the operation with the given id.
+func Find(v *vault.Vault, id string) (*Operation, error) {
+	ops, err := History(v, 0, false)
+	if err != nil {
+		return nil, err
+	}
+	for i := range ops {
+		if ops[i].ID == id {
+			return &ops[i], nil
+		}
+	}
+	return nil, fmt.Errorf("no operation %q in this vault's history", id)
+}
+
+// UndoOperation reverts one operation's commit as a new commit.
+func UndoOperation(v *vault.Vault, operationID string, now time.Time) (*Result, error) {
+	unlock, err := lock(v)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	repo := v.Repo()
+	if err := requireHistory(repo); err != nil {
+		return nil, err
+	}
+	if _, err := recoverLocked(v); err != nil {
+		return nil, err
+	}
+	op, err := Find(v, operationID)
+	if err != nil {
+		return nil, err
+	}
+	res := &Result{OperationID: vault.NewOperationID("undo", now)}
+	if res.ManualCommit, err = commitManualEdits(repo, now); err != nil {
+		return nil, err
+	}
+	if err := repo.RevertNoCommit(op.Commit); err != nil {
+		return nil, fmt.Errorf("cannot undo %s: later changes overlap it (%v); repair by hand or with a repair operation", operationID, err)
+	}
+	logData, _ := os.ReadFile(v.Path(vault.LogPage))
+	entry := fmt.Sprintf("## %s — %s\n\nUndid %s: %s\n", now.Format("2006-01-02"), res.OperationID, op.ID, op.Summary)
+	if err := writeAtomic(v.Path(vault.LogPage), prependLog(logData, entry, now)); err != nil {
+		return nil, err
+	}
+	if err := repo.Add(vault.LogPage); err != nil {
+		return nil, err
+	}
+	message := vault.CommitMessage("undo", op.Summary, res.OperationID) + "atlas-undoes: " + op.ID + "\n"
+	res.Commit, err = repo.Commit(message)
+	if err != nil {
+		return nil, err
+	}
+	res.ChangedPaths, _ = repo.ChangedPaths(res.Commit)
+	sort.Strings(res.ChangedPaths)
+	return res, nil
+}
+
+// Status is a small picture of the vault's git state.
+type Status struct {
+	Head        string `json:"head,omitempty"`
+	Dirty       int    `json:"dirty"`
+	Pending     bool   `json:"pending_recovery"`
+	HasHistory  bool   `json:"has_history"`
+	LastCommit  string `json:"last_commit,omitempty"`
+	LastSubject string `json:"last_subject,omitempty"`
+}
+
+// Inspect reports the git state without changing anything.
+func Inspect(v *vault.Vault) (*Status, error) {
+	repo := v.Repo()
+	st := &Status{HasHistory: repo.IsRepo() && repo.HasHead()}
+	if in, err := Pending(v); err == nil && in != nil {
+		st.Pending = true
+	}
+	if !st.HasHistory {
+		return st, nil
+	}
+	st.Head, _ = repo.Head()
+	entries, err := repo.Status()
+	if err != nil {
+		return nil, err
+	}
+	st.Dirty = len(entries)
+	if commits, err := repo.Log(1); err == nil && len(commits) == 1 {
+		st.LastCommit = commits[0].Date.Format("2006-01-02")
+		st.LastSubject = commits[0].Subject
+	}
+	return st, nil
+}
+
+// bytesEqual is here so the file reads without importing bytes twice in tests.
+var _ = bytes.Equal

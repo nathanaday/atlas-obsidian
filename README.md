@@ -1,54 +1,46 @@
 # claude-atlas
 
-One view across many [claude-obsidian](https://github.com/AgriciDaniel/claude-obsidian)
-vaults, and a painless way to create them.
+Knowledge vaults for Claude Code, and one view across all of them.
 
 ## About
 
-claude-obsidian turns Claude Code into a careful knowledge worker: every vault
-keeps its sources, cites its claims, logs its operations, and lints itself. It
-works best when each vault is small and about one thing: one course, one paper,
-one project.
+A vault is an Obsidian folder that Claude Code fills with source-cited pages.
+You drop a paper, a transcript, or a design note into the vault's inbox; Claude
+reads it, writes linked pages, and files the source. Later you ask the vault a
+question and get an answer that cites its own pages. Every change is one
+reviewed operation and one git commit, so nothing is lost and anything can be
+undone.
 
-Two things get in the way once you have more than one vault.
+Vaults work best when each is small and about one thing: one course, one
+project, one area of life. claude-atlas makes a new one in one confirmation and
+keeps a single page, the atlas, that shows every vault side by side: how recently
+it moved, what is unfinished, and the priority you gave it.
 
-Creating a vault takes several commands. The CLI is not on your PATH, the
-dry-run prints a long plan, and you copy a hash and a timestamp from that plan
-into the apply command. It is safe, but it is enough friction to make you
-hesitate before starting a new one.
-
-Nothing shows all your vaults at once. Each vault knows its own state; none of
-them can answer "I have a free afternoon, what should I pick up?"
-
-claude-atlas fixes both. One `setup` command installs the claude-obsidian
-plugin into Claude Code, creates the atlas, and creates your first vault.
-`new-vault` makes another vault in one confirmation. `refresh` reads every
-vault and writes a single page, the atlas, that you open in Obsidian: heat,
-idle days, open threads, unfinished work, and your own declared priority for
-each vault, side by side.
-
-The atlas never writes into a vault, and no vault knows the atlas exists.
-Delete the atlas and every vault is untouched.
+The workflow and the skills come from
+[claude-obsidian](https://github.com/AgriciDaniel/claude-obsidian); see
+Lineage below. claude-atlas replaces its Python core with a Go binary and an
+MCP server, and uses git in the vault as the safety mechanism.
 
 ## Quickstart
 
 ### Prerequisites
 
-- [Claude Code](https://claude.com/claude-code); the `claude` command must be on your PATH
+- [Claude Code](https://claude.com/claude-code) with the `claude` command on
+  your PATH
 - [Obsidian](https://obsidian.md)
-- Python 3.11 or newer, which claude-obsidian itself runs on
-- Go 1.24.2 or newer, to build the binary
+- git
+- Go 1.24 or newer, to build the binary
 
 ### Install
 
 ```bash
-git clone <this repository> claude-atlas
+git clone https://github.com/nathanaday/claude-atlas.git
 cd claude-atlas
 go install ./cmd/claude-atlas
 ```
 
-`go install` puts the binary in `$(go env GOPATH)/bin`, usually `~/go/bin`.
-Add that directory to your PATH if it is not there yet.
+`go install` puts the binary in `$(go env GOPATH)/bin`, usually `~/go/bin`. Add
+that directory to your PATH if it is not there.
 
 ### Setup
 
@@ -62,102 +54,72 @@ Setup shows its plan and asks before it does anything:
 claude-atlas setup
 
   home             create     ~/.claude-atlas
-  claude-obsidian  install    claude-obsidian@agricidaniel-claude-obsidian from AgriciDaniel/claude-obsidian via `claude plugin`
+  plugin           install    claude-atlas@nathanaday-claude-atlas from nathanaday/claude-atlas via `claude plugin`
   atlas vault      create     ~/Documents/Atlas
   vaults dir       use        ~/Documents/Vaults
-  first vault      create     ~/Documents/Vaults/welcome (claude-obsidian init)
+  first vault      create     ~/Documents/Vaults/welcome
 
 Proceed? [Y/n]
 ```
 
-The claude-obsidian step runs the two commands from that project's own install
-guide: `claude plugin marketplace add` and `claude plugin install`. The plugin
-carries the whole product, skills and CLI alike, so nothing else is fetched.
-
-When setup finishes it prints the atlas path and your first vault's path. Run
-`claude-atlas open-vault` to open the atlas in Obsidian. Run setup again at
-any time; finished steps are skipped.
+The plugin step registers this repository as a Claude Code marketplace and
+installs the plugin from it. The plugin holds the skills, the hooks, and a
+small script that runs the binary you installed; the binary serves the MCP
+tools. Run setup again at any time; finished steps are skipped.
 
 ### Usage
 
-Create a vault. With no arguments, `new-vault` walks you through it: type a
-name, pick a category from the ones in your tree or name a new one, add a
-one-line purpose, confirm. The vault is created in your vaults directory and
-its project page lands in the tree.
+Create a vault. With no arguments, `new-vault` walks you through it: a name, a
+category from your tree or a new one, a one-line purpose, confirm.
 
 ```bash
 claude-atlas new-vault
-```
-
-The same thing without prompts, for scripts:
-
-```bash
 claude-atlas new-vault sensor-triage --category work --purpose "Sort field sensor faults."
 ```
 
-Open the atlas, or a project's vault, in Obsidian. Obsidian only opens folders it
-already knows, so the command offers to register the folder. Obsidian reads that
-list only at launch, so it quits and relaunches when it is running. The registry
-write is validated, backed up, and atomic; if the file does not look as expected
-nothing is written and the folder is revealed for "Open folder as vault" instead.
+Put a source in the vault's `inbox/` and start Claude Code inside the vault:
 
 ```bash
-claude-atlas open-vault
-claude-atlas open-vault sensor-triage
-```
-
-Navigate the atlas as a tree. Categories nest three layers deep on screen;
-anything deeper opens on Enter. Each project is a card with its heat, page
-count, and unfinished work; Enter shows every detail, `o` opens the vault in
-Obsidian, and `c` starts Claude Code in it.
-
-```bash
-claude-atlas view
-```
-
-Link the folders a project works with: a git repository, or a folder of slide
-decks, PDFs, and images. Nothing is copied. Refresh reports the repo's branch,
-uncommitted changes, and last commit, and the folder's file count and newest
-file, and a commit or a new file counts as touching the project.
-
-```bash
-claude-atlas link sensor-triage ~/code/sensor-triage
-claude-atlas link sensor-triage ~/Documents/sensor-datasheets
-```
-
-Browse and edit what is registered. Open a project to rename it, change its
-purpose, priority, or state, move it to another category, repoint or move its
-vault, or remove it from the atlas. Removing never touches the vault on disk.
-
-```bash
-claude-atlas manage-vaults
-```
-
-Register a vault you already have:
-
-```bash
-claude-atlas new-vault --from ~/Documents/OldVault --priority high
-```
-
-Rebuild the atlas page from every vault:
-
-```bash
-claude-atlas refresh
-```
-
-Show every path the atlas uses, and the claude-obsidian version it found:
-
-```bash
-claude-atlas info
-```
-
-Start Claude Code inside a project's vault. claude-obsidian's session hook
-gives Claude the vault's recent context at the start, and its skills
-(`/claude-obsidian:wiki-ingest`, `wiki-query`, `wiki-lint`, …) are on the
-slash menu:
-
-```bash
+cp ~/Downloads/dinov2.pdf ~/Documents/Vaults/sensor-triage/inbox/
 claude-atlas open-claude sensor-triage
+```
+
+Then, in the session:
+
+```text
+/claude-atlas:wiki-ingest
+```
+
+Claude captures the file, reads it, drafts pages, and shows you a preview of
+what it will create and update before it applies anything. Ask the vault
+something with `/claude-atlas:wiki-query`, keep an answer with
+`/claude-atlas:save`, check the wiki's health with `/claude-atlas:wiki-lint`.
+
+Open a vault, or the atlas, in Obsidian:
+
+```bash
+claude-atlas open-vault sensor-triage
+claude-atlas open-vault
+```
+
+See every vault at once:
+
+```bash
+claude-atlas view          # navigate the tree; o opens Obsidian, c opens Claude Code
+claude-atlas refresh       # rebuild Overview.md from every vault
+```
+
+Bring in a vault you already have, including one made by claude-obsidian:
+
+```bash
+claude-atlas adopt ~/Documents/MyKnowledgeVault --category personal
+```
+
+Look at a vault's history, or take an operation back:
+
+```bash
+claude-atlas history sensor-triage
+claude-atlas undo sensor-triage ingest-20260912-150405-ab12
 ```
 
 Check the installation:
@@ -166,50 +128,57 @@ Check the installation:
 claude-atlas doctor
 ```
 
+## What a vault holds
+
+```
+sensor-triage/
+├── .claude-atlas.json        identity and filing mode
+├── .git/                     one commit per operation
+├── inbox/                    sources waiting to be ingested
+├── .raw/captured/            immutable copies of ingested sources
+└── wiki/
+    ├── index.md              the catalog, kept current by every operation
+    ├── log.md                what happened, newest first; written by the core
+    ├── hot.md                recent context, handed to Claude at session start
+    ├── overview.md           the stable big picture
+    ├── sources/ entities/ concepts/ questions/ sessions/
+    └── meta/ledgers/source-ledger.json
+```
+
+Everything is plain Markdown and JSON you can open in Obsidian. Two filing
+modes exist: `generic` files pages by type into the folders above; `lyt` keeps
+atomic notes in `wiki/notes/` and navigates them through Maps of Content.
+
 ## What the atlas holds
 
 ```
 ~/Documents/Atlas/            an Obsidian vault; open it like any other
 ├── Overview.md               generated: every project, its heat, threads, and signals
-├── About.md                  orientation: what each part of the atlas is
-├── Reference.md              every claude-atlas command with examples
+├── About.md                  orientation
+├── Reference.md              every command with examples
 └── tree/                     yours: folders are categories, files are projects
-    ├── university/
-    │   └── cs566/
-    │       ├── capstone.md
-    │       └── course-material.md
-    └── personal/
-        └── reading-list.md
 
-~/Documents/Vaults/           where `new-vault` puts each vault
-
-~/.claude-atlas/              internal; you rarely open this
-├── config.json               paths, plugin id, marketplace
-└── state/                    derived state per project, mirroring tree/; safe to delete
+~/Documents/Vaults/           where new-vault puts each vault
+~/.claude-atlas/              config and derived state; rarely opened
 ```
 
-Each project page is intent. Its frontmatter holds the fields the atlas
-reads, so you edit priority and state in Obsidian's property panel; the body
-is yours. The derived state lives outside the vault and is rebuilt on every
-refresh, so a stale tracker can never masquerade as a fresh one. The most
-useful line on the overview is where the two disagree: a project you marked
-`high` whose vault has been cold for six weeks.
-
-Arrange `tree/` however you think: make folders, nest them, move files
-between them. Run `refresh` afterward.
+Each project page under `tree/` is intent: purpose, priority, state, what it
+is blocked on. The derived state is rebuilt on every refresh. The most useful
+line on the overview is where the two disagree: a project marked `high` whose
+vault has been cold for six weeks.
 
 ## Configuration
 
-Everything lives in `~/.claude-atlas/config.json`:
+`~/.claude-atlas/config.json`:
 
 ```json
 {
   "schema": "claude-atlas.config.v1",
   "vaults_dir": "/Users/you/Documents/Vaults",
   "atlas_vault": "/Users/you/Documents/Atlas",
-  "claude_obsidian": {
-    "plugin": "claude-obsidian@agricidaniel-claude-obsidian",
-    "marketplace": "AgriciDaniel/claude-obsidian"
+  "plugin": {
+    "id": "claude-atlas@nathanaday-claude-atlas",
+    "source": "nathanaday/claude-atlas"
   },
   "claude_code": {
     "command": "claude",
@@ -218,31 +187,38 @@ Everything lives in `~/.claude-atlas/config.json`:
 }
 ```
 
-`claude_code.prompt` sends a first message on every launch, for example
-`/claude-obsidian:wiki`. `claude_code.args` adds flags such as `--model`.
-`session_context` sets `CLAUDE_OBSIDIAN_SESSION_CONTEXT=1`, which is
-claude-obsidian's own opt-in for handing Claude the vault's `hot.md`.
-
-Setup asks for both directories and accepts `--atlas-vault` and
-`--vaults-dir`. Set `claude_obsidian.path` to a claude-obsidian checkout to
-use it instead of the installed plugin. `CLAUDE_ATLAS_HOME` or `--home` moves
-the home directory.
+`claude_code.prompt` sends a first message on every `open-claude`, for example
+`/claude-atlas:wiki`. `session_context` controls whether the plugin's
+session-start hook hands Claude the vault's `hot.md`. `plugin.source` can be a
+local checkout while developing. `CLAUDE_ATLAS_HOME` or `--home` moves the
+home directory.
 
 ## Conventions
 
-Full reasoning in the [design spec](docs/spec.md).
+Full reasoning in [docs/core-design.md](docs/core-design.md).
 
-- The atlas never writes into a vault. `new-vault` delegates every write to
-  claude-obsidian's own init; after that the atlas only reads.
-- A vault never learns the atlas exists. A leaf records a path to a vault; the
-  vault records nothing.
-- The atlas never stores a fact it can compute. Derived state is regenerated on
-  every refresh and safe to delete.
-- claude-obsidian is installed once, through Claude Code, the way its own
-  documentation describes. The atlas finds it there and never carries a copy.
+- One operation, one commit. Claude builds a plan, you see the preview, the
+  core commits. Write and Edit are refused under `wiki/` by a hook.
+- The vault is yours. Edits you make in Obsidian are committed under their own
+  message before an operation runs, so undo never touches them.
+- Code owns what code can derive: the log, the source ledger, the history, the
+  lint report. Claude writes pages.
+- The atlas never writes into a vault, a vault never learns the atlas exists,
+  and the atlas never stores a fact it can compute.
 
 ## Documentation
 
-- Design spec — [docs/spec.md](docs/spec.md)
-- Setup experience notes — [docs/setup-experience.md](docs/setup-experience.md)
-- claude-obsidian — https://github.com/AgriciDaniel/claude-obsidian
+- Core design — [docs/core-design.md](docs/core-design.md)
+- Original spec — [docs/spec.md](docs/spec.md)
+- Skills — [skills/](skills/), one `SKILL.md` per skill
+- Plugin manifest — [.claude-plugin/plugin.json](.claude-plugin/plugin.json)
+
+## Lineage
+
+The vault layout, the inbox workflow, the operation discipline, and the skills
+derive from [claude-obsidian](https://github.com/AgriciDaniel/claude-obsidian)
+by AgriciDaniel, MIT licensed, whose design follows
+[Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
+The Obsidian syntax references draw on
+[kepano/obsidian-skills](https://github.com/kepano/obsidian-skills).
+claude-atlas is MIT licensed.

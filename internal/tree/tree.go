@@ -293,21 +293,25 @@ type Unfinished struct {
 
 // State is the derived half of a project, regenerated in full by refresh.
 type State struct {
-	Schema        string       `json:"schema"`
-	GeneratedAt   string       `json:"generated_at"`
-	Project       string       `json:"project"`
-	Vault         string       `json:"vault"`
-	VaultOK       bool         `json:"vault_ok"`
-	VaultError    string       `json:"vault_error"`
-	Created       string       `json:"created"`
-	LastOperation string       `json:"last_operation"`
-	LastTouched   string       `json:"last_touched"`
-	DaysIdle      *int         `json:"days_idle"`
-	Heat          string       `json:"heat"`
-	Pages         *int         `json:"pages"`
-	OpenThreads   []string     `json:"open_threads"`
-	Unfinished    Unfinished   `json:"unfinished"`
-	Links         []links.Link `json:"links"`
+	Schema      string `json:"schema"`
+	GeneratedAt string `json:"generated_at"`
+	Project     string `json:"project"`
+	Vault       string `json:"vault"`
+	VaultOK     bool   `json:"vault_ok"`
+	VaultError  string `json:"vault_error"`
+	// Legacy marks a claude-obsidian vault that has not been adopted.
+	Legacy bool `json:"legacy,omitempty"`
+	// PendingRecovery marks a vault with an interrupted operation.
+	PendingRecovery bool         `json:"pending_recovery,omitempty"`
+	Created         string       `json:"created"`
+	LastOperation   string       `json:"last_operation"`
+	LastTouched     string       `json:"last_touched"`
+	DaysIdle        *int         `json:"days_idle"`
+	Heat            string       `json:"heat"`
+	Pages           *int         `json:"pages"`
+	OpenThreads     []string     `json:"open_threads"`
+	Unfinished      Unfinished   `json:"unfinished"`
+	Links           []links.Link `json:"links"`
 }
 
 // StatePath is where a project's derived state lives: the state dir mirrors the tree.

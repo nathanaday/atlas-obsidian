@@ -1,0 +1,883 @@
+// Package lint checks a vault's wiki without changing it: link resolution, orphans,
+// frontmatter, empty sections, index freshness, and ledger consistency. The report is
+// deterministic for a given tree and audit date. Ported from claude-obsidian's engine.
+package lint
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"net/url"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/nathanaday/claude-atlas/internal/ledger"
+	"github.com/nathanaday/claude-atlas/internal/vault"
+)
+
+const ReportVersion = 1
+
+// Options tune one run.
+type Options struct {
+	// Overlay replaces files before analysis: a vault-relative path maps to its new
+	// content, or to nil to treat the file as deleted. Plans use it to check their result.
+	Overlay map[string][]byte
+	// Exclude lists path globs (relative to the vault) to leave out of every check.
+	Exclude []string
+	AsOf    time.Time
+}
+
+// LinkFinding is a link that does not resolve as written.
+type LinkFinding struct {
+	Source       string `json:"source"`
+	Line         int    `json:"line"`
+	Target       string `json:"target"`
+	Syntax       string `json:"syntax"`
+	Reason       string `json:"reason"`
+	ResolvedPath string `json:"resolved_path,omitempty"`
+}
+
+// Ambiguous is a link with more than one candidate.
+type Ambiguous struct {
+	Source     string   `json:"source"`
+	Line       int      `json:"line"`
+	Target     string   `json:"target"`
+	Syntax     string   `json:"syntax"`
+	Candidates []string `json:"candidates"`
+}
+
+type Duplicate struct {
+	Basename string   `json:"basename"`
+	Paths    []string `json:"paths"`
+}
+
+type PathFinding struct {
+	Path    string `json:"path"`
+	Message string `json:"message,omitempty"`
+}
+
+type FrontmatterFinding struct {
+	Path           string   `json:"path"`
+	HasFrontmatter bool     `json:"has_frontmatter"`
+	MissingFields  []string `json:"missing_fields"`
+}
+
+type SectionFinding struct {
+	Path    string `json:"path"`
+	Line    int    `json:"line"`
+	Heading string `json:"heading"`
+}
+
+type Summary struct {
+	PagesScanned   int            `json:"pages_scanned"`
+	LinksScanned   int            `json:"links_scanned"`
+	IssuesFound    int            `json:"issues_found"`
+	CategoryCounts map[string]int `json:"category_counts"`
+}
+
+// Report is the result of one run.
+type Report struct {
+	Version            int                  `json:"version"`
+	AsOf               string               `json:"as_of"`
+	Summary            Summary              `json:"summary"`
+	DeadLinks          []LinkFinding        `json:"dead_links"`
+	AmbiguousTargets   []Ambiguous          `json:"ambiguous_targets"`
+	DuplicateBasenames []Duplicate          `json:"duplicate_basenames"`
+	Orphans            []PathFinding        `json:"orphans"`
+	UnindexedPages     []PathFinding        `json:"unindexed_pages"`
+	MissingFrontmatter []FrontmatterFinding `json:"missing_frontmatter"`
+	EmptySections      []SectionFinding     `json:"empty_sections"`
+	StaleIndexEntries  []LinkFinding        `json:"stale_index_entries"`
+	ReadErrors         []PathFinding        `json:"read_errors"`
+	LedgerErrors       []PathFinding        `json:"ledger_errors"`
+}
+
+type page struct {
+	path     string
+	text     string
+	masked   string
+	fields   map[string]any
+	hasFront bool
+	frontErr error
+	headings map[string]bool
+	blocks   map[string]bool
+	aliases  []string
+	isIndex  bool // index.md or _index.md
+	isMOC    bool // type: moc
+	links    []link
+}
+
+type target struct {
+	path string
+	page *page
+}
+
+func (t target) withoutSuffix() (string, bool) {
+	ext := strings.ToLower(path.Ext(t.path))
+	if ext == ".md" || ext == ".canvas" || ext == ".base" {
+		return strings.TrimSuffix(t.path, path.Ext(t.path)), true
+	}
+	return "", false
+}
+
+type link struct {
+	source       string
+	line         int
+	target       string
+	filePart     string
+	fragment     string
+	fragmentKind string // heading or block
+	syntax       string
+	mdRelative   bool
+}
+
+var (
+	fenceOpen   = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})")
+	inlineCode  = regexp.MustCompile("`+[^`\n]*`+")
+	atxHeading  = regexp.MustCompile(`(?m)^[ \t]{0,3}(#{1,6})[ \t]+(.+?)[ \t]*$`)
+	blockID     = regexp.MustCompile(`(?m)(?:^|[ \t])\^([A-Za-z0-9][A-Za-z0-9_-]*)[ \t]*$`)
+	wikiLink    = regexp.MustCompile(`(!)?\[\[([^\]\r\n]+?)\]\]`)
+	mdLink      = regexp.MustCompile(`(!)?\[([^\]\r\n]*)\]\(([^\r\n)]*)\)`)
+	htmlComment = regexp.MustCompile(`(?s)<!--.*?(?:-->|$)`)
+	uriScheme   = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:`)
+	blockIDLine = regexp.MustCompile(`(?m)^[ \t]*\^[A-Za-z0-9][A-Za-z0-9_-]*[ \t]*$`)
+)
+
+var orphanExcluded = map[string]bool{
+	"_index.md": true, "index.md": true, "log.md": true, "hot.md": true, "overview.md": true, "dashboard.md": true,
+}
+
+// Run lints the vault at root.
+func Run(root string, opts Options) (*Report, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	if info, err := os.Stat(root); err != nil || !info.IsDir() {
+		return nil, fmt.Errorf("vault root is not a directory: %s", root)
+	}
+	asOf := opts.AsOf
+	if asOf.IsZero() {
+		asOf = time.Now().UTC()
+	}
+	files, err := walk(root)
+	if err != nil {
+		return nil, err
+	}
+	present := map[string]bool{}
+	for _, f := range files {
+		present[f] = true
+	}
+	for rel, content := range opts.Overlay {
+		if content == nil {
+			delete(present, rel)
+		} else {
+			present[rel] = true
+		}
+	}
+	report := &Report{Version: ReportVersion, AsOf: asOf.Format("2006-01-02")}
+	var paths []string
+	for rel := range present {
+		if excluded(rel, opts.Exclude) {
+			continue
+		}
+		paths = append(paths, rel)
+	}
+	sort.Slice(paths, func(i, j int) bool { return pathLess(paths[i], paths[j]) })
+
+	var pages []*page
+	var targets []target
+	for _, rel := range paths {
+		var pg *page
+		if strings.HasPrefix(rel, "wiki/") && strings.EqualFold(path.Ext(rel), ".md") {
+			data, ok := opts.Overlay[rel]
+			if !ok {
+				data, err = os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+				if err != nil {
+					report.ReadErrors = append(report.ReadErrors, PathFinding{Path: rel, Message: "unable to read page"})
+					targets = append(targets, target{path: rel})
+					continue
+				}
+			}
+			pg = parsePage(rel, string(data))
+			if pg.frontErr != nil {
+				report.ReadErrors = append(report.ReadErrors, PathFinding{Path: rel, Message: pg.frontErr.Error()})
+			}
+			pages = append(pages, pg)
+		}
+		targets = append(targets, target{path: rel, page: pg})
+	}
+
+	resolver := newResolver(targets)
+	incoming := map[string]map[string]bool{}
+	for _, pg := range pages {
+		incoming[pg.path] = map[string]bool{}
+	}
+	links := 0
+	for _, pg := range pages {
+		for _, l := range pg.links {
+			links++
+			candidates := resolver.resolve(l)
+			if len(candidates) > 1 {
+				var names []string
+				for _, c := range candidates {
+					names = append(names, c.path)
+				}
+				entry := Ambiguous{Source: l.source, Line: l.line, Target: l.target, Syntax: l.syntax, Candidates: names}
+				report.AmbiguousTargets = append(report.AmbiguousTargets, entry)
+				if pg.isIndex {
+					report.StaleIndexEntries = append(report.StaleIndexEntries, LinkFinding{Source: l.source, Line: l.line, Target: l.target, Syntax: l.syntax, Reason: "ambiguous-target"})
+				}
+				continue
+			}
+			if len(candidates) == 0 {
+				entry := LinkFinding{Source: l.source, Line: l.line, Target: l.target, Syntax: l.syntax, Reason: "target-not-found"}
+				report.DeadLinks = append(report.DeadLinks, entry)
+				if pg.isIndex {
+					report.StaleIndexEntries = append(report.StaleIndexEntries, entry)
+				}
+				continue
+			}
+			c := candidates[0]
+			if _, ok := incoming[c.path]; ok && c.path != l.source {
+				incoming[c.path][l.source] = true
+			}
+			if reason := fragmentError(l, c); reason != "" {
+				entry := LinkFinding{Source: l.source, Line: l.line, Target: l.target, Syntax: l.syntax, Reason: reason, ResolvedPath: c.path}
+				report.DeadLinks = append(report.DeadLinks, entry)
+				if pg.isIndex {
+					report.StaleIndexEntries = append(report.StaleIndexEntries, entry)
+				}
+			}
+		}
+	}
+
+	byStem := map[string][]*page{}
+	for _, pg := range pages {
+		stem := strings.ToLower(strings.TrimSuffix(path.Base(pg.path), path.Ext(pg.path)))
+		byStem[stem] = append(byStem[stem], pg)
+	}
+	for stem, group := range byStem {
+		if len(group) < 2 || stem == "_index" {
+			continue
+		}
+		var names []string
+		for _, pg := range group {
+			names = append(names, pg.path)
+		}
+		sort.Slice(names, func(i, j int) bool { return pathLess(names[i], names[j]) })
+		report.DuplicateBasenames = append(report.DuplicateBasenames, Duplicate{Basename: strings.TrimSuffix(path.Base(names[0]), path.Ext(names[0])), Paths: names})
+	}
+
+	indexPages := map[string]bool{}
+	for _, pg := range pages {
+		if pg.isIndex || pg.isMOC {
+			indexPages[pg.path] = true
+		}
+	}
+	for _, pg := range pages {
+		if !orphanCandidate(pg.path) {
+			continue
+		}
+		navigational, catalogued := false, false
+		for src := range incoming[pg.path] {
+			if path.Base(src) != "log.md" {
+				navigational = true
+			}
+			if indexPages[src] {
+				catalogued = true
+			}
+		}
+		if !navigational {
+			report.Orphans = append(report.Orphans, PathFinding{Path: pg.path})
+		}
+		if !catalogued {
+			report.UnindexedPages = append(report.UnindexedPages, PathFinding{Path: pg.path})
+		}
+	}
+
+	for _, pg := range pages {
+		if pg.frontErr == nil {
+			if missing := vault.MissingFrontmatter(pg.fields); len(missing) > 0 {
+				report.MissingFrontmatter = append(report.MissingFrontmatter, FrontmatterFinding{Path: pg.path, HasFrontmatter: pg.hasFront, MissingFields: missing})
+			}
+		}
+		report.EmptySections = append(report.EmptySections, emptySections(pg)...)
+	}
+
+	report.LedgerErrors = ledgerErrors(root, opts.Overlay, present, asOf)
+
+	sortFindings(report)
+	report.Summary = Summary{PagesScanned: len(pages), LinksScanned: links, CategoryCounts: map[string]int{
+		"dead_links":          len(report.DeadLinks),
+		"ambiguous_targets":   len(report.AmbiguousTargets),
+		"duplicate_basenames": len(report.DuplicateBasenames),
+		"orphans":             len(report.Orphans),
+		"unindexed_pages":     len(report.UnindexedPages),
+		"missing_frontmatter": len(report.MissingFrontmatter),
+		"empty_sections":      len(report.EmptySections),
+		"stale_index_entries": len(report.StaleIndexEntries),
+		"read_errors":         len(report.ReadErrors),
+		"ledger_errors":       len(report.LedgerErrors),
+	}}
+	for _, n := range report.Summary.CategoryCounts {
+		report.Summary.IssuesFound += n
+	}
+	if report.DeadLinks == nil {
+		report.DeadLinks = []LinkFinding{}
+	}
+	return report, nil
+}
+
+func walk(root string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if p == root {
+				return err
+			}
+			return nil
+		}
+		if p == root {
+			return nil
+		}
+		name := d.Name()
+		if d.IsDir() {
+			if strings.HasPrefix(name, ".") || name == "node_modules" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.Type()&fs.ModeSymlink != 0 || !d.Type().IsRegular() {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, p)
+		files = append(files, filepath.ToSlash(rel))
+		return nil
+	})
+	return files, err
+}
+
+func excluded(rel string, patterns []string) bool {
+	for _, pattern := range patterns {
+		if ok, _ := path.Match(pattern, rel); ok {
+			return true
+		}
+		if strings.HasSuffix(pattern, "/*") && strings.HasPrefix(rel, strings.TrimSuffix(pattern, "*")) {
+			return true
+		}
+	}
+	return false
+}
+
+func pathLess(a, b string) bool {
+	la, lb := strings.ToLower(a), strings.ToLower(b)
+	if la != lb {
+		return la < lb
+	}
+	return a < b
+}
+
+func parsePage(rel, text string) *page {
+	text = strings.TrimPrefix(text, "\xef\xbb\xbf")
+	pg := &page{path: rel, text: text, headings: map[string]bool{}, blocks: map[string]bool{}}
+	fields, _, err := vault.Frontmatter(text)
+	pg.frontErr = err
+	pg.hasFront = strings.HasPrefix(text, "---")
+	if fields != nil {
+		pg.fields = fields
+		pg.aliases = vault.StringList(fields, "aliases")
+		pg.isMOC = vault.StringField(fields, "type") == "moc"
+	} else {
+		pg.fields = map[string]any{}
+	}
+	base := strings.ToLower(path.Base(rel))
+	pg.isIndex = base == "index.md" || base == "_index.md"
+	pg.masked = maskCode(text)
+	for _, m := range atxHeading.FindAllStringSubmatch(pg.masked, -1) {
+		if h := normalizeHeading(m[2]); h != "" {
+			pg.headings[h] = true
+		}
+	}
+	for _, m := range blockID.FindAllStringSubmatch(pg.masked, -1) {
+		pg.blocks[strings.ToLower(m[1])] = true
+	}
+	pg.links = parseLinks(pg)
+	return pg
+}
+
+// maskCode blanks fenced blocks, inline code, and the frontmatter so links inside them are not graph edges.
+func maskCode(text string) string {
+	lines := strings.SplitAfter(text, "\n")
+	out := make([]string, len(lines))
+	inFence, fence := false, ""
+	inFront := strings.HasPrefix(text, "---")
+	for i, line := range lines {
+		trimmed := strings.TrimRight(line, "\r\n")
+		if inFront {
+			out[i] = blank(line)
+			if i > 0 && trimmed == "---" {
+				inFront = false
+			}
+			continue
+		}
+		if inFence {
+			out[i] = blank(line)
+			if m := fenceOpen.FindStringSubmatch(line); m != nil && strings.HasPrefix(m[1], fence[:1]) && len(m[1]) >= len(fence) && strings.TrimSpace(trimmed) == m[1] {
+				inFence = false
+			}
+			continue
+		}
+		if m := fenceOpen.FindStringSubmatch(line); m != nil {
+			inFence, fence = true, m[1]
+			out[i] = blank(line)
+			continue
+		}
+		out[i] = inlineCode.ReplaceAllStringFunc(line, blank)
+	}
+	return htmlComment.ReplaceAllStringFunc(strings.Join(out, ""), blank)
+}
+
+func blank(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c != '\n' && c != '\r' {
+			b[i] = ' '
+		}
+	}
+	return string(b)
+}
+
+func normalizeHeading(h string) string {
+	h = strings.TrimSpace(regexp.MustCompile(`[ \t]+#+[ \t]*$`).ReplaceAllString(h, ""))
+	return strings.ToLower(strings.Join(strings.Fields(h), " "))
+}
+
+func splitFragment(target string) (file, fragment, kind string) {
+	escaped := false
+	for i, ch := range target {
+		if ch == '\\' && !escaped {
+			escaped = true
+			continue
+		}
+		if ch == '#' && !escaped {
+			frag := strings.TrimSpace(target[i+1:])
+			if strings.HasPrefix(frag, "^") {
+				return target[:i], frag[1:], "block"
+			}
+			return target[:i], frag, "heading"
+		}
+		escaped = false
+	}
+	return target, "", ""
+}
+
+var unescapeRE = regexp.MustCompile(`\\([\\|#\[\]])`)
+
+func wikiTarget(body string) string {
+	t := body
+	if pipe := strings.Index(body, "|"); pipe >= 0 {
+		t = body[:pipe]
+		t = strings.TrimSuffix(t, "\\")
+	}
+	return unescapeRE.ReplaceAllString(strings.TrimSpace(t), "$1")
+}
+
+func mdDestination(v string) string {
+	v = strings.TrimSpace(v)
+	if strings.HasPrefix(v, "<") && strings.Contains(v, ">") {
+		return strings.TrimSpace(v[1:strings.Index(v, ">")])
+	}
+	if m := regexp.MustCompile(`^(.*?)[ \t]+(?:"[^"]*"|'[^']*'|\([^)]*\))[ \t]*$`).FindStringSubmatch(v); m != nil {
+		v = m[1]
+	}
+	return strings.TrimSpace(v)
+}
+
+func lineOf(text string, offset int) int {
+	return strings.Count(text[:offset], "\n") + 1
+}
+
+func parseLinks(pg *page) []link {
+	var links []link
+	var occupied [][2]int
+	for _, m := range wikiLink.FindAllStringSubmatchIndex(pg.masked, -1) {
+		body := pg.masked[m[4]:m[5]]
+		raw := wikiTarget(body)
+		if raw == "" {
+			continue
+		}
+		file, frag, kind := splitFragment(raw)
+		syntax := "wikilink"
+		if m[2] >= 0 {
+			syntax = "embed"
+		}
+		links = append(links, link{source: pg.path, line: lineOf(pg.masked, m[0]), target: raw, filePart: file, fragment: frag, fragmentKind: kind, syntax: syntax})
+		occupied = append(occupied, [2]int{m[0], m[1]})
+	}
+	for _, m := range mdLink.FindAllStringSubmatchIndex(pg.masked, -1) {
+		inside := false
+		for _, o := range occupied {
+			if m[0] >= o[0] && m[0] < o[1] {
+				inside = true
+				break
+			}
+		}
+		if inside {
+			continue
+		}
+		dest := mdDestination(pg.masked[m[6]:m[7]])
+		if dest == "" || strings.HasPrefix(dest, "//") || uriScheme.MatchString(dest) || strings.HasPrefix(dest, "#") {
+			continue
+		}
+		decoded, err := url.PathUnescape(dest)
+		if err != nil {
+			decoded = dest
+		}
+		file, frag, kind := splitFragment(decoded)
+		syntax := "markdown-link"
+		if m[2] >= 0 {
+			syntax = "markdown-embed"
+		}
+		links = append(links, link{source: pg.path, line: lineOf(pg.masked, m[0]), target: decoded, filePart: file, fragment: frag, fragmentKind: kind, syntax: syntax, mdRelative: true})
+	}
+	sort.SliceStable(links, func(i, j int) bool {
+		if links[i].line != links[j].line {
+			return links[i].line < links[j].line
+		}
+		return pathLess(links[i].target, links[j].target)
+	})
+	return links
+}
+
+type resolver struct {
+	targets       []target
+	byFull        map[string][]target
+	byNoSuffix    map[string][]target
+	byBasename    map[string][]target
+	byAlias       map[string][]target
+	suffixIndexed []struct{ key string }
+}
+
+func newResolver(targets []target) *resolver {
+	r := &resolver{targets: targets, byFull: map[string][]target{}, byNoSuffix: map[string][]target{}, byBasename: map[string][]target{}, byAlias: map[string][]target{}}
+	for _, t := range targets {
+		full := strings.ToLower(t.path)
+		r.byFull[full] = append(r.byFull[full], t)
+		name := strings.ToLower(path.Base(t.path))
+		r.byBasename[name] = append(r.byBasename[name], t)
+		if ns, ok := t.withoutSuffix(); ok {
+			r.byNoSuffix[strings.ToLower(ns)] = append(r.byNoSuffix[strings.ToLower(ns)], t)
+			stem := strings.ToLower(path.Base(ns))
+			r.byBasename[stem] = append(r.byBasename[stem], t)
+		}
+		if t.page != nil {
+			for _, alias := range t.page.aliases {
+				key := strings.ToLower(alias)
+				r.byAlias[key] = append(r.byAlias[key], t)
+			}
+		}
+	}
+	return r
+}
+
+func dedupe(cands []target) []target {
+	seen := map[string]target{}
+	for _, c := range cands {
+		seen[c.path] = c
+	}
+	out := make([]target, 0, len(seen))
+	for _, c := range seen {
+		out = append(out, c)
+	}
+	sort.Slice(out, func(i, j int) bool { return pathLess(out[i].path, out[j].path) })
+	return out
+}
+
+func (r *resolver) exact(query string) []target {
+	n := strings.TrimLeft(path.Clean(strings.ReplaceAll(query, "\\", "/")), "/")
+	if n == "" || n == "." {
+		return nil
+	}
+	key := strings.ToLower(n)
+	var cands []target
+	cands = append(cands, r.byFull[key]...)
+	cands = append(cands, r.byNoSuffix[key]...)
+	return dedupe(cands)
+}
+
+func (r *resolver) resolve(l link) []target {
+	raw, err := url.PathUnescape(strings.TrimSpace(l.filePart))
+	if err != nil {
+		raw = strings.TrimSpace(l.filePart)
+	}
+	raw = strings.ReplaceAll(raw, "\\", "/")
+	if raw == "" {
+		return r.exact(l.source)
+	}
+	raw = strings.TrimLeft(raw, "/")
+	sourceDir := path.Dir(l.source)
+	var queries []string
+	if l.mdRelative || strings.HasPrefix(raw, "./") || strings.HasPrefix(raw, "../") {
+		queries = append(queries, path.Clean(path.Join(sourceDir, raw)))
+	}
+	queries = append(queries, path.Clean(raw))
+	if !strings.HasPrefix(strings.ToLower(raw), "wiki/") {
+		queries = append(queries, path.Clean(path.Join("wiki", raw)))
+	}
+	for _, q := range queries {
+		if found := r.exact(q); len(found) > 0 {
+			return found
+		}
+	}
+	if !strings.Contains(raw, "/") {
+		key := strings.ToLower(raw)
+		var cands []target
+		cands = append(cands, r.byBasename[key]...)
+		cands = append(cands, r.byAlias[key]...)
+		return dedupe(cands)
+	}
+	suffix := strings.ToLower(path.Clean(raw))
+	var cands []target
+	for _, t := range r.targets {
+		if strings.HasSuffix(strings.ToLower(t.path), "/"+suffix) {
+			cands = append(cands, t)
+			continue
+		}
+		if ns, ok := t.withoutSuffix(); ok && strings.HasSuffix(strings.ToLower(ns), "/"+suffix) {
+			cands = append(cands, t)
+		}
+	}
+	return dedupe(cands)
+}
+
+func fragmentError(l link, t target) string {
+	if l.fragment == "" || t.page == nil {
+		return ""
+	}
+	switch l.fragmentKind {
+	case "heading":
+		if !t.page.headings[normalizeHeading(l.fragment)] {
+			return "heading-not-found"
+		}
+	case "block":
+		if !t.page.blocks[strings.ToLower(l.fragment)] {
+			return "block-not-found"
+		}
+	}
+	return ""
+}
+
+func orphanCandidate(rel string) bool {
+	if orphanExcluded[strings.ToLower(path.Base(rel))] {
+		return false
+	}
+	inner := strings.ToLower(strings.TrimPrefix(rel, "wiki/"))
+	return !strings.HasPrefix(inner, "meta/") && !strings.HasPrefix(inner, "folds/")
+}
+
+func emptySections(pg *page) []SectionFinding {
+	type heading struct {
+		start, end, level int
+		text              string
+	}
+	var headings []heading
+	for _, m := range atxHeading.FindAllStringSubmatchIndex(pg.masked, -1) {
+		text := strings.TrimSpace(regexp.MustCompile(`[ \t]+#+[ \t]*$`).ReplaceAllString(pg.masked[m[4]:m[5]], ""))
+		headings = append(headings, heading{start: m[0], end: m[1], level: m[3] - m[2], text: text})
+	}
+	var findings []SectionFinding
+	for i, h := range headings {
+		end := len(pg.masked)
+		for _, next := range headings[i+1:] {
+			if next.level <= h.level {
+				end = next.start
+				break
+			}
+		}
+		section := []byte(pg.text[h.end:end])
+		for _, nested := range headings[i+1:] {
+			if nested.start >= end {
+				break
+			}
+			for p := nested.start; p < nested.end && p < end; p++ {
+				if c := section[p-h.end]; c != '\n' && c != '\r' {
+					section[p-h.end] = ' '
+				}
+			}
+		}
+		body := htmlComment.ReplaceAllString(string(section), "")
+		body = blockIDLine.ReplaceAllString(body, "")
+		if strings.TrimSpace(body) != "" {
+			continue
+		}
+		findings = append(findings, SectionFinding{Path: pg.path, Line: lineOf(pg.masked, h.start), Heading: h.text})
+	}
+	return findings
+}
+
+func ledgerErrors(root string, overlay map[string][]byte, present map[string]bool, asOf time.Time) []PathFinding {
+	data, ok := overlay[vault.LedgerPath]
+	if !ok {
+		var err error
+		data, err = os.ReadFile(filepath.Join(root, filepath.FromSlash(vault.LedgerPath)))
+		if err != nil {
+			return nil
+		}
+	}
+	l, err := ledger.Parse(data)
+	if err != nil {
+		return []PathFinding{{Path: vault.LedgerPath, Message: err.Error()}}
+	}
+	var out []PathFinding
+	ids := make([]string, 0, len(l.Sources))
+	for id := range l.Sources {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		s := l.Sources[id]
+		if s.Origin.Kind == "file" && s.ReviewStatus == "active" {
+			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(s.Origin.Locator))); err != nil {
+				out = append(out, PathFinding{Path: vault.LedgerPath, Message: fmt.Sprintf("%s: captured file is missing: %s", id, s.Origin.Locator)})
+			}
+		}
+		for _, p := range s.Pages {
+			if !present[p] {
+				out = append(out, PathFinding{Path: vault.LedgerPath, Message: fmt.Sprintf("%s: linked page does not exist: %s", id, p)})
+			}
+		}
+	}
+	return out
+}
+
+func sortFindings(r *Report) {
+	sort.SliceStable(r.DeadLinks, func(i, j int) bool { return linkLess(r.DeadLinks[i], r.DeadLinks[j]) })
+	sort.SliceStable(r.StaleIndexEntries, func(i, j int) bool { return linkLess(r.StaleIndexEntries[i], r.StaleIndexEntries[j]) })
+	sort.SliceStable(r.AmbiguousTargets, func(i, j int) bool {
+		a, b := r.AmbiguousTargets[i], r.AmbiguousTargets[j]
+		if a.Source != b.Source {
+			return pathLess(a.Source, b.Source)
+		}
+		return a.Line < b.Line
+	})
+	sort.SliceStable(r.DuplicateBasenames, func(i, j int) bool {
+		return pathLess(r.DuplicateBasenames[i].Basename, r.DuplicateBasenames[j].Basename)
+	})
+	sort.SliceStable(r.Orphans, func(i, j int) bool { return pathLess(r.Orphans[i].Path, r.Orphans[j].Path) })
+	sort.SliceStable(r.UnindexedPages, func(i, j int) bool { return pathLess(r.UnindexedPages[i].Path, r.UnindexedPages[j].Path) })
+	sort.SliceStable(r.MissingFrontmatter, func(i, j int) bool { return pathLess(r.MissingFrontmatter[i].Path, r.MissingFrontmatter[j].Path) })
+	sort.SliceStable(r.EmptySections, func(i, j int) bool {
+		a, b := r.EmptySections[i], r.EmptySections[j]
+		if a.Path != b.Path {
+			return pathLess(a.Path, b.Path)
+		}
+		return a.Line < b.Line
+	})
+	sort.SliceStable(r.ReadErrors, func(i, j int) bool { return pathLess(r.ReadErrors[i].Path, r.ReadErrors[j].Path) })
+}
+
+func linkLess(a, b LinkFinding) bool {
+	if a.Source != b.Source {
+		return pathLess(a.Source, b.Source)
+	}
+	if a.Line != b.Line {
+		return a.Line < b.Line
+	}
+	return pathLess(a.Target, b.Target)
+}
+
+// JSON renders the report.
+func (r *Report) JSON() []byte {
+	data, _ := json.MarshalIndent(r, "", "  ")
+	return append(data, '\n')
+}
+
+// Markdown renders the report for a person.
+func (r *Report) Markdown() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Wiki lint\n\n%d pages, %d links, %d findings (as of %s).\n", r.Summary.PagesScanned, r.Summary.LinksScanned, r.Summary.IssuesFound, r.AsOf)
+	section := func(title string, n int) {
+		fmt.Fprintf(&b, "\n## %s (%d)\n\n", title, n)
+		if n == 0 {
+			b.WriteString("None.\n")
+		}
+	}
+	section("Dead links", len(r.DeadLinks))
+	for _, f := range r.DeadLinks {
+		fmt.Fprintf(&b, "- `%s:%d` → `%s` (%s)\n", f.Source, f.Line, f.Target, f.Reason)
+	}
+	section("Ambiguous targets", len(r.AmbiguousTargets))
+	for _, f := range r.AmbiguousTargets {
+		fmt.Fprintf(&b, "- `%s:%d` → `%s`: %s\n", f.Source, f.Line, f.Target, strings.Join(f.Candidates, ", "))
+	}
+	section("Duplicate basenames", len(r.DuplicateBasenames))
+	for _, f := range r.DuplicateBasenames {
+		fmt.Fprintf(&b, "- `%s`: %s\n", f.Basename, strings.Join(f.Paths, ", "))
+	}
+	section("Orphans", len(r.Orphans))
+	for _, f := range r.Orphans {
+		fmt.Fprintf(&b, "- `%s`\n", f.Path)
+	}
+	section("Pages missing from every index or MOC", len(r.UnindexedPages))
+	for _, f := range r.UnindexedPages {
+		fmt.Fprintf(&b, "- `%s`\n", f.Path)
+	}
+	section("Missing frontmatter", len(r.MissingFrontmatter))
+	for _, f := range r.MissingFrontmatter {
+		fmt.Fprintf(&b, "- `%s`: %s\n", f.Path, strings.Join(f.MissingFields, ", "))
+	}
+	section("Empty sections", len(r.EmptySections))
+	for _, f := range r.EmptySections {
+		fmt.Fprintf(&b, "- `%s:%d` %s\n", f.Path, f.Line, f.Heading)
+	}
+	section("Stale index entries", len(r.StaleIndexEntries))
+	for _, f := range r.StaleIndexEntries {
+		fmt.Fprintf(&b, "- `%s:%d` → `%s` (%s)\n", f.Source, f.Line, f.Target, f.Reason)
+	}
+	section("Read errors", len(r.ReadErrors))
+	for _, f := range r.ReadErrors {
+		fmt.Fprintf(&b, "- `%s`: %s\n", f.Path, f.Message)
+	}
+	section("Ledger", len(r.LedgerErrors))
+	for _, f := range r.LedgerErrors {
+		fmt.Fprintf(&b, "- %s\n", f.Message)
+	}
+	return b.String()
+}
+
+// Problems lists every finding whose source or path is one of the given files, as short
+// messages. Plans use it to warn about the pages they are about to write.
+func (r *Report) Problems(paths []string) []string {
+	set := map[string]bool{}
+	for _, p := range paths {
+		set[p] = true
+	}
+	var out []string
+	for _, f := range r.DeadLinks {
+		if set[f.Source] {
+			out = append(out, fmt.Sprintf("%s:%d links to %q, which does not resolve (%s)", f.Source, f.Line, f.Target, f.Reason))
+		}
+	}
+	for _, f := range r.AmbiguousTargets {
+		if set[f.Source] {
+			out = append(out, fmt.Sprintf("%s:%d links to %q, which matches %s", f.Source, f.Line, f.Target, strings.Join(f.Candidates, " and ")))
+		}
+	}
+	for _, f := range r.EmptySections {
+		if set[f.Path] {
+			out = append(out, fmt.Sprintf("%s:%d section %q is empty", f.Path, f.Line, f.Heading))
+		}
+	}
+	for _, f := range r.UnindexedPages {
+		if set[f.Path] {
+			out = append(out, fmt.Sprintf("%s is not linked from any index or MOC", f.Path))
+		}
+	}
+	return out
+}

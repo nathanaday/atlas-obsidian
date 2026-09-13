@@ -10,14 +10,21 @@ import (
 
 // LaunchConfig is the claude_code section of config.json: Command (normally "claude"),
 // Args placed before the prompt, an optional Prompt sent as the first message (for
-// example "/claude-obsidian:wiki"), and SessionContext, which lets claude-obsidian's
-// SessionStart hook hand Claude the vault's hot.md.
+// example "/claude-atlas:wiki"), and SessionContext, which lets the plugin's SessionStart
+// hook hand Claude the vault's hot.md.
 type LaunchConfig = home.LaunchConfig
 
 var ErrNoClaude = errors.New("the `claude` command is not on PATH")
 
+// EnvVault names the vault for the MCP server and hooks; EnvSessionContext turns the
+// session-start context on ("1") or off ("0") for this launch.
+const (
+	EnvVault          = "CLAUDE_ATLAS_VAULT"
+	EnvSessionContext = "CLAUDE_ATLAS_SESSION_CONTEXT"
+)
+
 // LaunchCommand builds the process that runs Claude Code in a vault, with the vault
-// selected explicitly so claude-obsidian never has to guess.
+// selected explicitly so the plugin never has to guess.
 func LaunchCommand(cfg LaunchConfig, vault string) (*exec.Cmd, error) {
 	command := cfg.Command
 	if command == "" {
@@ -34,12 +41,10 @@ func LaunchCommand(cfg LaunchConfig, vault string) (*exec.Cmd, error) {
 	cmd := exec.Command(path, args...)
 	cmd.Dir = vault
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	cmd.Env = append(os.Environ(), "CLAUDE_OBSIDIAN_VAULT="+vault)
+	context := "0"
 	if cfg.SessionContext {
-		cmd.Env = append(cmd.Env,
-			"CLAUDE_OBSIDIAN_SESSION_CONTEXT=1",
-			"CLAUDE_OBSIDIAN_SESSION_CONTEXT_VAULT="+vault,
-		)
+		context = "1"
 	}
+	cmd.Env = append(os.Environ(), EnvVault+"="+vault, EnvSessionContext+"="+context)
 	return cmd, nil
 }

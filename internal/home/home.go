@@ -16,16 +16,19 @@ const (
 	defaultHome   = "~/.claude-atlas"
 	DefaultVaults = "~/Documents/Vaults"
 	DefaultAtlas  = "~/Documents/Atlas"
+
+	// DefaultPluginID is the claude-atlas plugin as Claude Code names it.
+	DefaultPluginID = "claude-atlas@nathanaday-claude-atlas"
+	// DefaultPluginSource is what `claude plugin marketplace add` takes: this repository.
+	DefaultPluginSource = "nathanaday/claude-atlas"
 )
 
-// ProductConfig says where claude-obsidian comes from.
-type ProductConfig struct {
-	// Plugin is the Claude Code plugin id, e.g. claude-obsidian@agricidaniel-claude-obsidian.
-	Plugin string `json:"plugin"`
-	// Marketplace is the source passed to `claude plugin marketplace add`.
-	Marketplace string `json:"marketplace"`
-	// Path, when set, points at a product checkout and bypasses the plugin lookup.
-	Path string `json:"path,omitempty"`
+// PluginConfig says where the claude-atlas plugin comes from.
+type PluginConfig struct {
+	// ID is the plugin id, name@marketplace.
+	ID string `json:"id"`
+	// Source is passed to `claude plugin marketplace add`: a GitHub slug or a local path.
+	Source string `json:"source"`
 }
 
 // LaunchConfig says how to start Claude Code inside a vault. It mirrors
@@ -39,11 +42,11 @@ type LaunchConfig struct {
 
 // Config is the contents of config.json. Paths are absolute.
 type Config struct {
-	Schema         string        `json:"schema"`
-	VaultsDir      string        `json:"vaults_dir"`
-	AtlasVault     string        `json:"atlas_vault"`
-	ClaudeObsidian ProductConfig `json:"claude_obsidian"`
-	ClaudeCode     LaunchConfig  `json:"claude_code"`
+	Schema     string       `json:"schema"`
+	VaultsDir  string       `json:"vaults_dir"`
+	AtlasVault string       `json:"atlas_vault"`
+	Plugin     PluginConfig `json:"plugin"`
+	ClaudeCode LaunchConfig `json:"claude_code"`
 }
 
 // TreeRoot is the directory of nodes inside the atlas vault.
@@ -80,6 +83,14 @@ func (h Home) Exists() bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
+func defaultPlugin() PluginConfig {
+	return PluginConfig{ID: DefaultPluginID, Source: DefaultPluginSource}
+}
+
+func defaultLaunch() LaunchConfig {
+	return LaunchConfig{Command: "claude", SessionContext: true}
+}
+
 // Default is the config a fresh setup starts from. Empty arguments take the defaults.
 func (h Home) Default(vaultsDir, atlasVault string) *Config {
 	if vaultsDir == "" {
@@ -92,11 +103,8 @@ func (h Home) Default(vaultsDir, atlasVault string) *Config {
 		Schema:     ConfigSchema,
 		VaultsDir:  Expand(vaultsDir),
 		AtlasVault: Expand(atlasVault),
-		ClaudeObsidian: ProductConfig{
-			Plugin:      "claude-obsidian@agricidaniel-claude-obsidian",
-			Marketplace: "AgriciDaniel/claude-obsidian",
-		},
-		ClaudeCode: LaunchConfig{Command: "claude", SessionContext: true},
+		Plugin:     defaultPlugin(),
+		ClaudeCode: defaultLaunch(),
 	}
 }
 
@@ -119,10 +127,13 @@ func (h Home) Load() (*Config, error) {
 	}
 	cfg.VaultsDir = Expand(cfg.VaultsDir)
 	cfg.AtlasVault = Expand(cfg.AtlasVault)
-	cfg.ClaudeObsidian.Path = Expand(cfg.ClaudeObsidian.Path)
+	// Configs written before these sections existed keep working with the defaults.
+	if cfg.Plugin.ID == "" {
+		cfg.Plugin = defaultPlugin()
+	}
+	cfg.Plugin.Source = Expand(cfg.Plugin.Source)
 	if cfg.ClaudeCode.Command == "" {
-		// Configs written before claude_code existed keep working with the defaults.
-		cfg.ClaudeCode = LaunchConfig{Command: "claude", SessionContext: true}
+		cfg.ClaudeCode = defaultLaunch()
 	}
 	return &cfg, nil
 }

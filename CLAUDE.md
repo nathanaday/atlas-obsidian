@@ -1,7 +1,9 @@
 # claude-atlas
 
-A Go CLI that wraps claude-obsidian: installs it through Claude Code, creates
-vaults in one confirmation, and reports on every vault from one Obsidian page.
+A Go binary and a Claude Code plugin. The binary creates and maintains
+Obsidian knowledge vaults and serves the MCP tools Claude uses inside them; the
+plugin carries the skills and hooks. The atlas side reports on every vault from
+one Obsidian page.
 
 Read `README.md` first. This file holds what the code and README do not say.
 
@@ -9,132 +11,135 @@ Read `README.md` first. This file holds what the code and README do not say.
 
 | Thing | Location |
 |---|---|
-| Design spec (brainstorm, not a contract) | `docs/spec.md` |
-| Setup experience notes | `docs/setup-experience.md` |
-| The product atlas wraps | the installed plugin, `~/.claude/plugins/cache/agricidaniel-claude-obsidian/claude-obsidian/<version>/` |
+| Core design and the reasons behind it | `docs/core-design.md` |
+| Original brainstorm (not a contract) | `docs/spec.md` |
+| The skills' contracts | `skills/<name>/SKILL.md` and `skills/wiki/references/` |
 
 ## Why the project exists
 
-claude-obsidian is good and the author wants to use it as-is. Two things hurt:
-vault init takes several commands with copied hashes and timestamps, and
-nothing shows many vaults at once. Atlas is the fix for both, built beside the
-product and never inside it. Setup quality comes first.
+claude-obsidian established a workflow the author wants to keep: an inbox,
+immutable captured sources, one reviewed operation per change, pages that cite
+their sources. Its Python core and its approval ritual (copy a hash, repeat a
+timestamp) got in the way, and nothing showed many vaults at once. Atlas keeps
+the workflow, replaces the core with Go and MCP, uses git in the vault as the
+safety net, and adds the cross-vault view.
 
-The author is moving into a fresh set of vaults. Migration of old vaults is
-out of scope; `new-vault --from` exists only for vaults made by hand later.
+## Three rules for a vault
 
-## Three rules
+1. One operation, one commit. `plan` validates, the user sees the preview,
+   `apply` commits. There is no other write path; a PreToolUse hook refuses
+   Write and Edit under `wiki/`.
+2. The vault is the user's. Apply commits hand edits as `manual` operations
+   first, so a rollback never touches what the user typed in Obsidian.
+3. Code owns what code can derive. The core writes `wiki/log.md` and the source
+   ledger; the model never targets them.
 
-1. Atlas never writes into a vault. `new-vault` delegates every write to
-   claude-obsidian's own init; after that atlas only reads.
-2. A vault never learns that atlas exists. A leaf records a vault path; the
-   vault records nothing.
-3. Atlas never stores a fact it can compute. Project pages under `tree/` are
-   authored; `~/.claude-atlas/state/` is derived and rebuilt in full by
-   `refresh`.
+## Three rules for the atlas
+
+1. The atlas never writes into a vault.
+2. A vault never learns the atlas exists. A project page records a vault path;
+   the vault records nothing.
+3. The atlas never stores a fact it can compute. `~/.claude-atlas/state/` is
+   rebuilt in full by `refresh`.
 
 ## Layout
 
 ```
+.claude-plugin/         plugin.json and marketplace.json; this repo is its own marketplace
+.mcp.json               the atlas MCP server: scripts/atlas mcp
+scripts/atlas           sh wrapper that finds the installed binary
+hooks/hooks.json        SessionStart context, PreToolUse guard, Stop warning
+skills/                 one directory per skill; skills/wiki/references/ is shared
+agents/                 wiki-ingest worker, wiki-lint interpreter
 cmd/claude-atlas/       main
 internal/cli/           argument parsing and one method per subcommand
 internal/wizard/        the setup flow
+internal/vault/         identity file, layout, templates, Init, Adopt, mode routing, page skeletons
+internal/gitx/          the git commands the core needs
+internal/txn/           plans, preview, apply, recovery, undo, history
+internal/capture/       inbox listing and capture into .raw/captured/
+internal/ledger/        the source ledger
+internal/lint/          the health check (ported from claude-obsidian's engine)
+internal/mcpserver/     the tools, thin over the packages above
+internal/hooks/         session-start, guard, stop
 internal/claudecode/    Claude Code's plugin registry, `claude plugin`, launching claude in a vault
-internal/product/       locate and run the claude-obsidian CLI
 internal/tree/          project pages (frontmatter) and derived state files
 internal/refresh/       derive state, render Overview.md
-internal/pages/         About.md and Reference.md from templates/*.md, paths filled in at write time
-internal/vaults/        create and register vaults, edit pages, link folders
-internal/links/         inspect linked git repos and material folders (read-only)
+internal/pages/         About.md and Reference.md from templates
+internal/vaults/        create, register, edit project pages, link folders
+internal/links/         inspect linked git repos and material folders
 internal/tui/           Bubble Tea screens: new-vault, manage-vaults, view
 internal/obsidian/      Obsidian's vault registry, obsidian:// URIs, restart
 internal/home/          ~/.claude-atlas and config.json
 internal/console/       prompts and step lines
-internal/testutil/      finds a real claude-obsidian for integration tests
 ```
 
-`~/.claude-atlas/` holds only internal state the user rarely opens: config and
-derived state. Anything the user views lives under `~/Documents`: the atlas
-vault (default `~/Documents/Atlas`, a plain Obsidian vault, not a
-claude-obsidian wiki) and the vaults directory (default `~/Documents/Vaults`).
-
-The tree is the user's: under `tree/`, every folder is a category with no data
-of its own, and every markdown file is a project pointing at one vault. Users
-make, nest, and move these by hand in Obsidian. `refresh` must tolerate any
-file it cannot read as a project and report it instead of failing.
+`~/.claude-atlas/` holds config and derived state. Anything the user views
+lives under `~/Documents`: the atlas vault (default `~/Documents/Atlas`) and
+the vaults directory (default `~/Documents/Vaults`).
 
 ## Constraints
 
-- Dependencies: `gopkg.in/yaml.v3` for project frontmatter (Obsidian's property
-  editor writes real YAML), and Bubble Tea, Bubbles, and Lip Gloss for the
-  interactive screens. Nothing else. Keep `go.mod` at the lowest Go version
-  those need; do not pull `golang.org/x/*` modules at `@latest`, they can
-  require a newer Go than the rest of the graph.
-- TUI models keep all logic in `Update`, so tests drive them with `tea.KeyMsg`
-  values and read `View()`; nothing in `internal/tui` touches a terminal
-  except `Run*`.
-- `product.TestedVersion` names the claude-obsidian release atlas was verified
-  against. Atlas does not pin the install; it warns when the versions differ.
-- `refresh` is read-only toward every vault, offline, and idempotent.
-- Atlas edits a project page only through `tree.UpdateFrontmatter`, which
-  changes the named keys and nothing else: other properties, comments, key
-  order, and the body survive. Never re-render a page from the struct.
-- Moving a vault directory happens only from `manage-vaults` after an explicit
-  y/n; repointing to a vault that already exists needs no confirmation.
-- Tests never install a plugin or touch a real `~/.claude-atlas`. Integration
-  tests find claude-obsidian through `internal/testutil` (the installed plugin,
-  or `CLAUDE_ATLAS_TEST_PRODUCT`) and skip otherwise.
-- Prose follows the user's global writing guide: short sentences, active voice,
-  no stock phrases.
+- Dependencies: `gopkg.in/yaml.v3`, the official MCP `go-sdk` pinned to v1.4.0
+  (later versions need Go 1.25; the machine runs 1.24), and Bubble Tea, Bubbles,
+  and Lip Gloss. Nothing else. Do not pull `golang.org/x/*` at `@latest`.
+- `git` is a runtime requirement. `python3` is not. macOS and Linux only.
+- The binary and the plugin are installed separately. `scripts/atlas` finds the
+  binary on PATH, in `~/go/bin`, in the Homebrew prefixes, or at
+  `$CLAUDE_ATLAS_BIN`. `plugin.json` and `marketplace.json` carry the version
+  the binary should match; `status` and `doctor` warn on a mismatch.
+- Every write path goes through `txn.Prepare` and `txn.Apply`. `vault.Init`
+  and `vault.Adopt` are the only code that writes vault files directly, and
+  only before or outside an operation.
+- A kind bounds a plan's writes (`txn.allowed`). Reserved everywhere:
+  `wiki/log.md`, the ledger, `.git`, `.vault-meta`, `.obsidian`, `.raw` except
+  through capture, `inbox` except deletes in an ingest.
+- Lint and refresh are read-only toward every vault, offline, and idempotent.
+- TUI models keep all logic in `Update`; tests drive them with `tea.KeyMsg`.
+- Tests never touch a real `~/.claude-atlas`, never install a plugin, and skip
+  when `git` is missing. MCP tools are tested in-process over the SDK's
+  in-memory transport.
+- Atlas edits a project page only through `tree.UpdateFrontmatter`.
+- Prose follows the user's global writing guide.
 
-## claude-obsidian facts verified against v2.2.0
+## Claude Code plugin facts, verified on 2.1.270
 
-- A marketplace install copies the whole release into the plugin cache,
-  including `claude_obsidian/` and `scripts/claude-obsidian.py`. The skills
-  call that script through `${CLAUDE_PLUGIN_ROOT}`.
-- The GitHub repo's `main` branch is a valid marketplace named
-  `agricidaniel-claude-obsidian`.
-- `installed_plugins.json` records `installPath` and `version` per plugin id,
-  as a list or a single object.
-- `init` needs the vault's parent directory to exist.
-- `init` is dry-run by default and prints `approved_plan_sha256`; apply repeats
-  the same `--generated-at` and `--operation-id` plus the hash.
-- `doctor --vault` exits 1 with JSON when a check fails; parse stdout anyway.
-- `lint --format json` returns full finding lists; counts live under
-  `summary.category_counts` and `summary.pages_scanned`.
-- `seed_pages` is not a lint category; atlas counts `status: seed` frontmatter
-  itself.
-- `wiki/hot.md` "Active Threads" is prose; treat it as best effort.
-- The plugin's SessionStart hook is silent unless
-  `CLAUDE_OBSIDIAN_SESSION_CONTEXT=1`; a vault selected by workspace config
-  outside the project also needs `CLAUDE_OBSIDIAN_SESSION_CONTEXT_VAULT` set
-  to the exact path. `open-claude` sets both plus `CLAUDE_OBSIDIAN_VAULT`.
-  Atlas never invokes a skill on the user's behalf unless `claude_code.prompt`
-  is set; `/claude-obsidian:wiki` is a router and would start every session
-  with a routing exchange.
-- `obsidian://open?path=` only opens vaults Obsidian already knows, and Obsidian
-  reads its registry (`obsidian.json` under its config dir) once at launch and
+- A plugin's `.mcp.json` may run `${CLAUDE_PLUGIN_ROOT}/...`. The server starts
+  in the project directory with `CLAUDE_PROJECT_DIR` and `CLAUDE_PLUGIN_ROOT`
+  set, one process per session. Tools are named
+  `mcp__plugin_<plugin>_<server>__<tool>`.
+- A PreToolUse hook that prints `hookSpecificOutput.permissionDecision: deny`
+  blocks the tool; the model sees `permissionDecisionReason`.
+- SessionStart hook stdout becomes context. Stop hooks report through
+  `systemMessage`.
+- Plugin agents may list MCP tools in `tools:`.
+- The repository's `main` branch is a marketplace named
+  `nathanaday-claude-atlas`; a local checkout works as a marketplace source
+  for development (`claude-atlas setup --plugin-source /path/to/checkout`).
+
+## Obsidian facts
+
+- `obsidian://open?path=` only opens vaults Obsidian already knows. Obsidian
+  reads its registry (`obsidian.json` under its config dir) once at launch,
   prunes entries whose path is gone, and rewrites the file whenever its state
-  changes. So `open-vault` quits Obsidian first (macOS only, via AppleScript),
-  adds one entry in the app's own format, relaunches, then opens the URI. The
-  write refuses a file that does not parse into the expected shape, keeps a
-  `.bak`, and renames a temp file into place. Verified on Obsidian 1.8.7 /
-  1.13.7. The official `obsidian` CLI (1.12 installer and up) has no command
-  to register a path; in-app updates do not install it, only a fresh installer.
+  changes. `open-vault` quits Obsidian first (macOS, AppleScript), adds one
+  entry, relaunches, then opens the URI. Verified on Obsidian 1.8.7 / 1.13.7.
 
 ## Build and test
 
 ```
-make build      # bin/claude-atlas
+make build      # build/claude-atlas
 make install    # go install into $(go env GOPATH)/bin
 make test
 ```
 
+End-to-end against Claude Code, by hand: `claude --plugin-dir . -p "..."`
+inside a vault, with `--allowedTools "mcp__plugin_claude-atlas_atlas__*"`.
+
 ## Open questions
 
-- Registration: hand-written only, or a `scan` that finds
-  `.claude-obsidian.json` files and proposes them?
-- Archived leaves: hidden or dimmed on the atlas page?
-- A Claude Code skill for the bird's-eye conversation is the planned next step;
-  MCP is not planned.
-- Distribution: a Homebrew tap once the command set settles.
+- A `search` tool with BM25 ranking, once Grep proves insufficient.
+- A Claude Code skill for the bird's-eye conversation over the atlas tree.
+- Distribution: a Homebrew tap and release binaries; then the wrapper can
+  download a checksummed binary into `${CLAUDE_PLUGIN_DATA}`.
+- Archived projects: hidden or dimmed on the overview?

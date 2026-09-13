@@ -10,22 +10,23 @@ import (
 
 	"github.com/nathanaday/claude-atlas/internal/claudecode"
 	"github.com/nathanaday/claude-atlas/internal/console"
+	"github.com/nathanaday/claude-atlas/internal/gitx"
 	"github.com/nathanaday/claude-atlas/internal/home"
 	"github.com/nathanaday/claude-atlas/internal/pages"
-	"github.com/nathanaday/claude-atlas/internal/product"
 	"github.com/nathanaday/claude-atlas/internal/refresh"
 	"github.com/nathanaday/claude-atlas/internal/tree"
+	"github.com/nathanaday/claude-atlas/internal/vault"
 	"github.com/nathanaday/claude-atlas/internal/vaults"
 )
 
 // Options come from setup's flags.
 type Options struct {
-	Version     string
-	VaultsDir   string
-	AtlasVault  string
-	FirstVault  string
-	ProductPath string // dev override written into config
-	WithPlugin  bool
+	Version      string
+	VaultsDir    string
+	AtlasVault   string
+	FirstVault   string
+	PluginSource string // marketplace source override, e.g. a local checkout
+	WithPlugin   bool
 }
 
 func plan(c *console.Console, label, action, target string) {
@@ -77,11 +78,14 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 			cfg.AtlasVault = home.Expand(opts.AtlasVault)
 		}
 	}
-	if opts.ProductPath != "" {
-		cfg.ClaudeObsidian.Path = home.Expand(opts.ProductPath)
+	if opts.PluginSource != "" {
+		cfg.Plugin.Source = home.Expand(opts.PluginSource)
+	}
+	if !gitx.Available() {
+		return 1, fmt.Errorf("git is required and is not on PATH; install it (on macOS: xcode-select --install) and run setup again")
 	}
 
-	prod, locateErr := product.Locate(cfg.ClaudeObsidian)
+	installed, _ := claudecode.InstalledPlugin(cfg.Plugin.ID)
 	claude := claudecode.CLI()
 	atlasReady := false
 	if _, err := os.Stat(filepath.Join(cfg.AtlasVault, ".obsidian")); err == nil {
@@ -106,7 +110,7 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 			return 1, err
 		}
 		if _, err := os.Stat(path); err == nil {
-			return 1, fmt.Errorf("%s already exists; choose another name or register it with `claude-atlas new-vault --from`", home.Display(path))
+			return 1, fmt.Errorf("%s already exists; choose another name or adopt it with `claude-atlas adopt`", home.Display(path))
 		}
 		firstPath = path
 	}
@@ -116,23 +120,19 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	c.Say("")
 	plan(c, "home", ternary(fresh, "create", "exists"), home.Display(h.Root))
 	switch {
-	case prod != nil:
-		note := ""
-		if !prod.Tested() {
-			note = fmt.Sprintf(" (atlas was tested with v%s)", product.TestedVersion)
-		}
-		plan(c, "claude-obsidian", "installed", fmt.Sprintf("v%s at %s%s", prod.Version, home.Display(prod.Root), note))
+	case installed != nil:
+		plan(c, "plugin", "installed", fmt.Sprintf("%s v%s", cfg.Plugin.ID, installed.Version))
 	case !opts.WithPlugin:
-		plan(c, "claude-obsidian", "skip", "--no-plugin; "+locateErr.Error())
+		plan(c, "plugin", "skip", "--no-plugin")
 	case claude == "":
-		plan(c, "claude-obsidian", "skip", "`claude` is not on PATH; manual commands will be printed")
+		plan(c, "plugin", "skip", "`claude` is not on PATH; manual commands will be printed")
 	default:
-		plan(c, "claude-obsidian", "install", fmt.Sprintf("%s from %s via `claude plugin`", cfg.ClaudeObsidian.Plugin, cfg.ClaudeObsidian.Marketplace))
+		plan(c, "plugin", "install", fmt.Sprintf("%s from %s via `claude plugin`", cfg.Plugin.ID, cfg.Plugin.Source))
 	}
 	plan(c, "atlas vault", ternary(atlasReady, "exists", "create"), home.Display(cfg.AtlasVault))
 	plan(c, "vaults dir", "use", home.Display(cfg.VaultsDir))
 	if firstPath != "" {
-		plan(c, "first vault", "create", home.Display(firstPath)+" (claude-obsidian init)")
+		plan(c, "first vault", "create", home.Display(firstPath))
 	} else {
 		plan(c, "projects", "keep", fmt.Sprintf("%d registered", len(registered)))
 	}
@@ -151,24 +151,24 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	}
 	c.Step(console.OK, "home", home.Display(h.Root))
 
-	if prod == nil && opts.WithPlugin && claude != "" {
-		ran, err := claudecode.InstallPlugin(cfg.ClaudeObsidian.Marketplace, cfg.ClaudeObsidian.Plugin)
+	if installed == nil && opts.WithPlugin && claude != "" {
+		ran, err := claudecode.InstallPlugin(cfg.Plugin.Source, cfg.Plugin.ID)
 		for _, cmd := range ran {
 			c.Step(console.OK, "ran", cmd)
 		}
 		if err != nil {
-			c.Step(console.Fail, "claude-obsidian", err.Error())
-		} else if prod, locateErr = product.Locate(cfg.ClaudeObsidian); locateErr != nil {
-			c.Step(console.Fail, "claude-obsidian", locateErr.Error())
+			c.Step(console.Fail, "plugin", err.Error())
+		} else {
+			installed, _ = claudecode.InstalledPlugin(cfg.Plugin.ID)
 		}
 	}
 	switch {
-	case prod != nil && prod.Tested():
-		c.Step(console.OK, "claude-obsidian", fmt.Sprintf("v%s (%s)", prod.Version, prod.Source))
-	case prod != nil:
-		c.Step(console.OK, "claude-obsidian", fmt.Sprintf("v%s; atlas was tested with v%s", prod.Version, product.TestedVersion))
+	case installed != nil && installed.Version != "" && installed.Version != opts.Version && opts.Version != "dev":
+		c.Step(console.OK, "plugin", fmt.Sprintf("v%s installed; this binary is %s. Keep them in step.", installed.Version, opts.Version))
+	case installed != nil:
+		c.Step(console.OK, "plugin", fmt.Sprintf("v%s", installed.Version))
 	default:
-		c.Step(console.Skip, "claude-obsidian", "not installed; the first vault and refresh are skipped")
+		c.Step(console.Skip, "plugin", "not installed; Claude Code will not have the atlas tools until it is")
 	}
 
 	created, err := EnsureAtlasVault(cfg)
@@ -177,8 +177,8 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	}
 	c.Step(ternary(created, console.OK, console.Skip), "atlas vault", ternary(created, home.Display(cfg.AtlasVault), "already present"))
 
-	if firstPath != "" && prod != nil {
-		if err := vaults.Create(prod, firstPath, c, false); err != nil {
+	if firstPath != "" {
+		if _, err := vaults.Create(firstPath, vault.Generic, c, false); err != nil {
 			return 1, err
 		}
 		node, err := vaults.Register(cfg, firstPath, vaults.RegisterOptions{
@@ -193,32 +193,30 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 		return 1, err
 	}
 	c.Step(console.OK, "pages", "About.md, Reference.md")
-	if prod != nil {
-		page, _, err := refresh.Run(cfg, h.StateDir(), prod, time.Now())
-		if err != nil {
-			return 1, err
-		}
-		c.Step(console.OK, "refreshed", home.Display(page))
+	page, _, err := refresh.Run(cfg, h.StateDir(), time.Now())
+	if err != nil {
+		return 1, err
 	}
+	c.Step(console.OK, "refreshed", home.Display(page))
 
 	c.Say("")
 	c.Say("Setup complete.")
 	c.Say("")
 	c.Say("  Atlas        %s", home.Display(cfg.AtlasVault))
-	if firstPath != "" && prod != nil {
+	if firstPath != "" {
 		c.Say("  First vault  %s", home.Display(firstPath))
 	}
 	c.Say("")
-	c.Say("Open either one in Obsidian with \"Open folder as vault\".")
+	c.Say("Open either one in Obsidian with \"Open folder as vault\", or `claude-atlas open-vault`.")
 	c.Say("")
 	c.Say("Next:")
 	c.Say("  claude-atlas new-vault           create another vault, step by step")
+	c.Say("  claude-atlas open-claude NAME    start Claude Code in a vault; try /claude-atlas:wiki")
 	c.Say("  claude-atlas refresh             rebuild Overview.md from every vault")
-	c.Say("  claude-atlas info                show every path the atlas uses")
-	if prod == nil {
+	if installed == nil {
 		c.Say("")
-		c.Say("claude-obsidian is not installed. Install it, then run setup again:")
-		for _, cmd := range claudecode.Commands(cfg.ClaudeObsidian.Marketplace, cfg.ClaudeObsidian.Plugin) {
+		c.Say("The plugin is not installed. Install it, then run setup again:")
+		for _, cmd := range claudecode.Commands(cfg.Plugin.Source, cfg.Plugin.ID) {
 			c.Say("  %s", cmd)
 		}
 	}

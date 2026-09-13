@@ -8,6 +8,7 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/home"
 	"github.com/nathanaday/claude-atlas/internal/links"
 	"github.com/nathanaday/claude-atlas/internal/tree"
+	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
 // Edit is a set of changes to one project. Empty strings mean "unchanged" except
@@ -64,8 +65,8 @@ func Update(cfg *home.Config, p *tree.Project, edit Edit) error {
 				if err := os.Rename(p.VaultPath(), target); err != nil {
 					return fmt.Errorf("move vault: %w", err)
 				}
-			} else if _, err := os.Stat(filepath.Join(target, ".claude-obsidian.json")); err != nil {
-				return fmt.Errorf("%s is not a claude-obsidian vault", home.Display(target))
+			} else if !vault.IsVault(target) && !vault.IsLegacy(target) {
+				return fmt.Errorf("%s is not a claude-atlas vault", home.Display(target))
 			}
 			fields["vault"] = target
 		}

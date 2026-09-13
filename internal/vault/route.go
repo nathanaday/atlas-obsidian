@@ -1,0 +1,151 @@
+package vault
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+	"unicode"
+)
+
+// Route is where a new page belongs and what it starts as.
+type Route struct {
+	Path     string `json:"path"`
+	Type     string `json:"type"`
+	Mode     Mode   `json:"mode"`
+	Skeleton string `json:"skeleton"`
+	// Exists is set when a page already sits at Path.
+	Exists bool `json:"exists"`
+}
+
+var genericFolders = map[string]string{
+	"source":   "wiki/sources",
+	"entity":   "wiki/entities",
+	"concept":  "wiki/concepts",
+	"question": "wiki/questions",
+	"session":  "wiki/sessions",
+}
+
+// RoutableTypes lists the page types a mode files.
+func RoutableTypes(mode Mode) []string {
+	if mode == LYT {
+		return []string{"note", "moc", "source", "entity", "concept", "question", "session"}
+	}
+	return []string{"source", "entity", "concept", "question", "session"}
+}
+
+var (
+	unsafeChars = regexp.MustCompile(`[/\\:*?"<>|]+`)
+	spaces      = regexp.MustCompile(`\s+`)
+)
+
+// SanitizeTitle turns a title into a file stem Obsidian and every desktop filesystem accept.
+func SanitizeTitle(title string) string {
+	s := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, title)
+	s = unsafeChars.ReplaceAllString(s, " ")
+	s = strings.TrimSpace(spaces.ReplaceAllString(s, " "))
+	s = strings.Trim(s, ". ")
+	for len(s) > 200 {
+		_, size := lastRune(s)
+		s = strings.TrimSpace(s[:len(s)-size])
+	}
+	if s == "" {
+		return "Untitled"
+	}
+	return s
+}
+
+func lastRune(s string) (rune, int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		if r := rune(s[i]); r < 0x80 || (s[i]&0xC0) != 0x80 {
+			return r, len(s) - i
+		}
+	}
+	return 0, len(s)
+}
+
+// RouteFor says where a page of pageType titled title goes in this vault, and returns a
+// skeleton with the vault's frontmatter conventions. It reads nothing but the target path.
+func (v *Vault) RouteFor(pageType, title string, now time.Time) (*Route, error) {
+	mode := v.Config.Mode
+	folder, err := folderFor(mode, pageType)
+	if err != nil {
+		return nil, err
+	}
+	stem := SanitizeTitle(title)
+	route := &Route{Path: folder + "/" + stem + ".md", Type: pageType, Mode: mode}
+	if _, err := os.Stat(v.Path(route.Path)); err == nil {
+		route.Exists = true
+	}
+	route.Skeleton = Skeleton(pageType, stem, now)
+	return route, nil
+}
+
+func folderFor(mode Mode, pageType string) (string, error) {
+	if mode == LYT {
+		switch pageType {
+		case "moc":
+			return "wiki/mocs", nil
+		case "note", "source", "entity", "concept", "question", "session":
+			return "wiki/notes", nil
+		}
+		return "", fmt.Errorf("type %q is not filed in lyt mode; use one of %s", pageType, strings.Join(RoutableTypes(LYT), ", "))
+	}
+	if folder, ok := genericFolders[pageType]; ok {
+		return folder, nil
+	}
+	return "", fmt.Errorf("type %q is not filed in generic mode; use one of %s", pageType, strings.Join(RoutableTypes(Generic), ", "))
+}
+
+// Skeleton is the starting text for a new page: frontmatter plus the headings that type
+// usually carries. Headings left empty show up in lint, so the author removes what is unused.
+func Skeleton(pageType, title string, now time.Time) string {
+	date := now.Format("2006-01-02")
+	var b strings.Builder
+	fmt.Fprintf(&b, "---\ntype: %s\ntitle: %q\nstatus: seed\ncreated: %s\nupdated: %s\ntags:\n  - %s\n", pageType, title, date, date, pageType)
+	switch pageType {
+	case "source":
+		b.WriteString("source_type: \nauthor: \ndate_published: \nurl: \nsource_id: \n")
+	case "question":
+		b.WriteString("question: \"\"\n")
+	case "note":
+		b.WriteString("mocs: []\n")
+	}
+	b.WriteString("---\n\n# " + title + "\n\n")
+	for _, h := range headingsFor(pageType) {
+		b.WriteString("## " + h + "\n\n")
+	}
+	return b.String()
+}
+
+func headingsFor(pageType string) []string {
+	switch pageType {
+	case "source":
+		return []string{"Summary", "Key claims", "Notes"}
+	case "entity":
+		return []string{"Overview", "Relationships", "Sources"}
+	case "concept":
+		return []string{"Definition", "Why it matters", "Related", "Sources"}
+	case "question":
+		return []string{"Answer", "Evidence", "Open"}
+	case "session":
+		return []string{"Context", "Outcome", "Follow-ups"}
+	case "note":
+		return []string{"Idea", "Sources", "See also"}
+	case "moc":
+		return []string{"Why this map exists", "Core notes", "Adjacent maps", "Open questions"}
+	}
+	return nil
+}
+
+// PageTitle derives a page's title from its path: the file stem.
+func PageTitle(rel string) string {
+	return strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
+}

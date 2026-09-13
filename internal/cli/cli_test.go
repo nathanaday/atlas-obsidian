@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/nathanaday/claude-atlas/internal/console"
+	"github.com/nathanaday/claude-atlas/internal/gitx"
 	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/testutil"
 	"github.com/nathanaday/claude-atlas/internal/tree"
 )
 
@@ -28,11 +28,13 @@ func (h *harness) run(args ...string) int {
 }
 
 func setup(t *testing.T) (*harness, string) {
-	prod := testutil.Product(t)
+	if !gitx.Available() {
+		t.Skip("git is not installed")
+	}
 	root := t.TempDir()
 	h := &harness{t: t, home: filepath.Join(root, "home")}
 	vaults := filepath.Join(root, "Vaults")
-	code := h.run("setup", "--no-plugin", "--vaults-dir", vaults, "--atlas-vault", filepath.Join(root, "Atlas"), "--first-vault", "welcome", "--claude-obsidian", prod.Root)
+	code := h.run("setup", "--no-plugin", "--vaults-dir", vaults, "--atlas-vault", filepath.Join(root, "Atlas"), "--first-vault", "welcome")
 	if code != 0 {
 		t.Fatalf("setup exit %d\n%s%s", code, h.out.String(), h.err.String())
 	}
@@ -45,7 +47,8 @@ func TestSetupCreatesHomeAtlasAndFirstVault(t *testing.T) {
 		t.Fatalf("output:\n%s", h.out.String())
 	}
 	for _, path := range []string{
-		filepath.Join(vaults, "welcome", ".claude-obsidian.json"),
+		filepath.Join(vaults, "welcome", ".claude-atlas.json"),
+		filepath.Join(vaults, "welcome", ".git", "HEAD"),
 		filepath.Join(filepath.Dir(h.home), "Atlas", ".obsidian", "app.json"),
 		filepath.Join(filepath.Dir(h.home), "Atlas", "tree", "welcome.md"),
 		filepath.Join(h.home, "state", "welcome.json"),
@@ -77,11 +80,24 @@ func TestVaultCommands(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(vaults, "triage", "wiki", "hot.md")); err != nil {
 		t.Fatal("vault not created")
 	}
-	if code := h.run("new-vault", "--from", filepath.Join(vaults, "triage")); code != 1 || !strings.Contains(h.err.String(), "already registered as work/triage") {
+	if code := h.run("new-vault", "--from", filepath.Join(vaults, "triage")); code != 0 || !strings.Contains(h.out.String(), "already tree/work/triage.md") {
+		t.Fatalf("exit %d out %s err %s", code, h.out.String(), h.err.String())
+	}
+	if code := h.run("new-vault", "--from", t.TempDir(), "--name", "Plain"); code != 1 || !strings.Contains(h.err.String(), "is not a vault") {
 		t.Fatalf("exit %d err %s", code, h.err.String())
 	}
-	if code := h.run("new-vault", "--from", t.TempDir(), "--name", "Plain"); code != 1 || !strings.Contains(h.err.String(), "not a claude-obsidian vault") {
-		t.Fatalf("exit %d err %s", code, h.err.String())
+	legacy := filepath.Join(t.TempDir(), "old")
+	os.MkdirAll(filepath.Join(legacy, "wiki"), 0o755)
+	os.WriteFile(filepath.Join(legacy, ".claude-obsidian.json"), []byte("{}"), 0o644)
+	os.WriteFile(filepath.Join(legacy, "wiki", "index.md"), []byte("---\ntitle: I\n---\n"), 0o644)
+	if code := h.run("adopt", legacy, "--category", "archive"); code != 0 || !strings.Contains(h.out.String(), "adopted") || !strings.Contains(h.out.String(), "tree/archive/old.md") {
+		t.Fatalf("adopt exit %d\n%s%s", code, h.out.String(), h.err.String())
+	}
+	if _, err := os.Stat(filepath.Join(legacy, ".claude-atlas.json")); err != nil {
+		t.Fatal("adopt should add the identity file")
+	}
+	if code := h.run("adopt", legacy); code != 0 || !strings.Contains(h.out.String(), "already") {
+		t.Fatalf("second adopt exit %d\n%s", code, h.out.String())
 	}
 	if code := h.run("list"); code != 0 {
 		t.Fatal("list failed")
@@ -91,8 +107,23 @@ func TestVaultCommands(t *testing.T) {
 			t.Errorf("list missing %q:\n%s", want, h.out.String())
 		}
 	}
-	if code := h.run("doctor"); code != 0 || !strings.Contains(h.out.String(), "2 registered") {
+	if code := h.run("doctor"); !strings.Contains(h.out.String(), "3 registered") {
 		t.Fatalf("doctor exit %d:\n%s", code, h.out.String())
+	}
+	if code := h.run("lint", "work/triage"); code != 0 || !strings.Contains(h.out.String(), "# Wiki lint") {
+		t.Fatalf("lint exit %d:\n%s%s", code, h.out.String(), h.err.String())
+	}
+	if code := h.run("history", filepath.Join(vaults, "triage")); code != 0 || !strings.Contains(h.out.String(), "setup") {
+		t.Fatalf("history exit %d:\n%s%s", code, h.out.String(), h.err.String())
+	}
+	if code := h.run("mode", "work/triage"); code != 0 || strings.TrimSpace(h.out.String()) != "generic" {
+		t.Fatalf("mode exit %d:\n%s", code, h.out.String())
+	}
+	if code := h.run("mode", "work/triage", "lyt"); code != 0 || !strings.Contains(h.out.String(), "generic → lyt") {
+		t.Fatalf("mode set exit %d:\n%s%s", code, h.out.String(), h.err.String())
+	}
+	if code := h.run("recover", "work/triage"); code != 0 || !strings.Contains(h.out.String(), "nothing was interrupted") {
+		t.Fatalf("recover exit %d:\n%s", code, h.out.String())
 	}
 	if code := h.run("refresh"); code != 0 || !strings.Contains(h.out.String(), "work/triage") {
 		t.Fatalf("refresh exit %d:\n%s", code, h.out.String())
@@ -100,7 +131,7 @@ func TestVaultCommands(t *testing.T) {
 	if code := h.run("info"); code != 0 {
 		t.Fatalf("info exit %d:\n%s", code, h.out.String())
 	}
-	for _, want := range []string{"overview", "Overview.md", "claude-obsidian", "2 registered", "work/triage"} {
+	for _, want := range []string{"overview", "Overview.md", "plugin", "3 registered", "work/triage"} {
 		if !strings.Contains(h.out.String(), want) {
 			t.Errorf("info missing %q:\n%s", want, h.out.String())
 		}

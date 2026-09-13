@@ -21,7 +21,7 @@ func fakeAtlas(t *testing.T) (*home.Config, Hooks) {
 	for _, spec := range []struct{ name, cat string }{{"capstone", "university/cs566"}, {"reading", "personal"}, {"welcome", ""}} {
 		vault := filepath.Join(cfg.VaultsDir, spec.name)
 		os.MkdirAll(vault, 0o755)
-		os.WriteFile(filepath.Join(vault, ".claude-obsidian.json"), []byte("{}"), 0o644)
+		os.WriteFile(filepath.Join(vault, ".claude-atlas.json"), []byte(`{"schema":"claude-atlas.vault.v1","mode":"generic"}`), 0o644)
 		if _, err := vaults.Register(cfg, vault, vaults.RegisterOptions{Name: spec.name, Category: spec.cat}); err != nil {
 			t.Fatal(err)
 		}
@@ -152,7 +152,7 @@ func TestRemoveUnlinksOnly(t *testing.T) {
 	if m.mode != browse || !m.changed || len(m.projects) != 2 {
 		t.Fatalf("remove: mode=%d changed=%v projects=%d err=%q", m.mode, m.changed, len(m.projects), m.err)
 	}
-	if _, err := os.Stat(filepath.Join(cfg.VaultsDir, "reading", ".claude-obsidian.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(cfg.VaultsDir, "reading", ".claude-atlas.json")); err != nil {
 		t.Fatal("vault was deleted")
 	}
 }
@@ -174,7 +174,7 @@ func TestMoveVaultAsksFirst(t *testing.T) {
 	if m.err != "" || m.mode != browse {
 		t.Fatalf("move: err=%q mode=%d", m.err, m.mode)
 	}
-	if _, err := os.Stat(filepath.Join(target, ".claude-obsidian.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(target, ".claude-atlas.json")); err != nil {
 		t.Fatal("vault not moved")
 	}
 }
