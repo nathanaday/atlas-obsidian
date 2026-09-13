@@ -295,7 +295,7 @@ the read-only atlas tools.
 
 ## The CLI
 
-Kept: everything the atlas tree needs (`setup`, `new-vault`, `manage-vaults`,
+Kept: everything the atlas tree needs (`setup`, `new-vault`,
 `view`, `open-vault`, `open-claude`, `link`, `unlink`, `links`, `list`,
 `refresh`, `info`, `doctor`, `version`).
 

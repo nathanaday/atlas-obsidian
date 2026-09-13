@@ -40,7 +40,7 @@ func sample() []Item {
 }
 
 func TestTreeShowsThreeLayersAndFoldsDeeper(t *testing.T) {
-	v := newView(sample(), Opener{})
+	v := newView(sample(), Opener{}, Hooks{})
 	out := v.View()
 	t.Logf("\n%s", out)
 	for _, want := range []string{"▾ engineering", "▾ itl", "▾ usc", "▾ cs566", "▸ deep", "2 projects", "welcome", "p3", "course"} {
@@ -68,7 +68,7 @@ func TestTreeShowsThreeLayersAndFoldsDeeper(t *testing.T) {
 }
 
 func TestEnterOnFoldedZoomsAndEscReturns(t *testing.T) {
-	v := newView(sample(), Opener{})
+	v := newView(sample(), Opener{}, Hooks{})
 	v = pressV(v, tea.KeyUp) // wraps to the folded row
 	if v.rows[v.cursor].kind != rowFolded {
 		t.Fatalf("cursor on %+v", v.rows[v.cursor])
@@ -89,7 +89,7 @@ func TestEnterOnFoldedZoomsAndEscReturns(t *testing.T) {
 }
 
 func TestDetailShowsEverything(t *testing.T) {
-	v := newView(sample(), Opener{})
+	v := newView(sample(), Opener{}, Hooks{})
 	v = pressV(v, tea.KeyDown, tea.KeyEnter) // p3
 	out := v.View()
 	t.Logf("\n%s", out)
@@ -105,7 +105,7 @@ func TestDetailShowsEverything(t *testing.T) {
 }
 
 func TestScrollKeepsCursorVisible(t *testing.T) {
-	v := newView(sample(), Opener{})
+	v := newView(sample(), Opener{}, Hooks{})
 	next, _ := v.Update(tea.WindowSizeMsg{Width: 80, Height: 14})
 	v = next.(view)
 	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyDown)
@@ -119,7 +119,7 @@ func TestScrollKeepsCursorVisible(t *testing.T) {
 }
 
 func TestEmptyTree(t *testing.T) {
-	v := newView(nil, Opener{})
+	v := newView(nil, Opener{}, Hooks{})
 	if !strings.Contains(v.View(), "no projects yet") {
 		t.Fatal("empty message missing")
 	}
@@ -155,7 +155,7 @@ func runCmd(v view, cmd tea.Cmd) view {
 
 func TestOpenRegisteredVaultDirectly(t *testing.T) {
 	f := &fakeOpener{registered: map[string]bool{"/v/p3": true}}
-	v := newView(sample(), f.opener())
+	v := newView(sample(), f.opener(), Hooks{})
 	v = pressV(v, tea.KeyDown) // p3
 	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
 	v = next.(view)
@@ -170,7 +170,7 @@ func TestOpenRegisteredVaultDirectly(t *testing.T) {
 
 func TestOpenUnknownVaultAsksThenRegisters(t *testing.T) {
 	f := &fakeOpener{registered: map[string]bool{}, running: true}
-	v := newView(sample(), f.opener())
+	v := newView(sample(), f.opener(), Hooks{})
 	next, _ := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")}) // welcome
 	v = next.(view)
 	if v.ask == nil || !strings.Contains(v.View(), "quit and relaunch") {
@@ -196,7 +196,7 @@ func TestOpenUnknownVaultAsksThenRegisters(t *testing.T) {
 
 func TestOpenFromDetail(t *testing.T) {
 	f := &fakeOpener{registered: map[string]bool{"/v/p3": true}}
-	v := newView(sample(), f.opener())
+	v := newView(sample(), f.opener(), Hooks{})
 	v = pressV(v, tea.KeyDown, tea.KeyEnter)
 	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
 	v = runCmd(next.(view), cmd)
@@ -208,7 +208,7 @@ func TestOpenFromDetail(t *testing.T) {
 func TestClaudeKeyHandsOffTheTerminal(t *testing.T) {
 	var got string
 	op := Opener{Claude: func(vault string) (*exec.Cmd, error) { got = vault; return exec.Command("true"), nil }}
-	v := newView(sample(), op)
+	v := newView(sample(), op, Hooks{})
 	v = pressV(v, tea.KeyDown) // p3
 	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	v = next.(view)
@@ -219,7 +219,7 @@ func TestClaudeKeyHandsOffTheTerminal(t *testing.T) {
 	if !strings.Contains(next.(view).View(), "back from Claude Code in p3") {
 		t.Fatal("status after return missing")
 	}
-	none := newView(sample(), Opener{})
+	none := newView(sample(), Opener{}, Hooks{})
 	next, _ = none.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	if next.(view).errMsg == "" {
 		t.Fatal("missing launcher should report an error")

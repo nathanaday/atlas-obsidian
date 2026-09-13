@@ -1,0 +1,250 @@
+package tui
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/tree"
+	"github.com/nathanaday/claude-atlas/internal/vaults"
+)
+
+func fakeAtlas(t *testing.T) (*home.Config, Hooks) {
+	t.Helper()
+	root := t.TempDir()
+	cfg := &home.Config{Schema: home.ConfigSchema, VaultsDir: filepath.Join(root, "Vaults"), AtlasVault: filepath.Join(root, "Atlas")}
+	os.MkdirAll(cfg.TreeRoot(), 0o755)
+	for _, spec := range []struct{ name, cat string }{{"capstone", "university/cs566"}, {"reading", "personal"}, {"welcome", ""}} {
+		vault := filepath.Join(cfg.VaultsDir, spec.name)
+		os.MkdirAll(vault, 0o755)
+		os.WriteFile(filepath.Join(vault, ".claude-atlas.json"), []byte(`{"schema":"claude-atlas.vault.v1","mode":"generic"}`), 0o644)
+		if _, err := vaults.Register(cfg, vault, vaults.RegisterOptions{Name: spec.name, Category: spec.cat}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hooks := Hooks{
+		Load: func() ([]*tree.Project, error) {
+			projects, _, err := tree.Walk(cfg.TreeRoot())
+			return projects, err
+		},
+		Categories: func() []string { return Categories(cfg.TreeRoot()) },
+		State: func(rel string) *tree.State {
+			if rel == "personal/reading" {
+				return &tree.State{Heat: "cold"}
+			}
+			return nil
+		},
+		Update: func(p *tree.Project, edit vaults.Edit) error { return vaults.Update(cfg, p, edit) },
+		Unlink: vaults.Unlink,
+	}
+	return cfg, hooks
+}
+
+// atlasView opens the tree over the fake atlas with the cursor on "reading" (row 1: welcome, reading, capstone).
+func atlasView(t *testing.T) (*home.Config, view) {
+	t.Helper()
+	cfg, hooks := fakeAtlas(t)
+	projects, _ := hooks.Load()
+	var items []Item
+	for _, p := range projects {
+		items = append(items, Item{Project: p, State: hooks.State(p.Rel)})
+	}
+	v := newView(items, Opener{}, hooks)
+	v = pressV(v, tea.KeyDown)
+	if v.rows[v.cursor].item.Project.ID() != "reading" {
+		t.Fatalf("cursor on %s", v.rows[v.cursor].item.Project.Rel)
+	}
+	return cfg, v
+}
+
+func keyV(v view, s string) view {
+	next, _ := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)})
+	return next.(view)
+}
+
+func typeV(v view, text string) view {
+	for _, r := range text {
+		v = keyV(v, string(r))
+	}
+	return v
+}
+
+func TestEditRenameRepriorityAndMoveCategory(t *testing.T) {
+	cfg, v := atlasView(t)
+	v = keyV(v, "e")
+	if v.edit == nil || v.edit.current.ID() != "reading" || !strings.Contains(v.View(), "tree/personal/reading.md") {
+		t.Fatalf("editor not open:\n%s", v.View())
+	}
+	v = pressV(v, tea.KeyEnter) // edit name
+	v = typeV(v, " List")
+	v = pressV(v, tea.KeyEnter)
+	if v.edit.draft.Name != "reading List" {
+		t.Fatalf("name %q", v.edit.draft.Name)
+	}
+	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyEnter) // category picker
+	v = typeV(v, "leisure")
+	v = pressV(v, tea.KeyEnter)
+	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyRight) // priority normal → low
+	if v.edit.draft.Category != "leisure" || v.edit.draft.Priority != "low" || !v.edit.dirty() {
+		t.Fatalf("draft %+v", v.edit.draft)
+	}
+	v = keyV(v, "s")
+	if v.edit != nil || !v.changed || v.errMsg != "" || v.status != "saved reading List" {
+		t.Fatalf("save: edit=%v changed=%v err=%q status=%q", v.edit, v.changed, v.errMsg, v.status)
+	}
+	projects, _, _ := tree.Walk(cfg.TreeRoot())
+	moved := tree.FindByRel(projects, "leisure/reading")
+	if moved == nil || moved.Name != "reading List" || moved.Priority != "low" {
+		t.Fatalf("not applied: %+v", moved)
+	}
+	if r := v.rows[v.cursor]; r.kind != rowProject || r.item.Project.Rel != "leisure/reading" {
+		t.Fatalf("cursor not on moved project: %+v", r)
+	}
+	if !strings.Contains(v.View(), "leisure") || !strings.Contains(v.View(), "reading List") {
+		t.Fatalf("tree not reloaded:\n%s", v.View())
+	}
+}
+
+func TestEscWarnsBeforeDiscarding(t *testing.T) {
+	_, v := atlasView(t)
+	v = keyV(v, "e")
+	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyDown, tea.KeyDown, tea.KeyRight) // priority changed
+	v = pressV(v, tea.KeyEsc)
+	if v.edit == nil || !strings.Contains(v.edit.err, "unsaved") {
+		t.Fatalf("first esc should warn: %+v", v.edit)
+	}
+	v = pressV(v, tea.KeyEsc)
+	if v.edit != nil || v.changed || v.detail != nil {
+		t.Fatalf("second esc should discard: edit=%v changed=%v", v.edit, v.changed)
+	}
+}
+
+func TestQuitKeyTypesInsideAField(t *testing.T) {
+	_, v := atlasView(t)
+	v = keyV(v, "e")
+	v = pressV(v, tea.KeyEnter) // name field
+	v = keyV(v, "q")
+	if v.edit == nil || !strings.HasSuffix(v.edit.text.Value(), "q") {
+		t.Fatalf("q should be typed, not quit: %+v", v.edit)
+	}
+}
+
+func TestRemoveUnlinksOnly(t *testing.T) {
+	cfg, v := atlasView(t)
+	v = keyV(v, "e")
+	v = keyV(v, "r")
+	if v.edit.mode != confirmRemove || !strings.Contains(v.View(), "stays on disk") {
+		t.Fatalf("mode %d\n%s", v.edit.mode, v.View())
+	}
+	v = keyV(v, "y")
+	if v.edit != nil || !v.changed || len(v.items) != 2 || !strings.Contains(v.status, "removed reading") {
+		t.Fatalf("remove: edit=%v changed=%v items=%d status=%q", v.edit, v.changed, len(v.items), v.status)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.VaultsDir, "reading", ".claude-atlas.json")); err != nil {
+		t.Fatal("vault was deleted")
+	}
+}
+
+func TestMoveVaultAsksFirst(t *testing.T) {
+	cfg, v := atlasView(t)
+	v = keyV(v, "e")
+	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyDown, tea.KeyEnter) // vault field
+	target := filepath.Join(cfg.VaultsDir, "archive", "reading")
+	v.edit.text.SetValue(target)
+	v = pressV(v, tea.KeyEnter)
+	v = keyV(v, "s")
+	if v.edit == nil || v.edit.mode != confirmMove {
+		t.Fatalf("expected move confirmation: %+v", v.edit)
+	}
+	v = keyV(v, "y")
+	if v.edit != nil || v.errMsg != "" || !v.changed {
+		t.Fatalf("move: edit=%v err=%q", v.edit, v.errMsg)
+	}
+	if _, err := os.Stat(filepath.Join(target, ".claude-atlas.json")); err != nil {
+		t.Fatal("vault not moved")
+	}
+}
+
+func TestEditLinksThroughTheListEditor(t *testing.T) {
+	cfg, v := atlasView(t)
+	repo := filepath.Join(cfg.VaultsDir, "code")
+	os.MkdirAll(filepath.Join(repo, ".git"), 0o755)
+	v = keyV(v, "e")
+	for i := 0; i < fieldRepos; i++ {
+		v = pressV(v, tea.KeyDown)
+	}
+	v = pressV(v, tea.KeyEnter) // list editor
+	if v.edit.mode != editList {
+		t.Fatalf("mode %d", v.edit.mode)
+	}
+	v = keyV(v, "a")
+	v.edit.text.SetValue(filepath.Join(cfg.VaultsDir, "missing"))
+	v = pressV(v, tea.KeyEnter)
+	if v.edit.mode != editListText || v.edit.err == "" {
+		t.Fatalf("missing folder should be refused: mode=%d err=%q", v.edit.mode, v.edit.err)
+	}
+	v.edit.text.SetValue(repo)
+	v = pressV(v, tea.KeyEnter)
+	if v.edit.mode != editList || len(v.edit.draft.Repos) != 1 || v.edit.draft.Repos[0] != repo {
+		t.Fatalf("add failed: mode=%d repos=%v", v.edit.mode, v.edit.draft.Repos)
+	}
+	v = pressV(v, tea.KeyEsc)
+	if !v.edit.dirty() {
+		t.Fatal("adding a link should dirty the draft")
+	}
+	v = keyV(v, "s")
+	if v.edit != nil || v.errMsg != "" {
+		t.Fatalf("save: edit=%v err=%q", v.edit, v.errMsg)
+	}
+	projects, _, _ := tree.Walk(cfg.TreeRoot())
+	p := tree.FindByRel(projects, "personal/reading")
+	if len(p.Repos) != 1 || p.Repos[0] != repo {
+		t.Fatalf("page not updated: %v", p.Repos)
+	}
+	// remove it again
+	v = keyV(v, "e")
+	for i := 0; i < fieldRepos; i++ {
+		v = pressV(v, tea.KeyDown)
+	}
+	v = pressV(v, tea.KeyEnter)
+	v = keyV(v, "d")
+	v = pressV(v, tea.KeyEsc)
+	v = keyV(v, "s")
+	projects, _, _ = tree.Walk(cfg.TreeRoot())
+	if p := tree.FindByRel(projects, "personal/reading"); len(p.Repos) != 0 {
+		t.Fatalf("remove failed: %v", p.Repos)
+	}
+}
+
+func TestEditFromDetailReturnsToDetail(t *testing.T) {
+	_, v := atlasView(t)
+	v = pressV(v, tea.KeyEnter) // detail
+	if v.detail == nil {
+		t.Fatal("detail should open")
+	}
+	v = keyV(v, "e")
+	v = pressV(v, tea.KeyEsc)
+	if v.edit != nil || v.detail == nil || v.detail.Project.ID() != "reading" {
+		t.Fatalf("esc should return to the detail page: edit=%v detail=%v", v.edit, v.detail)
+	}
+	v = keyV(v, "e")
+	v = pressV(v, tea.KeyEnter) // name
+	v = typeV(v, " 2")
+	v = pressV(v, tea.KeyEnter)
+	v = keyV(v, "s")
+	if v.edit != nil || v.detail == nil || v.detail.Project.Name != "reading 2" || !strings.Contains(v.View(), "reading 2") {
+		t.Fatalf("saved edit should refresh the detail page: detail=%+v", v.detail)
+	}
+}
+
+func TestEditNeedsHooks(t *testing.T) {
+	v := newView(sample(), Opener{}, Hooks{})
+	v = keyV(v, "e")
+	if v.edit != nil || !strings.Contains(v.errMsg, "not available") {
+		t.Fatalf("edit without hooks: %+v %q", v.edit, v.errMsg)
+	}
+}

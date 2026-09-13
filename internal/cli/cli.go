@@ -50,8 +50,7 @@ Vaults:
   open-claude NAME       start Claude Code inside a project's vault
 
 The atlas:
-  view                   navigate the atlas as a tree; open a project for every detail
-  manage-vaults          browse every project by category; rename, move, repoint, or remove
+  view                   navigate the atlas as a tree; open, edit, or remove any project
   link NAME PATH         link a git repo or a folder of material to a project
   unlink NAME PATH       remove that link; the folder is untouched
   links NAME             show a project's links and what refresh found in them
@@ -127,8 +126,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.adopt(rest[1:])
 	case "view":
 		code, err = e.view(rest[1:])
-	case "manage-vaults":
-		code, err = e.manageVaults(rest[1:])
 	case "open-vault":
 		code, err = e.openVault(rest[1:])
 	case "open-claude":
@@ -425,21 +422,7 @@ func (e *env) view(args []string) (int, error) {
 		RegisterAndOpen: obsidian.RegisterAndOpen,
 		Claude:          func(vault string) (*exec.Cmd, error) { return claudecode.LaunchCommand(cfg.ClaudeCode, vault) },
 	}
-	if err := tui.RunView(items, opener); err != nil {
-		return 1, err
-	}
-	return 0, nil
-}
-
-func (e *env) manageVaults(args []string) (int, error) {
-	if !e.console.Interactive() {
-		return 2, errors.New("manage-vaults is an interactive screen and needs a terminal")
-	}
-	cfg, err := e.home.Load()
-	if err != nil {
-		return 1, err
-	}
-	h := tui.Hooks{
+	hooks := tui.Hooks{
 		Load: func() ([]*tree.Project, error) {
 			projects, _, err := tree.Walk(cfg.TreeRoot())
 			return projects, err
@@ -455,7 +438,7 @@ func (e *env) manageVaults(args []string) (int, error) {
 		Update: func(p *tree.Project, edit vaults.Edit) error { return vaults.Update(cfg, p, edit) },
 		Unlink: vaults.Unlink,
 	}
-	changed, err := tui.RunManage(h)
+	changed, err := tui.RunView(items, opener, hooks)
 	if err != nil {
 		return 1, err
 	}
