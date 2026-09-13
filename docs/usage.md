@@ -101,11 +101,12 @@ claude-atlas open-vault
 ## The atlas
 
 `view` is an interactive tree of every project, three category layers at a
-time. Enter shows everything the atlas knows about a project, `o` opens its
-vault in Obsidian, `c` starts Claude Code in it, and `e` edits its page: rename
-it, edit its purpose, move it to another category, change its priority or
-state, repoint or move its vault, link repos and material, or remove it from
-the atlas. Removing never touches the vault on disk.
+time. Space folds or unfolds the branch under the cursor; `-` and `+` fold and
+unfold every category. Enter shows everything the atlas knows about a project,
+`o` opens its vault in Obsidian, `c` starts Claude Code in it, and `e` edits
+its page: rename it, edit its purpose, move it to another category, change its
+priority or state, repoint or move its vault, link repos and material, or
+remove it from the atlas. Removing never touches the vault on disk.
 
 ```bash
 claude-atlas view
