@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -114,7 +116,7 @@ func TestHintsFollowTheCursor(t *testing.T) {
 	}
 	v = pressV(v, tea.KeyDown) // engineering
 	out := v.View()
-	if strings.Contains(out, "Obsidian") || !strings.Contains(out, "Enter fold · - + fold all") {
+	if strings.Contains(v.treeHints(), "Obsidian") || !strings.Contains(v.treeHints(), "Enter fold") || !strings.Contains(out, "- + fold all") {
 		t.Fatalf("category hints wrong:\n%s", out)
 	}
 	v = pressV(v, tea.KeySpace)
@@ -327,5 +329,89 @@ func TestClaudeKeyHandsOffTheTerminal(t *testing.T) {
 	next, _ = none.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	if next.(view).errMsg == "" {
 		t.Fatal("missing launcher should report an error")
+	}
+}
+
+func TestNewAndAdoptFromTheTree(t *testing.T) {
+	var got []AddVault
+	hooks := Hooks{
+		Load:       func() ([]*tree.Project, error) { return nil, nil },
+		Categories: func() []string { return []string{"work"} },
+		Create: func(c AddVault) (string, error) {
+			got = append(got, c)
+			return "work/" + c.Slug, nil
+		},
+		VaultsDir: "/vaults",
+	}
+	v := newView(sample(), Opener{}, hooks)
+	v = keyV(v, "n")
+	if v.add == nil || v.add.adopting || !strings.Contains(v.View(), "Add a vault") {
+		t.Fatalf("n should open the add screen:\n%s", v.View())
+	}
+	v = typeV(v, "Sensor Triage")
+	v = pressV(v, tea.KeyEnter)               // name
+	v = pressV(v, tea.KeyDown, tea.KeyEnter)  // category: work
+	v = pressV(v, tea.KeyRight, tea.KeyEnter) // mode: lyt
+	v = pressV(v, tea.KeyEnter)               // purpose: none
+	v = pressV(v, tea.KeyEnter)               // confirm
+	if v.add != nil || len(got) != 1 || got[0].Slug != "sensor-triage" || got[0].Category != "work" || got[0].Mode != "lyt" || got[0].Adopt || got[0].Path != "/vaults/sensor-triage" {
+		t.Fatalf("create: add=%v got=%+v", v.add, got)
+	}
+	if !v.changed || v.status != "created Sensor Triage" {
+		t.Fatalf("status %q changed %v", v.status, v.changed)
+	}
+	// Adopt an existing Obsidian folder.
+	dir := filepath.Join(t.TempDir(), "Old Notes")
+	os.MkdirAll(filepath.Join(dir, ".obsidian"), 0o755)
+	v = keyV(v, "a")
+	if v.add == nil || !v.add.adopting || !strings.Contains(v.View(), "Adopt a vault") {
+		t.Fatalf("a should open the adopt screen:\n%s", v.View())
+	}
+	v = typeV(v, t.TempDir())
+	v = pressV(v, tea.KeyEnter)
+	if v.add.step != stepName || v.add.err == "" {
+		t.Fatalf("a plain directory is not adoptable: step=%d err=%q", v.add.step, v.add.err)
+	}
+	v.add.name.SetValue(dir)
+	v = pressV(v, tea.KeyEnter, tea.KeyEnter, tea.KeyEnter, tea.KeyEnter, tea.KeyEnter)
+	if v.add != nil || len(got) != 2 || !got[1].Adopt || got[1].Path != dir || got[1].Name != "Old Notes" || got[1].Slug != "old-notes" {
+		t.Fatalf("adopt: add=%v got=%+v", v.add, got)
+	}
+	if v.status != "adopted Old Notes" {
+		t.Fatalf("status %q", v.status)
+	}
+	// Esc on the first step cancels without creating anything.
+	v = keyV(v, "n")
+	v = pressV(v, tea.KeyEsc)
+	if v.add != nil || len(got) != 2 {
+		t.Fatal("esc should cancel the add screen")
+	}
+	none := newView(sample(), Opener{}, Hooks{})
+	none = keyV(none, "n")
+	if none.add != nil || !strings.Contains(none.errMsg, "not available") {
+		t.Fatal("n without hooks reports why")
+	}
+}
+
+func TestRefreshKey(t *testing.T) {
+	calls := 0
+	hooks := Hooks{
+		Load:    func() ([]*tree.Project, error) { return nil, nil },
+		Refresh: func() error { calls++; return nil },
+	}
+	v := newView(sample(), Opener{}, hooks)
+	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
+	v = next.(view)
+	if cmd == nil || v.busy == "" {
+		t.Fatalf("R should start a background refresh: busy=%q", v.busy)
+	}
+	next, _ = v.Update(cmd())
+	v = next.(view)
+	if calls != 1 || v.busy != "" || v.status != "refreshed" || v.errMsg != "" {
+		t.Fatalf("after refresh: calls=%d busy=%q status=%q err=%q", calls, v.busy, v.status, v.errMsg)
+	}
+	none := keyV(newView(sample(), Opener{}, Hooks{}), "R")
+	if !strings.Contains(none.errMsg, "not available") {
+		t.Fatal("R without hooks reports why")
 	}
 }

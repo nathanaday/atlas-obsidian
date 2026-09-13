@@ -45,16 +45,19 @@ Vaults:
   setup                  install the plugin, create the atlas, and your first vault
   new-vault              create a vault and its project page, step by step
   new-vault NAME         create a vault without prompts
-  adopt PATH             make an existing Obsidian or claude-obsidian vault a claude-atlas vault
+  adopt [PATH]           make an existing Obsidian or claude-obsidian vault a claude-atlas vault
   open-vault [NAME]      open the atlas, or a project's vault, in Obsidian
   open-claude NAME       start Claude Code inside a project's vault
 
 The atlas:
-  view                   navigate the atlas as a tree; open, edit, or remove any project
+  view                   the whole atlas as one interactive tree
+  list                   list every project
+  show NAME              everything the atlas knows about a project
+  edit NAME [flags]      change a project's name, purpose, category, priority, state, or vault
+  remove NAME            remove a project from the atlas; the vault stays on disk
   link NAME PATH         link a git repo or a folder of material to a project
   unlink NAME PATH       remove that link; the folder is untouched
   links NAME             show a project's links and what refresh found in them
-  list                   list every project
   refresh                read every vault and rewrite Overview.md
 
 Inside a vault (VAULT is a project name or a path; default: the current directory):
@@ -138,6 +141,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.links(rest[1:])
 	case "list":
 		code, err = e.list(rest[1:])
+	case "show":
+		code, err = e.show(rest[1:])
+	case "edit":
+		code, err = e.edit(rest[1:])
+	case "remove":
+		code, err = e.remove(rest[1:])
 	case "refresh":
 		code, err = e.refresh(rest[1:])
 	case "lint":
@@ -276,8 +285,8 @@ func (e *env) adopt(args []string) (int, error) {
 	if err != nil {
 		return 2, nil
 	}
-	if len(positional) != 1 {
-		return 2, errors.New("usage: claude-atlas adopt PATH [--name N] [--category DIR] [--purpose TEXT] [--priority P] [--mode generic|lyt]")
+	if len(positional) > 1 {
+		return 2, errors.New("usage: claude-atlas adopt [PATH] [--name N] [--category DIR] [--purpose TEXT] [--priority P] [--mode generic|lyt]")
 	}
 	var m vault.Mode
 	if *mode != "" {
@@ -285,7 +294,76 @@ func (e *env) adopt(args []string) (int, error) {
 			return 2, err
 		}
 	}
+	if len(positional) == 0 {
+		if !e.console.Interactive() {
+			return 2, errors.New("usage: claude-atlas adopt PATH (the interactive screen needs a terminal)")
+		}
+		cfg, err := e.home.Load()
+		if err != nil {
+			return 1, err
+		}
+		choice, err := tui.RunAdopt(tui.Categories(cfg.TreeRoot()))
+		if err != nil {
+			return 1, err
+		}
+		if choice == nil {
+			return 1, vaults.ErrCancelled
+		}
+		return e.adoptPath(choice.Path, vaults.RegisterOptions{Name: choice.Name, Category: choice.Category, Purpose: choice.Purpose, Priority: opts.Priority}, vault.Mode(choice.Mode))
+	}
 	return e.adoptPath(positional[0], *opts, m)
+}
+
+// createOrAdopt is what the interactive screens call: it makes or adopts the vault and
+// registers it, returning the project's rel. The CLI commands share every step.
+func (e *env) createOrAdopt(cfg *home.Config, choice tui.AddVault) (string, error) {
+	mode, err := parseMode(choice.Mode)
+	if err != nil {
+		return "", err
+	}
+	opts := vaults.RegisterOptions{Name: choice.Name, Category: choice.Category, Purpose: choice.Purpose}
+	if choice.Adopt {
+		if _, err := vault.Adopt(choice.Path, mode, time.Now()); err != nil {
+			return "", err
+		}
+		projects, _, err := tree.Walk(cfg.TreeRoot())
+		if err != nil {
+			return "", err
+		}
+		if existing := tree.FindByVault(projects, choice.Path); existing != nil {
+			return existing.Rel, nil
+		}
+	} else if _, err := vaults.Create(choice.Path, mode, e.console, false); err != nil {
+		return "", err
+	}
+	project, err := vaults.Register(cfg, choice.Path, opts)
+	if err != nil {
+		return "", err
+	}
+	return project.Rel, nil
+}
+
+// hooks wires the interactive screens to the same backend calls the CLI commands use.
+func (e *env) hooks(cfg *home.Config) tui.Hooks {
+	return tui.Hooks{
+		Load: func() ([]*tree.Project, error) {
+			projects, _, err := tree.Walk(cfg.TreeRoot())
+			return projects, err
+		},
+		Categories: func() []string { return tui.Categories(cfg.TreeRoot()) },
+		State: func(rel string) *tree.State {
+			state, err := tree.ReadState(e.home.StateDir(), rel)
+			if err != nil {
+				return nil
+			}
+			return state
+		},
+		Update:    func(p *tree.Project, edit vaults.Edit) error { return vaults.Update(cfg, p, edit) },
+		Unlink:    vaults.Unlink,
+		Create:    func(choice tui.AddVault) (string, error) { return e.createOrAdopt(cfg, choice) },
+		Refresh:   func() error { _, _, err := e.refreshAll(cfg); return err },
+		VaultsDir: cfg.VaultsDir,
+	}
 }
 
 // adoptPath makes a directory a claude-atlas vault, registers it, and refreshes.
@@ -391,7 +469,11 @@ func (e *env) newVaultInteractive() (int, error) {
 	if choice == nil {
 		return 1, vaults.ErrCancelled
 	}
-	if _, err := vaults.Create(choice.Path, vault.Generic, e.console, false); err != nil {
+	mode, err := parseMode(choice.Mode)
+	if err != nil {
+		return 1, err
+	}
+	if _, err := vaults.Create(choice.Path, mode, e.console, false); err != nil {
 		return 1, err
 	}
 	return e.finishVault(cfg, choice.Path, vaults.RegisterOptions{
@@ -422,23 +504,7 @@ func (e *env) view(args []string) (int, error) {
 		RegisterAndOpen: obsidian.RegisterAndOpen,
 		Claude:          func(vault string) (*exec.Cmd, error) { return claudecode.LaunchCommand(cfg.ClaudeCode, vault) },
 	}
-	hooks := tui.Hooks{
-		Load: func() ([]*tree.Project, error) {
-			projects, _, err := tree.Walk(cfg.TreeRoot())
-			return projects, err
-		},
-		Categories: func() []string { return tui.Categories(cfg.TreeRoot()) },
-		State: func(rel string) *tree.State {
-			state, err := tree.ReadState(e.home.StateDir(), rel)
-			if err != nil {
-				return nil
-			}
-			return state
-		},
-		Update: func(p *tree.Project, edit vaults.Edit) error { return vaults.Update(cfg, p, edit) },
-		Unlink: vaults.Unlink,
-	}
-	changed, err := tui.RunView(items, opener, hooks)
+	changed, err := tui.RunView(items, opener, e.hooks(cfg))
 	if err != nil {
 		return 1, err
 	}
@@ -616,6 +682,194 @@ func (e *env) project(cfg *home.Config, name string) (*tree.Project, error) {
 		return nil, fmt.Errorf("no project named %q; see `claude-atlas list`", name)
 	}
 	return p, nil
+}
+
+func (e *env) show(args []string) (int, error) {
+	if len(args) != 1 {
+		return 2, errors.New("usage: claude-atlas show NAME")
+	}
+	cfg, err := e.home.Load()
+	if err != nil {
+		return 1, err
+	}
+	p, err := e.project(cfg, args[0])
+	if err != nil {
+		return 1, err
+	}
+	state, _ := tree.ReadState(e.home.StateDir(), p.Rel)
+	c := e.console
+	row := func(k, val string) {
+		if val == "" {
+			val = "—"
+		}
+		c.Say("  %-16s %s", k, val)
+	}
+	row("Name", p.Name)
+	row("Page", "tree/"+p.Rel+".md")
+	row("Vault", home.Display(p.VaultPath()))
+	row("Category", p.Category())
+	row("Priority", p.Priority)
+	row("State", p.State)
+	row("Blocked on", p.BlockedOn)
+	row("Review after", p.ReviewAfter)
+	row("Purpose", p.Purpose)
+	row("Done when", p.DefinitionOfDone)
+	for _, r := range p.Repos {
+		row("Repo", home.Display(home.Expand(r))+"  "+linkFacts(state, r))
+	}
+	for _, m := range p.Materials {
+		row("Materials", home.Display(home.Expand(m))+"  "+linkFacts(state, m))
+	}
+	if state == nil {
+		row("Refreshed", "never; run `claude-atlas refresh`")
+		return 0, nil
+	}
+	heat := state.Heat
+	if heat == "" {
+		heat = "unreachable"
+	}
+	if !state.VaultOK {
+		row("Vault check", state.VaultError)
+	} else {
+		row("Vault check", "ok")
+	}
+	row("Heat", heat)
+	row("Created", state.Created)
+	row("Last touched", state.LastTouched)
+	if state.DaysIdle != nil {
+		row("Idle", fmt.Sprintf("%d day%s", *state.DaysIdle, plural(*state.DaysIdle)))
+	}
+	row("Last operation", state.LastOperation)
+	if state.Pages != nil {
+		row("Pages", fmt.Sprint(*state.Pages))
+	}
+	u := state.Unfinished
+	var bits []string
+	for _, kv := range []struct {
+		k string
+		v *int
+	}{{"empty sections", u.EmptySections}, {"seed pages", u.SeedPages}, {"dead links", u.DeadLinks}} {
+		if kv.v != nil {
+			bits = append(bits, fmt.Sprintf("%d %s", *kv.v, kv.k))
+		}
+	}
+	row("Unfinished", strings.Join(bits, " · "))
+	for i, t := range state.OpenThreads {
+		label := "Open threads"
+		if i > 0 {
+			label = ""
+		}
+		c.Say("  %-16s - %s", label, refresh.PlainText(t))
+	}
+	row("Refreshed", state.GeneratedAt)
+	return 0, nil
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+func (e *env) edit(args []string) (int, error) {
+	fs := newFlags("edit", e.stderr)
+	name := fs.String("name", "", "display name")
+	purpose := fs.String("purpose", "", "why the project exists; \"\" clears it")
+	category := fs.String("category", "", "directory under tree/ to move the page to; \"\" for the top level")
+	priority := fs.String("priority", "", "high, normal, low, or someday")
+	state := fs.String("state", "", "active, paused, blocked, or archived")
+	blocked := fs.String("blocked-on", "", "what the project waits for; \"\" clears it")
+	review := fs.String("review-after", "", "date (YYYY-MM-DD) to revisit these fields; \"\" clears it")
+	done := fs.String("done", "", "what finished looks like; \"\" clears it")
+	vaultPath := fs.String("vault", "", "point the project at this vault")
+	move := fs.Bool("move", false, "with --vault: move the vault directory there")
+	positional, err := parse(fs, args)
+	if err != nil {
+		return 2, nil
+	}
+	if len(positional) != 1 {
+		return 2, errors.New("usage: claude-atlas edit NAME [--name N] [--purpose TEXT] [--category DIR] [--priority P] [--state S] [--blocked-on TEXT] [--review-after DATE] [--done TEXT] [--vault PATH [--move]]")
+	}
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	if len(set) == 0 || (len(set) == 1 && set["move"]) {
+		return 2, errors.New("edit needs at least one field flag; see `claude-atlas help`")
+	}
+	cfg, err := e.home.Load()
+	if err != nil {
+		return 1, err
+	}
+	p, err := e.project(cfg, positional[0])
+	if err != nil {
+		return 1, err
+	}
+	change := vaults.Edit{Name: *name, Priority: *priority, State: *state, Vault: *vaultPath, MoveVault: *move}
+	if set["purpose"] {
+		change.Purpose = *purpose
+		change.ClearPurpose = *purpose == ""
+	}
+	if set["category"] {
+		cat := strings.Trim(*category, "/")
+		change.Category = &cat
+	}
+	if set["blocked-on"] {
+		change.BlockedOn = blocked
+	}
+	if set["review-after"] {
+		change.ReviewAfter = review
+	}
+	if set["done"] {
+		change.DefinitionOfDone = done
+	}
+	if err := vaults.Update(cfg, p, change); err != nil {
+		return 1, err
+	}
+	page, _, err := e.refreshAll(cfg)
+	if err != nil {
+		return 1, err
+	}
+	rel := p.Rel
+	if change.Category != nil {
+		rel = p.ID()
+		if *change.Category != "" {
+			rel = *change.Category + "/" + rel
+		}
+	}
+	e.console.Step(console.OK, "edited", "tree/"+rel+".md")
+	e.console.Step(console.OK, "refreshed", home.Display(page))
+	return 0, nil
+}
+
+func (e *env) remove(args []string) (int, error) {
+	if len(args) != 1 {
+		return 2, errors.New("usage: claude-atlas remove NAME")
+	}
+	cfg, err := e.home.Load()
+	if err != nil {
+		return 1, err
+	}
+	p, err := e.project(cfg, args[0])
+	if err != nil {
+		return 1, err
+	}
+	ok, err := e.console.Confirm(fmt.Sprintf("Remove %s from the atlas? The vault at %s stays on disk.", p.Name, home.Display(p.VaultPath())), false)
+	if err != nil {
+		return 1, err
+	}
+	if !ok {
+		return 1, vaults.ErrCancelled
+	}
+	if err := vaults.Unlink(p); err != nil {
+		return 1, err
+	}
+	page, _, err := e.refreshAll(cfg)
+	if err != nil {
+		return 1, err
+	}
+	e.console.Step(console.OK, "removed", fmt.Sprintf("%s; the vault is still at %s", p.Name, home.Display(p.VaultPath())))
+	e.console.Step(console.OK, "refreshed", home.Display(page))
+	return 0, nil
 }
 
 func (e *env) link(args []string) (int, error) {

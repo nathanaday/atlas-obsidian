@@ -16,12 +16,18 @@ import (
 )
 
 // Hooks connect the screens to the atlas without the screens touching disk themselves.
+// Every hook is one backend call that a CLI command also exposes.
 type Hooks struct {
 	Load       func() ([]*tree.Project, error)
 	Categories func() []string
 	State      func(rel string) *tree.State
 	Update     func(*tree.Project, vaults.Edit) error
 	Unlink     func(*tree.Project) error
+	// Create makes or adopts a vault and registers it; it returns the project's rel.
+	Create func(AddVault) (string, error)
+	// Refresh rebuilds derived state for every project.
+	Refresh   func() error
+	VaultsDir string
 }
 
 type editMode int
@@ -53,30 +59,37 @@ const (
 	fieldVault
 	fieldPriority
 	fieldState
+	fieldBlockedOn
+	fieldReviewAfter
+	fieldDone
 	fieldRepos
 	fieldMaterials
 	fieldCount
 )
 
-var fieldNames = [fieldCount]string{"Name", "Purpose", "Category", "Vault", "Priority", "State", "Repos", "Materials"}
+var fieldNames = [fieldCount]string{"Name", "Purpose", "Category", "Vault", "Priority", "State", "Blocked on", "Review after", "Done when", "Repos", "Materials"}
 
 type draft struct {
 	Name, Purpose, Category, Vault, Priority, State string
+	BlockedOn, ReviewAfter, Done                    string
 	Repos, Materials                                []string
 }
 
 func draftOf(p *tree.Project) draft {
 	return draft{
 		Name: p.Name, Purpose: p.Purpose, Category: p.Category(), Vault: p.VaultPath(), Priority: p.Priority, State: p.State,
+		BlockedOn: p.BlockedOn, ReviewAfter: p.ReviewAfter, Done: p.DefinitionOfDone,
 		Repos: append([]string{}, p.Repos...), Materials: append([]string{}, p.Materials...),
 	}
 }
 
 func (d draft) equal(o draft) bool {
-	return d.Name == o.Name && d.Purpose == o.Purpose && d.Category == o.Category && d.Vault == o.Vault &&
-		d.Priority == o.Priority && d.State == o.State &&
-		strings.Join(d.Repos, "\x00") == strings.Join(o.Repos, "\x00") &&
-		strings.Join(d.Materials, "\x00") == strings.Join(o.Materials, "\x00")
+	for f := 0; f < fieldCount; f++ {
+		if d.get(f) != o.get(f) {
+			return false
+		}
+	}
+	return true
 }
 
 func (d draft) list(field int) []string {
@@ -99,7 +112,7 @@ func (d draft) get(field int) string {
 	case fieldRepos, fieldMaterials:
 		return strings.Join(d.list(field), ", ")
 	}
-	return [fieldCount]string{d.Name, d.Purpose, d.Category, d.Vault, d.Priority, d.State, "", ""}[field]
+	return [fieldCount]string{d.Name, d.Purpose, d.Category, d.Vault, d.Priority, d.State, d.BlockedOn, d.ReviewAfter, d.Done, "", ""}[field]
 }
 
 func (d *draft) set(field int, v string) {
@@ -116,6 +129,12 @@ func (d *draft) set(field int, v string) {
 		d.Priority = v
 	case fieldState:
 		d.State = v
+	case fieldBlockedOn:
+		d.BlockedOn = v
+	case fieldReviewAfter:
+		d.ReviewAfter = v
+	case fieldDone:
+		d.Done = v
 	}
 }
 
@@ -361,10 +380,27 @@ func (e editor) save() editor {
 		e.err = "the name cannot be empty"
 		return e
 	}
+	if !vaults.ValidReviewDate(e.draft.ReviewAfter) {
+		e.err = "review after must be a date like 2026-10-01"
+		e.field = fieldReviewAfter
+		return e
+	}
 	edit := vaults.Edit{Name: e.draft.Name, Priority: e.draft.Priority, State: e.draft.State}
 	if e.draft.Purpose != e.original.Purpose {
 		edit.Purpose = e.draft.Purpose
 		edit.ClearPurpose = e.draft.Purpose == ""
+	}
+	if e.draft.BlockedOn != e.original.BlockedOn {
+		v := e.draft.BlockedOn
+		edit.BlockedOn = &v
+	}
+	if e.draft.ReviewAfter != e.original.ReviewAfter {
+		v := e.draft.ReviewAfter
+		edit.ReviewAfter = &v
+	}
+	if e.draft.Done != e.original.Done {
+		v := e.draft.Done
+		edit.DefinitionOfDone = &v
 	}
 	if e.draft.Category != e.original.Category {
 		cat := e.draft.Category

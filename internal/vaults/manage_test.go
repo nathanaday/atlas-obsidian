@@ -129,3 +129,31 @@ func TestAddAndRemoveLinks(t *testing.T) {
 		t.Fatal("removing an unlinked path should fail")
 	}
 }
+
+func TestUpdateIntentFields(t *testing.T) {
+	cfg, p := setup(t)
+	blocked, review, done := "hardware", "2026-10-01", "Ships."
+	if err := Update(cfg, p, Edit{BlockedOn: &blocked, ReviewAfter: &review, DefinitionOfDone: &done}); err != nil {
+		t.Fatal(err)
+	}
+	projects, _, _ := tree.Walk(cfg.TreeRoot())
+	got := projects[0]
+	if got.BlockedOn != "hardware" || got.ReviewAfter != "2026-10-01" || got.DefinitionOfDone != "Ships." {
+		t.Fatalf("got %+v", got.Frontmatter)
+	}
+	bad := "next week"
+	if err := Update(cfg, got, Edit{ReviewAfter: &bad}); err == nil || !ValidReviewDate(bad) == false && err == nil {
+		t.Fatal("a non-date review_after must be refused")
+	}
+	if err := Update(cfg, got, Edit{Priority: "urgent"}); err == nil {
+		t.Fatal("an unknown priority must be refused")
+	}
+	empty := ""
+	if err := Update(cfg, got, Edit{BlockedOn: &empty, ReviewAfter: &empty}); err != nil {
+		t.Fatal(err)
+	}
+	projects, _, _ = tree.Walk(cfg.TreeRoot())
+	if projects[0].BlockedOn != "" || projects[0].ReviewAfter != "" || projects[0].DefinitionOfDone != "Ships." {
+		t.Fatalf("clearing: %+v", projects[0].Frontmatter)
+	}
+}

@@ -46,16 +46,44 @@ claude-atlas open-vault my-project
 
 **View the atlas**
 
-> Navigate your projects as a tree, three category layers at a time; deeper categories open on Enter. Space folds the branch under the cursor; `-` and `+` fold and unfold everything. Enter shows everything the atlas knows about a project; `o` opens its vault in Obsidian; `c` starts Claude Code in it; `e` edits it: rename, purpose, category, priority, state, vault path, links, or remove it from the atlas (the vault stays on disk).
+> Everything in one screen. Navigate your projects as a tree; Space folds a branch, `-` and `+` fold and unfold everything. Enter shows everything the atlas knows about a project; `o` opens its vault in Obsidian; `c` starts Claude Code in it; `e` edits it (or removes it with `r`); `n` creates a vault; `a` adopts one; `R` refreshes.
 
 ```bash
 claude-atlas view
 ```
 
-**List projects**
+**List and show projects**
 
 ```bash
 claude-atlas list
+```
+
+```bash
+claude-atlas show my-project
+```
+
+**Edit a project**
+
+> Every field the `e` key edits, from the command line. An empty value clears a text field.
+
+```bash
+claude-atlas edit my-project --priority high --state blocked --blocked-on "field hardware"
+```
+
+```bash
+claude-atlas edit my-project --review-after 2026-10-01 --done "Every fault has a page."
+```
+
+```bash
+claude-atlas edit my-project --category work/field
+```
+
+**Remove a project**
+
+> The vault stays on disk.
+
+```bash
+claude-atlas remove my-project
 ```
 
 **Info**
@@ -188,7 +216,7 @@ Create a vault at an explicit path instead of the vaults directory.
 claude-atlas new-vault ~/Desktop/scratch-vault
 ```
 
-Bring in a vault that already exists, including one made by claude-obsidian. It gains an identity file and git history; nothing in it is replaced.
+Bring in a vault that already exists, including one made by claude-obsidian. It gains an identity file and git history; nothing in it is replaced. With no path it asks step by step.
 
 ```bash
 claude-atlas adopt ~/Documents/OldVault --name "Old Vault" --category archive --priority someday

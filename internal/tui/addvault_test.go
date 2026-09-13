@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -120,8 +121,16 @@ func TestFlowCreatesUnderNewCategory(t *testing.T) {
 	m = typeText(m, "work")
 	t.Logf("\n%s", m.View())
 	m = press(m, tea.KeyEnter)
-	if m.step != stepPurpose || !m.chosen.create || m.chosen.value != "work" {
+	if m.step != stepMode || !m.chosen.create || m.chosen.value != "work" {
 		t.Fatalf("expected new category work, got step=%d chosen=%+v", m.step, m.chosen)
+	}
+	m = press(m, tea.KeyRight)
+	if m.mode != "lyt" || !strings.Contains(m.View(), "◂ lyt ▸") {
+		t.Fatalf("mode toggle: %q\n%s", m.mode, m.View())
+	}
+	m = press(m, tea.KeyLeft, tea.KeyEnter)
+	if m.step != stepPurpose || m.mode != "generic" {
+		t.Fatalf("expected purpose step in generic mode, got step=%d mode=%q", m.step, m.mode)
 	}
 	m = typeText(m, "Sort sensors.")
 	m = press(m, tea.KeyEnter)
@@ -132,6 +141,41 @@ func TestFlowCreatesUnderNewCategory(t *testing.T) {
 	m = press(m, tea.KeyEnter)
 	if !m.done || m.pagePath() != "tree/work/sensor-triage.md" {
 		t.Fatalf("done=%v page=%s", m.done, m.pagePath())
+	}
+	r := m.result()
+	if r == nil || r.Name != "Sensor Triage" || r.Mode != "generic" || r.Purpose != "Sort sensors." || r.Adopt {
+		t.Fatalf("result %+v", r)
+	}
+}
+
+func TestAdoptModelValidatesPath(t *testing.T) {
+	m := newAdoptModel([]string{"work"})
+	if m.nameError() != "type the vault's path" {
+		t.Fatalf("empty: %q", m.nameError())
+	}
+	plain := t.TempDir()
+	m.name.SetValue(plain)
+	if !strings.Contains(m.nameError(), "not a vault") {
+		t.Fatalf("plain dir: %q", m.nameError())
+	}
+	m.name.SetValue(filepath.Join(plain, "missing"))
+	if !strings.Contains(m.nameError(), "not a directory") {
+		t.Fatalf("missing: %q", m.nameError())
+	}
+	old := filepath.Join(plain, "My Vault")
+	os.MkdirAll(filepath.Join(old, "wiki"), 0o755)
+	m.name.SetValue(old)
+	if m.nameError() != "" || m.slug() != "my-vault" || m.path() != old {
+		t.Fatalf("adoptable: err=%q slug=%q path=%q", m.nameError(), m.slug(), m.path())
+	}
+	m = press(m, tea.KeyEnter, tea.KeyEnter, tea.KeyEnter, tea.KeyEnter)
+	if m.step != stepConfirm || !strings.Contains(m.View(), "adopt this vault") {
+		t.Fatalf("step %d\n%s", m.step, m.View())
+	}
+	m = press(m, tea.KeyEnter)
+	r := m.result()
+	if r == nil || !r.Adopt || r.Name != "My Vault" || r.Path != old {
+		t.Fatalf("result %+v", r)
 	}
 }
 

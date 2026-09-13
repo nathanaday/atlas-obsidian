@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/home"
 	"github.com/nathanaday/claude-atlas/internal/links"
@@ -12,23 +14,54 @@ import (
 )
 
 // Edit is a set of changes to one project. Empty strings mean "unchanged" except
-// Purpose, which may be cleared by setting ClearPurpose.
+// Purpose, which may be cleared by setting ClearPurpose. Pointer fields are unchanged
+// when nil and cleared when they point at "".
 type Edit struct {
-	Name         string
-	Purpose      string
-	ClearPurpose bool
-	Priority     string
-	State        string
-	Category     *string // nil: unchanged; "" : top level
-	Vault        string  // new vault path; "" unchanged
-	MoveVault    bool    // move the directory on disk to Vault
-	Repos        *[]string
-	Materials    *[]string
+	Name             string
+	Purpose          string
+	ClearPurpose     bool
+	Priority         string
+	State            string
+	BlockedOn        *string
+	ReviewAfter      *string // YYYY-MM-DD or ""
+	DefinitionOfDone *string
+	Category         *string // nil: unchanged; "" : top level
+	Vault            string  // new vault path; "" unchanged
+	MoveVault        bool    // move the directory on disk to Vault
+	Repos            *[]string
+	Materials        *[]string
+}
+
+// ValidReviewDate reports whether s is empty or a YYYY-MM-DD date.
+func ValidReviewDate(s string) bool {
+	if s == "" {
+		return true
+	}
+	_, err := time.Parse("2006-01-02", s)
+	return err == nil
 }
 
 // Update applies an Edit: frontmatter first, then the vault, then the page's category.
 func Update(cfg *home.Config, p *tree.Project, edit Edit) error {
 	fields := map[string]any{}
+	if edit.Priority != "" && !contains(tree.Priorities, edit.Priority) {
+		return fmt.Errorf("priority must be one of %s", strings.Join(tree.Priorities, ", "))
+	}
+	if edit.State != "" && !contains(tree.States, edit.State) {
+		return fmt.Errorf("state must be one of %s", strings.Join(tree.States, ", "))
+	}
+	if edit.ReviewAfter != nil && !ValidReviewDate(*edit.ReviewAfter) {
+		return fmt.Errorf("review_after must be a date like 2026-10-01")
+	}
+	if edit.BlockedOn != nil && *edit.BlockedOn != p.BlockedOn {
+		fields["blocked_on"] = *edit.BlockedOn
+	}
+	if edit.ReviewAfter != nil && *edit.ReviewAfter != p.ReviewAfter {
+		fields["review_after"] = *edit.ReviewAfter
+	}
+	if edit.DefinitionOfDone != nil && *edit.DefinitionOfDone != p.DefinitionOfDone {
+		fields["definition_of_done"] = *edit.DefinitionOfDone
+	}
 	if edit.Name != "" && edit.Name != p.Name {
 		fields["name"] = edit.Name
 	}
@@ -82,6 +115,15 @@ func Update(cfg *home.Config, p *tree.Project, edit Edit) error {
 		}
 	}
 	return nil
+}
+
+func contains(list []string, value string) bool {
+	for _, item := range list {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }
 
 func orEmpty(list []string) []string {

@@ -199,3 +199,44 @@ func TestCommandsNeedSetupFirst(t *testing.T) {
 		t.Fatalf("version: %q", h.out.String())
 	}
 }
+
+func TestShowEditRemove(t *testing.T) {
+	h, vaults := setup(t)
+	if code := h.run("new-vault", "triage", "--category", "work", "--purpose", "Sort sensors."); code != 0 {
+		t.Fatalf("new-vault exit %d\n%s%s", code, h.out.String(), h.err.String())
+	}
+	if code := h.run("edit", "work/triage"); code != 2 {
+		t.Fatalf("edit without flags should be a usage error, got %d", code)
+	}
+	code := h.run("edit", "work/triage", "--priority", "high", "--state", "blocked", "--blocked-on", "hardware", "--review-after", "2026-10-01", "--done", "Ships.", "--category", "ops")
+	if code != 0 || !strings.Contains(h.out.String(), "edited") {
+		t.Fatalf("edit exit %d\n%s%s", code, h.out.String(), h.err.String())
+	}
+	if code := h.run("edit", "ops/triage", "--review-after", "soon"); code != 1 || !strings.Contains(h.err.String(), "date like") {
+		t.Fatalf("bad date exit %d err %s", code, h.err.String())
+	}
+	if code := h.run("show", "ops/triage"); code != 0 {
+		t.Fatalf("show exit %d\n%s%s", code, h.out.String(), h.err.String())
+	}
+	for _, want := range []string{"tree/ops/triage.md", "high", "blocked", "hardware", "2026-10-01", "Ships.", "Sort sensors.", "Vault check", "Pages"} {
+		if !strings.Contains(h.out.String(), want) {
+			t.Errorf("show missing %q:\n%s", want, h.out.String())
+		}
+	}
+	if code := h.run("edit", "ops/triage", "--purpose", "", "--blocked-on", ""); code != 0 {
+		t.Fatalf("clear exit %d %s", code, h.err.String())
+	}
+	h.run("show", "ops/triage")
+	if strings.Contains(h.out.String(), "Sort sensors.") || strings.Contains(h.out.String(), "hardware") {
+		t.Fatalf("clearing failed:\n%s", h.out.String())
+	}
+	if code := h.run("remove", "ops/triage"); code != 0 || !strings.Contains(h.out.String(), "removed") {
+		t.Fatalf("remove exit %d\n%s%s", code, h.out.String(), h.err.String())
+	}
+	if _, err := os.Stat(filepath.Join(vaults, "triage", ".claude-atlas.json")); err != nil {
+		t.Fatal("remove must leave the vault on disk")
+	}
+	if code := h.run("show", "ops/triage"); code != 1 {
+		t.Fatal("removed project should be gone")
+	}
+}

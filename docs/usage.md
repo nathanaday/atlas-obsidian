@@ -2,6 +2,23 @@
 
 Every command, with examples. `claude-atlas help` prints the short form.
 
+## Two layers
+
+`claude-atlas view` is the whole atlas as one interactive screen. Everything it
+does is also one command, so scripts and muscle memory both work:
+
+| In `view` | Command |
+|---|---|
+| `n` new vault | `new-vault` |
+| `a` adopt a vault | `adopt` |
+| `e` edit a project, `s` save | `edit NAME --…` |
+| `e` then `r` remove | `remove NAME` |
+| Enter on a project | `show NAME` |
+| `o` open in Obsidian | `open-vault NAME` |
+| `c` start Claude Code | `open-claude NAME` |
+| `R` refresh | `refresh` |
+| Repos and Materials in the editor | `link`, `unlink`, `links` |
+
 ## Create a vault
 
 With no arguments, `new-vault` asks for a name, a category, and a one-line
@@ -12,6 +29,27 @@ claude-atlas new-vault
 claude-atlas new-vault sensor-triage --category work --purpose "Sort field sensor faults."
 claude-atlas new-vault reading --mode lyt
 claude-atlas new-vault ~/Desktop/scratch-vault
+```
+
+## Edit a project
+
+A project page holds your intent for a vault. Set any field from the command
+line; an empty value clears a text field, and `--category ""` moves the page to
+the top level.
+
+```bash
+claude-atlas edit sensor-triage --priority high --state blocked --blocked-on "field hardware"
+claude-atlas edit sensor-triage --review-after 2026-10-01 --done "Every sensor fault has a page."
+claude-atlas edit sensor-triage --name "Sensor triage" --purpose "" --category work/field
+claude-atlas edit sensor-triage --vault ~/Vaults/sensor-triage --move
+```
+
+See everything the atlas knows about a project, and remove one from the atlas
+(the vault stays on disk):
+
+```bash
+claude-atlas show sensor-triage
+claude-atlas remove sensor-triage
 ```
 
 ## Work in a vault with Claude Code
@@ -104,9 +142,11 @@ claude-atlas open-vault
 time. Space folds or unfolds the branch under the cursor; `-` and `+` fold and
 unfold every category. Enter shows everything the atlas knows about a project,
 `o` opens its vault in Obsidian, `c` starts Claude Code in it, and `e` edits
-its page: rename it, edit its purpose, move it to another category, change its
-priority or state, repoint or move its vault, link repos and material, or
-remove it from the atlas. Removing never touches the vault on disk.
+its page: name, purpose, category, priority, state, what it is blocked on, a
+review date, what finished looks like, its vault path, and linked repos and
+material, or `r` to remove it from the atlas. `n` creates a vault, `a` adopts
+one, and `R` refreshes every vault in the background. Removing never touches
+the vault on disk.
 
 ```bash
 claude-atlas view
@@ -163,6 +203,7 @@ claude-atlas vault and register it. It gains an identity file and git history;
 nothing in it is replaced.
 
 ```bash
+claude-atlas adopt                                   # step by step
 claude-atlas adopt ~/Documents/MyKnowledgeVault --category personal
 claude-atlas adopt ~/Documents/OldVault --name "Old Vault" --priority someday --mode lyt
 ```

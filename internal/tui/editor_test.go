@@ -248,3 +248,37 @@ func TestEditNeedsHooks(t *testing.T) {
 		t.Fatalf("edit without hooks: %+v %q", v.edit, v.errMsg)
 	}
 }
+
+func TestEditIntentFieldsAndDateValidation(t *testing.T) {
+	cfg, v := atlasView(t)
+	v = keyV(v, "e")
+	for i := 0; i < fieldBlockedOn; i++ {
+		v = pressV(v, tea.KeyDown)
+	}
+	v = pressV(v, tea.KeyEnter)
+	v = typeV(v, "hardware")
+	v = pressV(v, tea.KeyEnter, tea.KeyDown, tea.KeyEnter) // review after
+	v = typeV(v, "soon")
+	v = pressV(v, tea.KeyEnter)
+	v = keyV(v, "s")
+	if v.edit == nil || !strings.Contains(v.edit.err, "date like") || v.edit.field != fieldReviewAfter {
+		t.Fatalf("bad date should be refused: %+v", v.edit)
+	}
+	v = pressV(v, tea.KeyEnter)
+	v.edit.text.SetValue("2026-10-01")
+	v = pressV(v, tea.KeyEnter, tea.KeyDown, tea.KeyEnter) // done when
+	v = typeV(v, "Ships.")
+	v = pressV(v, tea.KeyEnter)
+	if !strings.Contains(v.View(), "Blocked on") || !strings.Contains(v.View(), "Done when") {
+		t.Fatalf("fields missing:\n%s", v.View())
+	}
+	v = keyV(v, "s")
+	if v.edit != nil || v.errMsg != "" {
+		t.Fatalf("save: %+v %q", v.edit, v.errMsg)
+	}
+	projects, _, _ := tree.Walk(cfg.TreeRoot())
+	p := tree.FindByRel(projects, "personal/reading")
+	if p.BlockedOn != "hardware" || p.ReviewAfter != "2026-10-01" || p.DefinitionOfDone != "Ships." {
+		t.Fatalf("page: %+v", p.Frontmatter)
+	}
+}

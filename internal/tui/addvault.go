@@ -14,15 +14,18 @@ import (
 
 	"github.com/nathanaday/claude-atlas/internal/home"
 	"github.com/nathanaday/claude-atlas/internal/tree"
+	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
-// AddVault is what the user chose on the add-vault screen.
+// AddVault is what the user chose on the add-vault or adopt screen.
 type AddVault struct {
-	Name     string // display name as typed
+	Name     string // display name as typed, or the directory name when adopting
 	Slug     string // file and directory name
-	Path     string // where the vault will be created
+	Path     string // where the vault will be created, or the vault being adopted
 	Category string // "" for the top level
+	Mode     string // generic or lyt
 	Purpose  string
+	Adopt    bool // Path exists already and is adopted rather than created
 }
 
 type step int
@@ -30,6 +33,7 @@ type step int
 const (
 	stepName step = iota
 	stepCategory
+	stepMode
 	stepPurpose
 	stepConfirm
 	stepCount
@@ -50,12 +54,15 @@ var (
 	rule     = lipgloss.NewStyle().Foreground(muted)
 )
 
+// model is the add-vault screen; with adopting set it takes an existing vault's path instead of a name.
 type model struct {
 	vaultsDir  string
+	adopting   bool
 	categories []string
 	step       step
 	name       textinput.Model
 	category   picker
+	mode       string
 	purpose    textinput.Model
 	chosen     option
 	err        string
@@ -75,22 +82,48 @@ func newModel(vaultsDir string, categories []string) model {
 	purpose.Prompt = ""
 	purpose.CharLimit = 200
 	purpose.Width = 60
-	return model{vaultsDir: vaultsDir, categories: categories, name: name, category: category, purpose: purpose}
+	return model{vaultsDir: vaultsDir, categories: categories, name: name, category: category, mode: string(vault.Generic), purpose: purpose}
+}
+
+// newAdoptModel is the same screen for a vault that already exists.
+func newAdoptModel(categories []string) model {
+	m := newModel("", categories)
+	m.adopting = true
+	m.name.Placeholder = "~/Documents/OldVault"
+	m.name.CharLimit = 300
+	m.name.Width = 60
+	return m
 }
 
 func (m model) Init() tea.Cmd { return textinput.Blink }
 
 func (m model) slug() string {
-	slug, err := tree.Slugify(m.name.Value())
+	source := m.name.Value()
+	if m.adopting {
+		source = filepath.Base(m.path())
+	}
+	slug, err := tree.Slugify(source)
 	if err != nil {
 		return ""
 	}
 	return slug
 }
 
-func (m model) path() string { return filepath.Join(m.vaultsDir, m.slug()) }
+func (m model) path() string {
+	if m.adopting {
+		abs, err := filepath.Abs(home.Expand(strings.TrimSpace(m.name.Value())))
+		if err != nil {
+			return ""
+		}
+		return abs
+	}
+	return filepath.Join(m.vaultsDir, m.slug())
+}
 
 func (m model) nameError() string {
+	if m.adopting {
+		return m.pathError()
+	}
 	if strings.TrimSpace(m.name.Value()) == "" {
 		return "type a name"
 	}
@@ -99,6 +132,23 @@ func (m model) nameError() string {
 	}
 	if _, err := os.Stat(m.path()); err == nil {
 		return home.Display(m.path()) + " already exists"
+	}
+	return ""
+}
+
+func (m model) pathError() string {
+	if strings.TrimSpace(m.name.Value()) == "" {
+		return "type the vault's path"
+	}
+	info, err := os.Stat(m.path())
+	if err != nil || !info.IsDir() {
+		return home.Display(m.path()) + " is not a directory"
+	}
+	if !vault.IsAdoptable(m.path()) {
+		return home.Display(m.path()) + " is not a vault: no .obsidian/, wiki/, or identity file"
+	}
+	if m.slug() == "" {
+		return "the directory name needs at least one letter or digit"
 	}
 	return ""
 }
@@ -144,6 +194,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = ""
 	case stepCategory:
 		m.category, cmd = m.category.update(msg)
+	case stepMode:
+		if isKey && (key.Type == tea.KeyLeft || key.Type == tea.KeyRight || key.Type == tea.KeySpace) {
+			if m.mode == string(vault.Generic) {
+				m.mode = string(vault.LYT)
+			} else {
+				m.mode = string(vault.Generic)
+			}
+		}
 	case stepPurpose:
 		m.purpose, cmd = m.purpose.Update(msg)
 	}
@@ -175,27 +233,49 @@ func (m model) pagePath() string {
 	return "tree/" + m.chosen.value + "/" + m.slug() + ".md"
 }
 
+// result is the choice once the user confirmed, or nil.
+func (m model) result() *AddVault {
+	if m.cancelled || !m.done {
+		return nil
+	}
+	name := strings.TrimSpace(m.name.Value())
+	if m.adopting {
+		name = filepath.Base(m.path())
+	}
+	return &AddVault{
+		Name:     name,
+		Slug:     m.slug(),
+		Path:     m.path(),
+		Category: m.chosen.value,
+		Mode:     m.mode,
+		Purpose:  strings.TrimSpace(m.purpose.Value()),
+		Adopt:    m.adopting,
+	}
+}
+
 func (m model) View() string {
 	var b strings.Builder
-	b.WriteString("\n  " + title.Render("Add a vault") + "\n\n")
+	heading, first := "Add a vault", "Name"
+	if m.adopting {
+		heading, first = "Adopt a vault", "Path"
+	}
+	b.WriteString("\n  " + title.Render(heading) + "\n\n")
 
-	// Name
-	b.WriteString(m.row(stepName, "Name", m.name.View()))
+	b.WriteString(m.row(stepName, first, m.name.View()))
 	if m.step == stepName {
 		if m.err != "" {
 			b.WriteString("             " + errSt.Render(m.err) + "\n")
-		} else if m.slug() != "" {
+		} else if !m.adopting && m.slug() != "" {
 			b.WriteString("             " + dim.Render("→ "+home.Display(m.path())) + "\n")
 		}
-	} else if m.step > stepName {
+	} else if m.step > stepName && !m.adopting {
 		b.WriteString("             " + dim.Render(home.Display(m.path())) + "\n")
 	}
 	b.WriteString("\n")
 
-	// Category
 	switch {
 	case m.step < stepCategory:
-		b.WriteString(m.row(stepCategory, "Category", dim.Render("choose after the name")))
+		b.WriteString(m.row(stepCategory, "Category", dim.Render("choose after the "+strings.ToLower(first))))
 	case m.step == stepCategory:
 		b.WriteString(m.row(stepCategory, "Category", m.category.view("             ")))
 	default:
@@ -207,7 +287,16 @@ func (m model) View() string {
 	}
 	b.WriteString("\n")
 
-	// Purpose
+	switch {
+	case m.step < stepMode:
+		b.WriteString(m.row(stepMode, "Mode", dim.Render("generic")))
+	case m.step == stepMode:
+		b.WriteString(m.row(stepMode, "Mode", "◂ "+m.mode+" ▸"+dim.Render("  "+modeHint(m.mode))))
+	default:
+		b.WriteString(m.row(stepMode, "Mode", m.mode))
+	}
+	b.WriteString("\n")
+
 	switch {
 	case m.step < stepPurpose:
 		b.WriteString(m.row(stepPurpose, "Purpose", dim.Render("optional")))
@@ -223,14 +312,21 @@ func (m model) View() string {
 	b.WriteString("\n")
 
 	if m.step == stepConfirm {
+		verb := "create this vault"
+		if m.adopting {
+			verb = "adopt this vault"
+		}
 		b.WriteString("  " + rule.Render(strings.Repeat("─", 56)) + "\n")
 		b.WriteString("  " + label.Render("Vault") + value.Render(home.Display(m.path())) + "\n")
 		b.WriteString("  " + label.Render("Page") + value.Render(m.pagePath()) + "\n")
-		b.WriteString("\n  " + title.Render("Enter") + " create this vault   " + dim.Render("Esc back") + "\n")
+		b.WriteString("\n  " + title.Render("Enter") + " " + verb + "   " + dim.Render("Esc back") + "\n")
 	} else {
 		hints := "Enter next"
-		if m.step == stepCategory {
+		switch m.step {
+		case stepCategory:
 			hints += " · ↑↓ choose · type to filter or name a new category"
+		case stepMode:
+			hints += " · ←→ generic or lyt"
 		}
 		if m.step > stepName {
 			hints += " · Esc back"
@@ -240,6 +336,13 @@ func (m model) View() string {
 		b.WriteString("  " + dim.Render(hints) + "\n")
 	}
 	return b.String()
+}
+
+func modeHint(mode string) string {
+	if mode == string(vault.LYT) {
+		return "atomic notes under Maps of Content"
+	}
+	return "pages filed by type"
 }
 
 func (m model) row(s step, name, content string) string {
@@ -268,21 +371,20 @@ func Categories(treeRoot string) []string {
 	return cats
 }
 
-// RunAddVault shows the screen and returns nil when the user cancels.
-func RunAddVault(vaultsDir string, categories []string) (*AddVault, error) {
-	final, err := tea.NewProgram(newModel(vaultsDir, categories)).Run()
+func runChoice(m model) (*AddVault, error) {
+	final, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return nil, fmt.Errorf("interactive screen failed: %w", err)
 	}
-	m := final.(model)
-	if m.cancelled || !m.done {
-		return nil, nil
-	}
-	return &AddVault{
-		Name:     strings.TrimSpace(m.name.Value()),
-		Slug:     m.slug(),
-		Path:     m.path(),
-		Category: m.chosen.value,
-		Purpose:  strings.TrimSpace(m.purpose.Value()),
-	}, nil
+	return final.(model).result(), nil
+}
+
+// RunAddVault shows the screen and returns nil when the user cancels.
+func RunAddVault(vaultsDir string, categories []string) (*AddVault, error) {
+	return runChoice(newModel(vaultsDir, categories))
+}
+
+// RunAdopt shows the adopt screen and returns nil when the user cancels.
+func RunAdopt(categories []string) (*AddVault, error) {
+	return runChoice(newAdoptModel(categories))
 }
