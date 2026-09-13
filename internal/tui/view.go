@@ -722,12 +722,34 @@ func (v view) View() string {
 	if end < len(v.lines) {
 		b.WriteString("  " + dim.Render(fmt.Sprintf("… %d more lines", len(v.lines)-end)) + "\n")
 	}
-	hints := "↑↓ move · Enter open · Space fold · - + fold all · o Obsidian · c Claude · e edit"
+	b.WriteString("\n" + v.footer(v.treeHints()))
+	return b.String()
+}
+
+// treeHints lists the keys that do something for the row under the cursor.
+func (v view) treeHints() string {
+	hints := "↑↓ move"
+	if r := v.current(); r != nil {
+		switch r.kind {
+		case rowProject:
+			hints += " · Enter details · o Obsidian · c Claude · e edit · Space fold"
+		case rowCategory:
+			if v.collapsed[r.path] {
+				hints += " · Enter unfold"
+			} else {
+				hints += " · Enter fold"
+			}
+			hints += " · - + fold all"
+		case rowFolded:
+			hints += " · Enter open"
+		}
+	} else if len(v.rows) > 0 {
+		hints += " · - + fold all"
+	}
 	if len(v.stack) > 0 {
 		hints += " · Esc back"
 	}
-	b.WriteString("\n" + v.footer(hints+" · q quit"))
-	return b.String()
+	return hints + " · q quit"
 }
 
 func dash(s string) string {

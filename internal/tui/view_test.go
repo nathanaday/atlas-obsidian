@@ -107,6 +107,29 @@ func TestDownRevealsTheEndAndNeverWraps(t *testing.T) {
 	}
 }
 
+func TestHintsFollowTheCursor(t *testing.T) {
+	v := newView(sample(), Opener{}, Hooks{})
+	if out := v.View(); !strings.Contains(out, "o Obsidian · c Claude · e edit") {
+		t.Fatalf("project hints missing:\n%s", out)
+	}
+	v = pressV(v, tea.KeyDown) // engineering
+	out := v.View()
+	if strings.Contains(out, "Obsidian") || !strings.Contains(out, "Enter fold · - + fold all") {
+		t.Fatalf("category hints wrong:\n%s", out)
+	}
+	v = pressV(v, tea.KeySpace)
+	if out := v.View(); !strings.Contains(out, "Enter unfold") {
+		t.Fatalf("folded category hints wrong:\n%s", out)
+	}
+	v = keyV(v, "+")
+	for i := 0; i <= len(v.rows); i++ {
+		v = pressV(v, tea.KeyDown)
+	}
+	if hints := v.treeHints(); !v.atEnd() || strings.Contains(hints, "Enter") || strings.Contains(hints, "Obsidian") {
+		t.Fatalf("end marker hints wrong: %q", hints)
+	}
+}
+
 func TestFoldBranchAndFoldAll(t *testing.T) {
 	v := newView(sample(), Opener{}, Hooks{})
 	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyDown) // welcome, engineering, itl, p3
