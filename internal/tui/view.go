@@ -130,6 +130,9 @@ type frame struct {
 type view struct {
 	items     []Item
 	opener    Opener
+	hooks     Hooks
+	edit      *editor
+	changed   bool
 	root      string
 	stack     []frame
 	ask       *Item  // project awaiting a register-and-open confirmation
@@ -154,15 +157,52 @@ var (
 	catSt    = lipgloss.NewStyle().Bold(true)
 )
 
-func newView(items []Item, opener Opener) view {
-	v := view{items: items, opener: opener, width: 100, height: 40}
-	for _, it := range items {
+func newView(items []Item, opener Opener, hooks Hooks) view {
+	v := view{items: items, opener: opener, hooks: hooks, width: 100, height: 40}
+	v.stamp()
+	v.layout()
+	return v
+}
+
+func (v *view) stamp() {
+	v.refreshed = ""
+	for _, it := range v.items {
 		if it.State != nil && it.State.GeneratedAt > v.refreshed {
 			v.refreshed = it.State.GeneratedAt
 		}
 	}
+}
+
+// reload re-reads the tree after an edit and keeps the cursor on the project at rel.
+func (v *view) reload(rel string) {
+	projects, err := v.hooks.Load()
+	if err != nil {
+		v.errMsg = err.Error()
+		return
+	}
+	items := make([]Item, 0, len(projects))
+	for _, p := range projects {
+		var state *tree.State
+		if v.hooks.State != nil {
+			state = v.hooks.State(p.Rel)
+		}
+		items = append(items, Item{Project: p, State: state})
+	}
+	v.items = items
+	v.stamp()
 	v.layout()
-	return v
+	v.detail = nil
+	for i := range v.rows {
+		if v.rows[i].kind == rowProject && v.rows[i].item.Project.Rel == rel {
+			v.cursor = i
+		}
+	}
+	for i := range v.items {
+		if v.items[i].Project.Rel == rel && rel != "" {
+			v.detail = &v.items[i]
+		}
+	}
+	v.ensureVisible()
 }
 
 func (v view) Init() tea.Cmd { return nil }
@@ -316,7 +356,13 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return v, nil
 	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlC || msg.String() == "q" {
+		if msg.Type == tea.KeyCtrlC {
+			return v, tea.Quit
+		}
+		if v.edit != nil {
+			return v.updateEdit(msg)
+		}
+		if msg.String() == "q" {
 			return v, tea.Quit
 		}
 		if v.busy != "" {
@@ -334,7 +380,7 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return v, nil
 		}
 		v.status, v.errMsg = "", ""
-		if msg.String() == "o" || msg.String() == "c" {
+		if key := msg.String(); key == "o" || key == "c" || key == "e" {
 			var item *Item
 			if v.detail != nil {
 				item = v.detail
@@ -344,8 +390,11 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if item == nil {
 				return v, nil
 			}
-			if msg.String() == "c" {
+			switch key {
+			case "c":
 				return v.claude(item)
+			case "e":
+				return v.openEditor(item)
 			}
 			return v.open(item)
 		}
@@ -392,6 +441,41 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.ensureVisible()
 	}
 	return v, nil
+}
+
+// openEditor starts editing a project's page in place.
+func (v view) openEditor(item *Item) (tea.Model, tea.Cmd) {
+	if v.hooks.Load == nil || v.hooks.Update == nil {
+		v.errMsg = "editing is not available here"
+		return v, nil
+	}
+	ed := newEditor(v.hooks, item.Project)
+	v.edit = &ed
+	return v, nil
+}
+
+// updateEdit forwards keys to the editor and folds its outcome back into the view.
+func (v view) updateEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
+	ed, cmd := v.edit.update(msg)
+	switch ed.outcome {
+	case editOpen:
+		v.edit = &ed
+		return v, cmd
+	case editSaved:
+		v.changed = true
+		v.status = "saved " + ed.draft.Name
+		keepDetail := v.detail != nil
+		v.reload(ed.rel)
+		if !keepDetail {
+			v.detail = nil
+		}
+	case editRemoved:
+		v.changed = true
+		v.status = fmt.Sprintf("removed %s from the atlas; the vault is still on disk", ed.current.Name)
+		v.reload("")
+	}
+	v.edit = nil
+	return v, cmd
 }
 
 // claude hands the terminal to a Claude Code session in the project's vault and resumes after.
@@ -466,6 +550,9 @@ func (v view) footer(hints string) string {
 }
 
 func (v view) View() string {
+	if v.edit != nil {
+		return v.edit.view()
+	}
 	if v.detail != nil {
 		return v.viewDetail()
 	}
@@ -491,7 +578,7 @@ func (v view) View() string {
 	if end < len(v.lines) {
 		b.WriteString("  " + dim.Render(fmt.Sprintf("… %d more lines", len(v.lines)-end)) + "\n")
 	}
-	hints := "↑↓ move · Enter details · o Obsidian · c Claude Code"
+	hints := "↑↓ move · Enter details · o Obsidian · c Claude Code · e edit"
 	if len(v.stack) > 0 {
 		hints += " · Esc back"
 	}
@@ -587,15 +674,15 @@ func (v view) viewDetail() string {
 			b.WriteString("    - " + t + "\n")
 		}
 	}
-	b.WriteString("\n" + v.footer("o Obsidian · c Claude Code · Esc back · q quit"))
+	b.WriteString("\n" + v.footer("o Obsidian · c Claude Code · e edit · Esc back · q quit"))
 	return b.String()
 }
 
-// RunView shows the tree until the user quits.
-func RunView(items []Item, opener Opener) error {
-	_, err := tea.NewProgram(newView(items, opener), tea.WithAltScreen()).Run()
+// RunView shows the tree until the user quits. It reports whether any project was edited.
+func RunView(items []Item, opener Opener, hooks Hooks) (bool, error) {
+	final, err := tea.NewProgram(newView(items, opener, hooks), tea.WithAltScreen()).Run()
 	if err != nil {
-		return fmt.Errorf("interactive screen failed: %w", err)
+		return false, fmt.Errorf("interactive screen failed: %w", err)
 	}
-	return nil
+	return final.(view).changed, nil
 }

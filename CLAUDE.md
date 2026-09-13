@@ -68,7 +68,7 @@ internal/refresh/       derive state, render Overview.md
 internal/pages/         About.md and Reference.md from templates
 internal/vaults/        create, register, edit project pages, link folders
 internal/links/         inspect linked git repos and material folders
-internal/tui/           Bubble Tea screens: new-vault, manage-vaults, view
+internal/tui/           Bubble Tea screens: new-vault, view (with the project editor)
 internal/obsidian/      Obsidian's vault registry, obsidian:// URIs, restart
 internal/home/          ~/.claude-atlas and config.json
 internal/console/       prompts and step lines
