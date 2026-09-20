@@ -5,7 +5,7 @@ description: "Create a bounded, extractive, structurally idempotent rollup of re
 
 # Extractive log fold
 
-Create an additive rollup of raw `wiki/log.md` entries in the knowledge base.
+Create an additive rollup of raw `wiki/log.md` entries in the project's wiki.
 Never modify, move, or delete child entries or their pages. Do not fold a
 fold, and do not trigger a fold automatically. The skill runs in a knowledge
 base session.

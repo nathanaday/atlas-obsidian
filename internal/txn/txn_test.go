@@ -12,7 +12,7 @@ import (
 
 	"github.com/nathanaday/claude-atlas/internal/gitx"
 	"github.com/nathanaday/claude-atlas/internal/ledger"
-	"github.com/nathanaday/claude-atlas/internal/vault"
+	"github.com/nathanaday/claude-atlas/internal/project"
 )
 
 var now = time.Date(2026, 9, 12, 15, 4, 5, 0, time.UTC)
@@ -30,21 +30,31 @@ func needGit(t *testing.T) {
 	}
 }
 
-func newVault(t *testing.T) *vault.Vault {
+// newProject makes a project in a work folder of its own, which git init makes a
+// repository, so the engine has a history.
+func newProject(t *testing.T) *project.Project {
 	t.Helper()
 	needGit(t)
-	root := filepath.Join(t.TempDir(), "v")
-	if _, err := vault.Init(root, vault.Options{Mode: vault.Generic}, now); err != nil {
+	return newProjectIn(t, filepath.Join(t.TempDir(), "webapp"), project.Generic)
+}
+
+func newProjectIn(t *testing.T, work string, mode project.Mode) *project.Project {
+	t.Helper()
+	needGit(t)
+	if err := os.MkdirAll(work, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	v, err := vault.Open(root)
+	if _, err := project.Init(work, project.Options{Mode: mode}, now); err != nil {
+		t.Fatal(err)
+	}
+	p, err := project.Open(work)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v
+	return p
 }
 
-func read(t *testing.T, v *vault.Vault, rel string) string {
+func read(t *testing.T, v *project.Project, rel string) string {
 	t.Helper()
 	data, err := os.ReadFile(v.Path(rel))
 	if err != nil {
@@ -59,8 +69,8 @@ func hashOf(s string) string {
 }
 
 func TestPrepareValidates(t *testing.T) {
-	v := newVault(t)
-	index := read(t, v, vault.IndexPage)
+	v := newProject(t)
+	index := read(t, v, project.IndexPage)
 	cases := []struct {
 		name string
 		req  Request
@@ -69,14 +79,14 @@ func TestPrepareValidates(t *testing.T) {
 		{"kind", Request{Kind: "bogus", Summary: "x", Writes: []Write{{Path: "wiki/a.md", Mode: Create, Content: mkpage("A", "")}}}, "unknown operation kind"},
 		{"summary", Request{Kind: Save, Summary: " ", Writes: []Write{{Path: "wiki/a.md", Mode: Create, Content: mkpage("A", "")}}}, "summary is required"},
 		{"empty", Request{Kind: Save, Summary: "x"}, "at least one write"},
-		{"log", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: vault.LogPage, Mode: Replace, Content: mkpage("L", "")}}}, "written by the core"},
-		{"ledger", Request{Kind: Ingest, Summary: "x", Writes: []Write{{Path: vault.LedgerPath, Mode: Replace, Content: []byte("{}")}}}, "sources field"},
+		{"log", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: project.LogPage, Mode: Replace, Content: mkpage("L", "")}}}, "written by the core"},
+		{"ledger", Request{Kind: Ingest, Summary: "x", Writes: []Write{{Path: project.LedgerPath, Mode: Replace, Content: []byte("{}")}}}, "sources field"},
 		{"scope", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: "notes/a.md", Mode: Create, Content: mkpage("A", "")}}}, "only under wiki/"},
 		{"inbox write", Request{Kind: Ingest, Summary: "x", Writes: []Write{{Path: "inbox/a.md", Mode: Create, Content: []byte("x")}}}, "only remove files"},
 		{"canvas scope", Request{Kind: Canvas, Summary: "x", Writes: []Write{{Path: "wiki/a.canvas", Mode: Create, Content: []byte("{}")}}}, "wiki/canvases"},
-		{"exists", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: vault.IndexPage, Mode: Create, Content: mkpage("I", "")}}}, "already exists"},
+		{"exists", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: project.IndexPage, Mode: Create, Content: mkpage("I", "")}}}, "already exists"},
 		{"missing", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: "wiki/nope.md", Mode: Replace, Content: mkpage("N", "")}}}, "does not exist"},
-		{"stale base", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: vault.IndexPage, Mode: Replace, Content: mkpage("I", ""), BaseSHA256: hashOf("old")}}}, "conflict"},
+		{"stale base", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: project.IndexPage, Mode: Replace, Content: mkpage("I", ""), BaseSHA256: hashOf("old")}}}, "conflict"},
 		{"frontmatter", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: "wiki/a.md", Mode: Create, Content: []byte("# no front\n")}}}, "no frontmatter"},
 		{"required keys", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: "wiki/a.md", Mode: Create, Content: []byte("---\ntitle: A\n---\n")}}}, "lacks type"},
 		{"json", Request{Kind: Canvas, Summary: "x", Writes: []Write{{Path: "wiki/canvases/a.canvas", Mode: Create, Content: []byte("{")}}}, "not valid JSON"},
@@ -98,7 +108,7 @@ func TestPrepareValidates(t *testing.T) {
 	}
 	plan, err := Prepare(v, Request{Kind: Save, Summary: "add A", Writes: []Write{
 		{Path: "wiki/concepts/A.md", Mode: Create, Content: mkpage("A", "# A\n\nSee [[Nowhere]].\n\n## Empty\n")},
-		{Path: vault.IndexPage, Mode: Replace, Content: []byte(index), BaseSHA256: strings.ToUpper(hashOf(index))},
+		{Path: project.IndexPage, Mode: Replace, Content: []byte(index), BaseSHA256: strings.ToUpper(hashOf(index))},
 	}}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -115,11 +125,11 @@ func TestPrepareValidates(t *testing.T) {
 }
 
 func TestApplyCommitsOneOperation(t *testing.T) {
-	v := newVault(t)
-	index := strings.Replace(read(t, v, vault.IndexPage), "- No concepts yet.", "- [[A]]", 1)
+	v := newProject(t)
+	index := strings.Replace(read(t, v, project.IndexPage), "- No concepts yet.", "- [[A]]", 1)
 	plan, err := Prepare(v, Request{Kind: Save, Summary: "add A\nand more", Writes: []Write{
 		{Path: "wiki/concepts/A.md", Mode: Create, Content: mkpage("A", "# A\n\ntext\n")},
-		{Path: vault.IndexPage, Mode: Replace, Content: []byte(index)},
+		{Path: project.IndexPage, Mode: Replace, Content: []byte(index)},
 	}}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -134,7 +144,7 @@ func TestApplyCommitsOneOperation(t *testing.T) {
 	if res.ManualCommit != "" || res.OperationID != plan.OperationID || strings.Join(res.ChangedPaths, ",") != "wiki/concepts/A.md,wiki/index.md,wiki/log.md" {
 		t.Fatalf("result %+v", res)
 	}
-	log := read(t, v, vault.LogPage)
+	log := read(t, v, project.LogPage)
 	entry := "## 2026-09-12 — " + plan.OperationID + "\n\nadd A and more\n\n- Created: [[A]]\n- Updated: [[index|Wiki Index]]\n"
 	if !strings.Contains(log, entry) || !strings.Contains(log, "updated: 2026-09-12") {
 		t.Fatalf("log:\n%s", log)
@@ -154,7 +164,7 @@ func TestApplyCommitsOneOperation(t *testing.T) {
 	if _, err := Apply(v, plan2, now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	log = read(t, v, vault.LogPage)
+	log = read(t, v, project.LogPage)
 	if strings.Index(log, plan2.OperationID) > strings.Index(log, plan.OperationID) || strings.Count(log, "## 2026-09-12") != 2 {
 		t.Fatalf("log order:\n%s", log)
 	}
@@ -165,8 +175,8 @@ func TestApplyCommitsOneOperation(t *testing.T) {
 }
 
 func TestApplyCommitsManualEditsFirstAndDetectsConflicts(t *testing.T) {
-	v := newVault(t)
-	os.WriteFile(v.Path(vault.HotPage), []byte("---\ntitle: Hot\ntype: meta\nstatus: x\ncreated: 2026-09-12\nupdated: 2026-09-12\ntags: []\n---\nhand edit\n"), 0o644)
+	v := newProject(t)
+	os.WriteFile(v.Path(project.HotPage), []byte("---\ntitle: Hot\ntype: meta\nstatus: x\ncreated: 2026-09-12\nupdated: 2026-09-12\ntags: []\n---\nhand edit\n"), 0o644)
 	plan, err := Prepare(v, Request{Kind: Save, Summary: "s", Writes: []Write{{Path: "wiki/concepts/B.md", Mode: Create, Content: mkpage("B", "# B\n\nb\n")}}}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +192,7 @@ func TestApplyCommitsManualEditsFirstAndDetectsConflicts(t *testing.T) {
 	if ops[1].Kind != "manual" || !strings.Contains(ops[1].Summary, "1 file changed by hand") {
 		t.Fatalf("history %+v", ops)
 	}
-	if !strings.Contains(read(t, v, vault.HotPage), "hand edit") {
+	if !strings.Contains(read(t, v, project.HotPage), "hand edit") {
 		t.Fatal("hand edit must survive")
 	}
 	// A plan made before someone edits its target must not apply.
@@ -201,14 +211,14 @@ func TestApplyCommitsManualEditsFirstAndDetectsConflicts(t *testing.T) {
 }
 
 func TestRecoverRestoresAnInterruptedApply(t *testing.T) {
-	v := newVault(t)
-	before := read(t, v, vault.IndexPage)
+	v := newProject(t)
+	before := read(t, v, project.IndexPage)
 	os.MkdirAll(v.Path(".vault-meta"), 0o755)
-	in := Inflight{OperationID: "save-x", Kind: Save, Paths: []InflightPath{{Path: vault.IndexPage, Existed: true}, {Path: "wiki/concepts/New.md", Existed: false}, {Path: "wiki/never-written.md", Existed: false}}}
+	in := Inflight{OperationID: "save-x", Kind: Save, Paths: []InflightPath{{Path: project.IndexPage, Existed: true}, {Path: "wiki/concepts/New.md", Existed: false}, {Path: "wiki/never-written.md", Existed: false}}}
 	if err := writeInflight(v, in); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(v.Path(vault.IndexPage), []byte("half written"), 0o644)
+	os.WriteFile(v.Path(project.IndexPage), []byte("half written"), 0o644)
 	os.MkdirAll(v.Path("wiki/concepts"), 0o755)
 	os.WriteFile(v.Path("wiki/concepts/New.md"), []byte("partial"), 0o644)
 	if p, _ := Pending(v); p == nil || p.OperationID != "save-x" {
@@ -221,7 +231,7 @@ func TestRecoverRestoresAnInterruptedApply(t *testing.T) {
 	if res == nil || strings.Join(res.Restored, ",") != "wiki/concepts/New.md,wiki/index.md" {
 		t.Fatalf("restored %+v", res)
 	}
-	if read(t, v, vault.IndexPage) != before {
+	if read(t, v, project.IndexPage) != before {
 		t.Fatal("index should be back to HEAD")
 	}
 	if _, err := os.Stat(v.Path("wiki/concepts/New.md")); err == nil {
@@ -236,7 +246,7 @@ func TestRecoverRestoresAnInterruptedApply(t *testing.T) {
 }
 
 func TestUndoRevertsAnOperation(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	plan, _ := Prepare(v, Request{Kind: Save, Summary: "add C", Writes: []Write{{Path: "wiki/concepts/C.md", Mode: Create, Content: mkpage("C", "# C\n\nc\n")}}}, now)
 	applied, err := Apply(v, plan, now)
 	if err != nil {
@@ -252,7 +262,7 @@ func TestUndoRevertsAnOperation(t *testing.T) {
 	if _, err := os.Stat(v.Path("wiki/concepts/C.md")); err == nil {
 		t.Fatal("undo should remove the page")
 	}
-	log := read(t, v, vault.LogPage)
+	log := read(t, v, project.LogPage)
 	if !strings.Contains(log, "Undid "+applied.OperationID+": add C") || strings.Contains(log, "- Created: [[C]]") {
 		t.Fatalf("log after undo:\n%s", log)
 	}
@@ -265,18 +275,14 @@ func TestUndoRevertsAnOperation(t *testing.T) {
 	}
 }
 
-func TestConfigAndSources(t *testing.T) {
-	v := newVault(t)
-	plan, err := Prepare(v, ConfigRequest(v, vault.LYT), now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Apply(v, plan, now); err != nil {
-		t.Fatal(err)
-	}
-	again, _ := vault.Open(v.Root)
-	if again.Config.Mode != vault.LYT {
-		t.Fatal("mode should change")
+func TestSourcesAndTheIdentityFile(t *testing.T) {
+	v := newProject(t)
+	// No operation writes the identity file; the project tool and the CLI do.
+	for _, kind := range ModelKinds {
+		req := Request{Kind: kind, Summary: "x", Writes: []Write{{Path: project.Marker, Mode: Replace, Content: []byte("{}")}}}
+		if _, err := Prepare(v, req, now); err == nil || !strings.Contains(err.Error(), "changes only through") {
+			t.Fatalf("%s wrote the identity file: %v", kind, err)
+		}
 	}
 	// Seed a captured source the way capture does, then ingest against it.
 	os.MkdirAll(v.Path("inbox"), 0o755)
@@ -306,24 +312,24 @@ func TestConfigAndSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(res.ChangedPaths, ","), vault.LedgerPath) {
+	if !strings.Contains(strings.Join(res.ChangedPaths, ","), project.LedgerPath) {
 		t.Fatalf("changed %v", res.ChangedPaths)
 	}
 	if _, err := os.Stat(v.Path("inbox/paper.md")); err == nil {
 		t.Fatal("inbox file should be removed")
 	}
-	l, _ := ledger.Load(v.Path(vault.LedgerPath), now)
+	l, _ := ledger.Load(v.Path(project.LedgerPath), now)
 	rec := l.Sources[id]
 	if rec.IngestedAt != "2026-09-12" || rec.Authority != "primary" || len(rec.Pages) != 1 || rec.Pages[0] != "wiki/notes/Paper.md" {
 		t.Fatalf("ledger %+v", rec)
 	}
-	if !strings.Contains(read(t, v, vault.LogPage), "- Removed: `inbox/paper.md`\n- Sources: "+id) {
-		t.Fatalf("log:\n%s", read(t, v, vault.LogPage))
+	if !strings.Contains(read(t, v, project.LogPage), "- Removed: `inbox/paper.md`\n- Sources: "+id) {
+		t.Fatalf("log:\n%s", read(t, v, project.LogPage))
 	}
 }
 
 func TestApplyDropsLedgerPagesThatNoLongerExist(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	sum := hashOf("paper")
 	locator := ".raw/captured/" + sum + ".md"
 	id := ledger.ID("file", locator, sum)
@@ -355,10 +361,10 @@ func TestApplyDropsLedgerPagesThatNoLongerExist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(res.ChangedPaths, ","), vault.LedgerPath) {
+	if !strings.Contains(strings.Join(res.ChangedPaths, ","), project.LedgerPath) {
 		t.Fatalf("changed %v", res.ChangedPaths)
 	}
-	l, _ := ledger.Load(v.Path(vault.LedgerPath), now)
+	l, _ := ledger.Load(v.Path(project.LedgerPath), now)
 	if pages := l.Sources[id].Pages; len(pages) != 0 {
 		t.Fatalf("pages %v", pages)
 	}
@@ -379,9 +385,9 @@ func TestPrependLogHandlesEmptyAndHeaderOnly(t *testing.T) {
 }
 
 func TestCanvasKindWritesTheCanvasIndex(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	page := mkpage("Canvases", "# Canvases\n")
-	if _, err := Prepare(v, Request{Kind: Canvas, Summary: "x", Writes: []Write{{Path: vault.CanvasIndex, Mode: Create, Content: page}}}, now); err != nil {
+	if _, err := Prepare(v, Request{Kind: Canvas, Summary: "x", Writes: []Write{{Path: project.CanvasIndex, Mode: Create, Content: page}}}, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Prepare(v, Request{Kind: Canvas, Summary: "x", Writes: []Write{{Path: "wiki/canvases/index.md", Mode: Create, Content: page}}}, now); err == nil {
@@ -390,7 +396,7 @@ func TestCanvasKindWritesTheCanvasIndex(t *testing.T) {
 }
 
 func TestAnInboxDeleteNeedsACapture(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	ok := []struct {
 		name string
 		req  Request
@@ -415,40 +421,44 @@ func TestAnInboxDeleteNeedsACapture(t *testing.T) {
 	}
 }
 
-// TestOperationsInsideAProjectRepository runs apply, a manual edit, and undo on a vault
-// that commits into the repository holding it, while the user has code staged and
-// changed outside the vault.
-func TestOperationsInsideAProjectRepository(t *testing.T) {
+// TestTheEngineNeverTouchesTheWork runs apply, a manual edit, and undo in a project inside a
+// repository while the user has code staged and changed and a thread document edited. The
+// engine's git commands are scoped to the wiki, so none of that is swept into a commit.
+func TestTheEngineNeverTouchesTheWork(t *testing.T) {
 	needGit(t)
-	work := gitx.Repo{Dir: t.TempDir()}
-	work.Init()
-	os.WriteFile(filepath.Join(work.Dir, "main.go"), []byte("package main\n"), 0o644)
-	work.AddAll()
-	work.Commit("code")
-	root := filepath.Join(work.Dir, "kb")
-	if _, err := vault.Init(root, vault.Options{Mode: vault.Generic}, now); err != nil {
+	work := t.TempDir()
+	if _, err := project.Init(work, project.Options{Mode: project.Generic}, now); err != nil {
 		t.Fatal(err)
 	}
-	v, err := vault.Open(root)
+	v, err := project.Open(work)
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(work.Dir, "staged.go"), []byte("package main\n"), 0o644)
-	work.Add("staged.go")
-	os.WriteFile(filepath.Join(work.Dir, "main.go"), []byte("package main // edited\n"), 0o644)
-	userWork := func() {
+	repo := v.Work()
+	os.WriteFile(filepath.Join(work, "main.go"), []byte("package main\n"), 0o644)
+	repo.AddAll()
+	if _, err := repo.Commit("feat: code"); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(work, "staged.go"), []byte("package main\n"), 0o644)
+	repo.Add("staged.go")
+	os.WriteFile(filepath.Join(work, "main.go"), []byte("package main // edited\n"), 0o644)
+	os.MkdirAll(v.Path(project.PlansDir), 0o755)
+	os.WriteFile(v.Path(project.PlansDir+"/Fix it.md"), []byte("---\ntype: plan\n---\n\nprogress\n"), 0o644)
+	userWork := func(where string) {
 		t.Helper()
-		st, _ := work.Status()
+		st, _ := repo.Status()
 		codes := map[string]string{}
 		for _, e := range st {
 			codes[e.Path] = e.Code
 		}
-		if codes["staged.go"] != "A " || codes["main.go"] != " M" || len(codes) != 2 {
-			t.Fatalf("the user's work is as it was: %v", codes)
+		if codes["staged.go"] != "A " || codes["main.go"] != " M" || codes[v.Rel()+"/"+project.PlansDir+"/Fix it.md"] != "??" || len(codes) != 3 {
+			t.Fatalf("%s: the work is not as it was: %v", where, codes)
 		}
 	}
+	userWork("before")
 
-	os.WriteFile(v.Path(vault.HotPage), []byte("---\ntitle: Hot\ntype: meta\nstatus: x\ncreated: 2026-09-12\nupdated: 2026-09-12\ntags: []\n---\nhand edit\n"), 0o644)
+	os.WriteFile(v.Path(project.HotPage), []byte("---\ntitle: Hot\ntype: meta\nstatus: x\ncreated: 2026-09-12\nupdated: 2026-09-12\ntags: []\n---\nhand edit\n"), 0o644)
 	plan, err := Prepare(v, Request{Kind: Save, Summary: "add D", Writes: []Write{{Path: "wiki/concepts/D.md", Mode: Create, Content: mkpage("D", "# D\n\nd\n")}}}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -460,19 +470,44 @@ func TestOperationsInsideAProjectRepository(t *testing.T) {
 	if applied.ManualCommit == "" || strings.Join(applied.ChangedPaths, ",") != "wiki/concepts/D.md,wiki/log.md" {
 		t.Fatalf("result %+v", applied)
 	}
-	userWork()
+	userWork("after apply")
 	if _, err := UndoOperation(v, applied.OperationID, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(v.Path("wiki/concepts/D.md")); err == nil {
 		t.Fatal("undo removes the page")
 	}
-	userWork()
+	userWork("after undo")
 	ops, _ := History(v, 0, false)
 	if len(ops) != 4 || ops[0].Kind != "undo" || ops[1].Kind != "save" || ops[2].Kind != "manual" || ops[3].Kind != "setup" {
 		t.Fatalf("history %+v", ops)
 	}
 	if st, _ := Inspect(v); !st.HasHistory || st.Dirty != 0 || st.LastSubject != "undo: add D" {
 		t.Fatalf("status %+v", st)
+	}
+	// The work's own commit is still the parent of the wiki's history, untouched.
+	if have, _ := os.ReadFile(filepath.Join(work, "main.go")); string(have) != "package main // edited\n" {
+		t.Fatalf("the user's edit survived every operation: %q", have)
+	}
+}
+
+// TestUndoRefusesWhenAPageChangedSince holds undo to being exact.
+func TestUndoRefusesWhenAPageChangedSince(t *testing.T) {
+	v := newProject(t)
+	plan, err := Prepare(v, Request{Kind: Save, Summary: "add E", Writes: []Write{{Path: "wiki/concepts/E.md", Mode: Create, Content: mkpage("E", "# E\n")}}}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	applied, err := Apply(v, plan, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(v.Path("wiki/concepts/E.md"), []byte(string(mkpage("E", "# E\n\nthe user typed here\n"))), 0o644)
+	_, err = UndoOperation(v, applied.OperationID, now.Add(time.Minute))
+	if err == nil || !strings.Contains(err.Error(), "changed after it") {
+		t.Fatalf("undo must refuse: %v", err)
+	}
+	if have, _ := os.ReadFile(v.Path("wiki/concepts/E.md")); !strings.Contains(string(have), "the user typed here") {
+		t.Fatal("the refused undo left the page alone")
 	}
 }

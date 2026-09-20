@@ -1,30 +1,26 @@
 ---
 name: wiki-ingest
-description: "Turn sources into linked, source-cited wiki pages: files waiting in the knowledge base's inbox, or text the user pastes. Use for ingest, ingest the inbox, process this source, read and file this, batch ingest. Not for saving an assistant answer; that is save."
+description: "Turn sources into linked, source-cited wiki pages: files waiting in the project's inbox, or text the user pastes. Use for ingest, ingest the inbox, process this source, read and file this, batch ingest. Not for saving an assistant answer; that is save."
 ---
 
 # Ingest sources
 
 Turn supplied material into grounded, cross-linked pages without changing the
-source. The knowledge base's `inbox/` is the staging area; its
-`.raw/captured/` holds the immutable copy of every source it captured. Tools:
-`status`, `inbox`, `capture`, `route`, `plan`, `apply` on the atlas MCP
-server.
+source. The project's `inbox/` is the staging area; its `.raw/captured/` holds
+the immutable copy of every source it captured. Tools: `status`, `inbox`,
+`capture`, `route`, `plan`, `apply` on the atlas MCP server.
 
-Ingest runs in a knowledge base session, or in a project session against
-the project's knowledge base. The tools act on that one knowledge base either
-way; nothing here names a vault. A project session's capture records the
-project as provenance on its own. A project with no knowledge base cannot
-ingest: say so and hand off to `atlas-project`, which links one.
+Everything acts on this session's project and its one wiki; nothing here names
+a vault.
 
 ## Agree on scope
 
-1. Call `status`, then `inbox`. `inbox` lists what waits in the knowledge
-   base's inbox and whether each file is already captured. In a project
-   session it also lists `notes`, the notes that wait to become threads: those are not
-   sources; leave them to `thread-stub` and say so. A file whose frontmatter
-   says `type: project-snapshot` is a project snapshot: leave it to
-   `describe` and say so.
+1. Call `status`, then `inbox`. `inbox` lists everything waiting, whether each
+   file is already captured, and a hint: `source` is yours, `note` is
+   `thread-stub`'s. The hint is a guess from the file's kind and size, so name
+   the files you will ingest before you capture anything, and leave the notes
+   to `thread-stub`. A file whose frontmatter says `type: project-snapshot` is
+   a snapshot of the work: leave it to `describe` and say so.
 2. Infer the budget; do not ask for one. A batch of up to five files, or one
    source under about fifty pages, gets no question: read every source in
    full and file what it names. Above that, ask one thing, which files now,
@@ -38,9 +34,9 @@ ingest: say so and hand off to `atlas-project`, which links one.
 
 No network is needed. If the user gives a URL, ask them to save the page into
 `inbox/` (or paste the text). Do not fetch it yourself. A file or folder
-outside the knowledge base enters through the `stage` tool: it copies what is
-new into `inbox/` and skips what the knowledge base already captured. Never
-copy a file into `inbox/` with Write.
+outside the project enters through the `stage` tool: it copies what is new into
+`inbox/` and skips what the project already captured. Never copy a file into
+`inbox/` with Write.
 
 ## Capture once, then read the captured copy
 
@@ -64,7 +60,7 @@ Pasted text has no file: quote it in the page and mark its authority
 2. Create the entity pages without asking. A source about a nameable thing
    (a codebase, tool, product, service, dataset, person, organization, or
    project) gets an entity page whenever `route` finds no match by title or
-   alias. A knowledge base where entities appear only sometimes loses its
+   alias. A wiki where entities appear only sometimes loses its
    links over time, so the default is to create. A source page alone is
    right only when the source is about no nameable thing. Concept pages and
    expansions of existing pages pass the compilation-value gate: create or
@@ -84,9 +80,9 @@ Pasted text has no file: quote it in the page and mark its authority
 7. Prefer updating an existing page over creating a near duplicate.
 
 Parallel workers (the `wiki-ingest` agent) may read and return draft packets
-with proposed paths and content. Give each worker the knowledge base's root,
-the captured source's path, and, from a project session, the project's name.
-Workers never plan or apply; you merge their drafts and apply once.
+with proposed paths and content. Give each worker the project's folder and the
+captured source's path. Workers never plan or apply; you merge their drafts and
+apply once.
 
 ## Follow provenance
 

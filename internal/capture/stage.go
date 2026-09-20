@@ -15,7 +15,7 @@ import (
 
 	"github.com/nathanaday/claude-atlas/internal/home"
 	"github.com/nathanaday/claude-atlas/internal/ledger"
-	"github.com/nathanaday/claude-atlas/internal/vault"
+	"github.com/nathanaday/claude-atlas/internal/project"
 )
 
 // Staging copies sources from outside the vault into inbox/. A file whose bytes are already
@@ -23,7 +23,7 @@ import (
 // grows over time can be staged again and again and only its new files move.
 
 // MapPath is the vault-relative record of what was staged from where. It is derived state.
-const MapPath = vault.MetaDir + "/ingest.json"
+const MapPath = project.MetaDir + "/ingest.json"
 
 const mapSchema = "claude-atlas.ingest-map.v1"
 
@@ -43,7 +43,7 @@ type Skip struct {
 
 // StagePlan is what staging would do, before it does it.
 type StagePlan struct {
-	Vault   string   `json:"vault"`
+	Folder  string   `json:"folder"` // the project's folder
 	Sources []string `json:"sources"`
 	// Waiting counts files already in the inbox that no operation has captured yet.
 	Waiting int `json:"waiting"`
@@ -74,7 +74,7 @@ type mapEntry struct {
 	Inbox    string `json:"inbox"`
 }
 
-func loadMap(v *vault.Vault) stageMap {
+func loadMap(v *project.Project) stageMap {
 	m := stageMap{Schema: mapSchema, Staged: map[string]mapEntry{}}
 	data, err := os.ReadFile(v.Path(MapPath))
 	if err != nil {
@@ -90,8 +90,8 @@ func loadMap(v *vault.Vault) stageMap {
 	return m
 }
 
-func (m stageMap) save(v *vault.Vault) error {
-	if err := os.MkdirAll(v.Path(vault.MetaDir), 0o755); err != nil {
+func (m stageMap) save(v *project.Project) error {
+	if err := os.MkdirAll(v.Path(project.MetaDir), 0o755); err != nil {
 		return err
 	}
 	data, _ := json.MarshalIndent(m, "", "  ")
@@ -100,9 +100,9 @@ func (m stageMap) save(v *vault.Vault) error {
 
 // knownHashes returns every content hash the vault already holds: captured sources and
 // files waiting in the inbox.
-func knownHashes(v *vault.Vault, now time.Time) (map[string]bool, error) {
+func knownHashes(v *project.Project, now time.Time) (map[string]bool, error) {
 	known := map[string]bool{}
-	led, err := ledger.Load(v.Path(vault.LedgerPath), now)
+	led, err := ledger.Load(v.Path(project.LedgerPath), now)
 	if err != nil {
 		return nil, err
 	}
@@ -121,9 +121,9 @@ func knownHashes(v *vault.Vault, now time.Time) (map[string]bool, error) {
 	return known, nil
 }
 
-// PlanStage decides which files under the given sources are new to the vault. Each source
+// PlanStage decides which files under the given sources are new to the project. Each source
 // is a file or a directory outside the vault; hidden entries are ignored.
-func PlanStage(v *vault.Vault, sources []string, now time.Time) (*StagePlan, error) {
+func PlanStage(v *project.Project, sources []string, now time.Time) (*StagePlan, error) {
 	if len(sources) == 0 {
 		return nil, errors.New("name a file or folder to ingest")
 	}
@@ -131,7 +131,7 @@ func PlanStage(v *vault.Vault, sources []string, now time.Time) (*StagePlan, err
 	if err != nil {
 		return nil, err
 	}
-	plan := &StagePlan{Vault: v.Root, New: []Staged{}, Unchanged: []string{}, Skipped: []Skip{}}
+	plan := &StagePlan{Folder: v.Atlas(), New: []Staged{}, Unchanged: []string{}, Skipped: []Skip{}}
 	taken := map[string]bool{}
 	files, _ := ListInbox(v, now)
 	for _, f := range files {
@@ -149,7 +149,7 @@ func PlanStage(v *vault.Vault, sources []string, now time.Time) (*StagePlan, err
 		if err != nil {
 			return nil, fmt.Errorf("%s: not found", source)
 		}
-		if inside(v.Root, abs) {
+		if inside(v.Atlas(), abs) {
 			return nil, fmt.Errorf("%s is inside the vault; ingest reads sources from outside it", source)
 		}
 		plan.Sources = append(plan.Sources, abs)
@@ -227,9 +227,9 @@ func uniqueInbox(to string, taken map[string]bool) string {
 }
 
 // ApplyStage copies the plan's new files into the inbox and records them in the map.
-func ApplyStage(v *vault.Vault, plan *StagePlan, now time.Time) (*StageResult, error) {
-	if plan.Vault != v.Root {
-		return nil, fmt.Errorf("plan belongs to %s, not %s", plan.Vault, v.Root)
+func ApplyStage(v *project.Project, plan *StagePlan, now time.Time) (*StageResult, error) {
+	if plan.Folder != v.Atlas() {
+		return nil, fmt.Errorf("plan belongs to %s, not %s", plan.Folder, v.Atlas())
 	}
 	m := loadMap(v)
 	res := &StageResult{Staged: []Staged{}, Remembered: []string{}}
@@ -260,7 +260,7 @@ func ApplyStage(v *vault.Vault, plan *StagePlan, now time.Time) (*StageResult, e
 }
 
 // Sources lists the folders the vault has staged from, for an ingest with no path.
-func Sources(v *vault.Vault) []string {
+func Sources(v *project.Project) []string {
 	return append([]string{}, loadMap(v).Sources...)
 }
 
@@ -295,7 +295,7 @@ func copyFile(from, to string) error {
 }
 
 // StagedFrom lists what was staged from an external path, for reporting.
-func StagedFrom(v *vault.Vault) map[string]string {
+func StagedFrom(v *project.Project) map[string]string {
 	out := map[string]string{}
 	for from, e := range loadMap(v).Staged {
 		out[from] = e.StagedAt
@@ -305,7 +305,7 @@ func StagedFrom(v *vault.Vault) map[string]string {
 
 // SourcesFor is what a staging reads: the given paths, expanded, or the folders the vault
 // staged from before. With neither it says so.
-func SourcesFor(v *vault.Vault, given []string) ([]string, error) {
+func SourcesFor(v *project.Project, given []string) ([]string, error) {
 	if len(given) > 0 {
 		out := make([]string, 0, len(given))
 		for _, g := range given {

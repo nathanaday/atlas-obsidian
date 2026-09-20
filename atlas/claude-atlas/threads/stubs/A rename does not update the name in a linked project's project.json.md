@@ -6,7 +6,7 @@ created: 2026-09-18
 ---
 
 > [!stub] A rename does not update the name in a linked project's project.json
-> **Stub** → Spec → Plan → Receipt
-> `thr-20260918-45e6` · [Thread](<../A rename does not update the name in a linked project's project.json.md>) · filed 2026-09-18
+> **Stub** → Spec → Plan → [Receipt](<../receipts/A rename does not update the name in a linked project's project.json.md>)
+> `thr-20260918-45e6` · [Thread](<../archive/A rename does not update the name in a linked project's project.json.md>) · filed 2026-09-18
 
 A rename does not update the name in a linked project's project.json. The link resolves by id, so it still worked, but the file kept cyber-physical-systems until I ran link again.

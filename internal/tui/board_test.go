@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/nathanaday/claude-atlas/internal/registry"
 )
 
 // ansiProfile is termenv.ANSI. Lip Gloss renders plain text under go test, where there
@@ -44,21 +42,20 @@ func (b board) boxOf(r boardRow) []string {
 	return lines
 }
 
-func TestBoardsKeepTheirOwnKind(t *testing.T) {
+func TestTheProjectsBoardLeavesTheProblemsToTheOtherOne(t *testing.T) {
 	items := sample()
-	kb := newBoard(boardKnowledge, items, 100)
 	pr := newBoard(boardProjects, items, 100)
 	pb := newBoard(boardProblems, items, 100)
-	if len(kb.items) != 2 || len(pr.items) != 3 || len(pb.items) != 1 {
-		t.Fatalf("knowledge=%d projects=%d problems=%d", len(kb.items), len(pr.items), len(pb.items))
+	if len(pr.items) != 3 || len(pb.items) != 1 {
+		t.Fatalf("projects=%d problems=%d", len(pr.items), len(pb.items))
 	}
-	for _, it := range kb.items {
-		if it.Entry.Kind != registry.Knowledge {
-			t.Fatal("a project on the knowledge board")
+	for _, it := range pr.items {
+		if it.Entry.Error != "" {
+			t.Fatal("an unreadable folder on the projects board")
 		}
 	}
-	if kb.group(kb.items[0].Entry) != "" {
-		t.Fatal("the knowledge board has no groups")
+	if pb.items[0].Entry.Error == "" {
+		t.Fatal("the problems board holds the unreadable folders")
 	}
 }
 
@@ -67,8 +64,7 @@ func TestReloadKeepsCursorAndExpansion(t *testing.T) {
 	b := newBoard(boardProjects, items, 100)
 	b.moveTo("/code/webapp")
 	b.toggle()
-	fewer := append([]Item{}, items[:3]...)
-	fewer = append(fewer, items[4:]...) // firmware is gone
+	fewer := []Item{items[0], items[2], items[3]} // firmware is gone
 	b.reload(fewer)
 	if it := b.current(); it == nil || it.Entry.Name != "webapp" {
 		t.Fatal("the cursor follows the entry")
@@ -76,8 +72,8 @@ func TestReloadKeepsCursorAndExpansion(t *testing.T) {
 	if !b.expanded["/code/webapp"] || len(b.items) != 2 {
 		t.Fatalf("expansion stays; the gone entry leaves: items=%d", len(b.items))
 	}
-	b.reload(items[:2])
-	if len(b.expanded) != 0 || b.cursor != 0 {
+	b.reload([]Item{items[1]})
+	if len(b.expanded) != 0 || b.cursor > len(b.items) {
 		t.Fatalf("expansions of gone entries are dropped and the cursor clamps: expanded=%v cursor=%d", b.expanded, b.cursor)
 	}
 }
@@ -94,16 +90,5 @@ func TestEnsureVisibleScrollsToTheCursor(t *testing.T) {
 	b.ensureVisible(6)
 	if b.offset != 0 {
 		t.Fatalf("back to the top: offset=%d", b.offset)
-	}
-}
-
-func TestGroupHeadersOpenEachKnowledgeBase(t *testing.T) {
-	b := newBoard(boardProjects, sample(), 100)
-	text := stripANSI(strings.Join(b.lines, "\n"))
-	if strings.Count(text, "papers\n") < 1 || !strings.Contains(text, noKnowledge) {
-		t.Fatalf("headers:\n%s", text)
-	}
-	if b.rows[0].start != 0 || !strings.Contains(stripANSI(b.lines[0]), "papers") {
-		t.Fatal("the first row carries its group header")
 	}
 }

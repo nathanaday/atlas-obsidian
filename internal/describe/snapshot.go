@@ -13,7 +13,6 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/gitx"
 	"github.com/nathanaday/claude-atlas/internal/project"
 	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
 // SnapshotType is the type property of a snapshot file, which tells the ingest skills it
@@ -64,7 +63,7 @@ func TakeSnapshot(e registry.Entry, since string, now time.Time) (*Snapshot, err
 		if files, err = git.LsFiles(); err != nil {
 			return nil, err
 		}
-		skip = KnowledgeDirs(git)
+		skip = AtlasDirs(git)
 		if since != "" && since != s.Commit && git.HasCommit(since) {
 			s.Since = since
 		}
@@ -75,7 +74,7 @@ func TakeSnapshot(e registry.Entry, since string, now time.Time) (*Snapshot, err
 		}
 		s.FileName = fmt.Sprintf("%s-%s.md", e.Name, now.Format("2006-01-02"))
 	}
-	// The project's own folder is state, not work, and so is a knowledge base in it.
+	// The project's own folder is state, not work.
 	if folder, err := project.Locate(e.Path); err == nil {
 		skip = append(skip, project.Dir+"/"+folder+"/")
 	}
@@ -156,7 +155,7 @@ func walkFiles(root string) ([]string, error) {
 		}
 		name := d.Name()
 		if d.IsDir() {
-			if strings.HasPrefix(name, ".") || skip[name] || vault.IsVault(p) {
+			if strings.HasPrefix(name, ".") || skip[name] || project.IsKnowledge(p) {
 				return fs.SkipDir
 			}
 			return nil

@@ -27,7 +27,6 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/registry"
 	"github.com/nathanaday/claude-atlas/internal/threads"
 	"github.com/nathanaday/claude-atlas/internal/txn"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
 // Name is the MCP server name; Claude Code exposes tools as mcp__plugin_claude-atlas_atlas__<tool>.
@@ -68,60 +67,34 @@ func New(opts Options) *Server {
 // home is the atlas home the session reads.
 func (s *Server) home() home.Home { return home.Resolve(s.opts.Env(home.EnvHome)) }
 
-// where finds the session's place once per call: a project, anywhere inside its work,
-// or a knowledge base. Nothing is registered here; the session-start hook heals the
-// config.
+// where finds the session's project once per call, anywhere inside its work. Nothing is
+// registered here; the session-start hook heals the config.
 func (s *Server) where() (*place.Place, error) {
 	return place.Resolve(s.home(), "", s.opts.Env(place.EnvPlace), s.opts.ProjectDir, false)
 }
 
-// knowledge is the knowledge base a call acts on: the session's own, or the project's.
-// A project without one is refused with the reason.
-func (s *Server) knowledge() (*place.Place, *vault.Vault, error) {
+// place is the project a call acts on, with what the atlas knows about it.
+func (s *Server) place() (*place.Place, *project.Project, error) {
 	pl, err := s.where()
 	if err != nil {
 		return nil, nil, err
 	}
-	if pl.Vault != nil {
-		return pl, pl.Vault, nil
-	}
-	if pl.KnowledgeError != "" {
-		return nil, nil, fmt.Errorf("%s: %s", pl.Project.Name(), pl.KnowledgeError)
-	}
-	return nil, nil, fmt.Errorf("%s uses no knowledge base; link one with `claude-atlas link KB`", pl.Project.Name())
-}
-
-// via names the project a knowledge base write came through, or nil in a knowledge
-// base session.
-func via(pl *place.Place) *ledger.Via {
-	if pl == nil || pl.Project == nil {
-		return nil
-	}
-	return &ledger.Via{ID: pl.Project.Config.ID, Name: pl.Project.Name()}
+	return pl, pl.Project, nil
 }
 
 // projectOf resolves the project a thread tool acts on: the session's own when arg is
-// empty, else one the atlas knows by name, id, or path. In a knowledge base session the
-// project must use that knowledge base.
+// empty, else one the atlas knows by name, id, or path.
 func (s *Server) projectOf(pl *place.Place, arg string) (*project.Project, *registry.Entry, error) {
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
-		if pl.Project == nil {
-			return nil, nil, errors.New("name the project: this is a knowledge base session, so pass project (a name, id, or path of one that uses it)")
-		}
 		return pl.Project, pl.Entry, nil
 	}
 	if pl.Index == nil {
 		return nil, nil, errors.New("no atlas config on this machine; run claude-atlas setup")
 	}
-	e, err := pl.Index.Find(arg, registry.Project)
+	e, err := pl.Index.Find(arg)
 	if err != nil {
 		return nil, nil, err
-	}
-	if pl.Project == nil && pl.Vault != nil {
-		if e.Knowledge == nil || e.Knowledge.ID != pl.Vault.Config.ID {
-			return nil, nil, fmt.Errorf("%s does not use the knowledge base %s", e.Name, pl.Vault.Name())
-		}
 	}
 	p, err := project.Open(e.Path)
 	if err != nil {
@@ -154,14 +127,7 @@ type GitInfo struct {
 	Dirty  int    `json:"dirty"`
 }
 
-// KnowledgeRef names the knowledge base a project uses.
-type KnowledgeRef struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Path string `json:"path"`
-}
-
-// DescribedInfo is the page that describes a project, and how current it is.
+// DescribedInfo is the page that describes the work, and how current it is.
 type DescribedInfo struct {
 	registry.Description
 	Summary string `json:"summary"`
@@ -173,78 +139,49 @@ type ProjectThreads struct {
 	Phases []string       `json:"phases"`
 }
 
-// ProjectInfo is one project as a knowledge base sees it.
-type ProjectInfo struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Path      string `json:"path"`
-	HotTopics int    `json:"open_threads"`
-	Described bool   `json:"described"`
-}
-
 // Versions are the binary's and the plugin's.
 type Versions struct {
 	Binary string `json:"binary"`
 	Plugin string `json:"plugin,omitempty"`
 }
 
-// Status is the status tool's output: a project's facts or a knowledge base's.
+// Status is the status tool's output: the project, its wiki, and its threads.
 type Status struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Path string `json:"path"`
-	// A project's fields.
-	Description    string          `json:"description,omitempty"`
-	Git            *GitInfo        `json:"git,omitempty"`
-	Knowledge      *KnowledgeRef   `json:"knowledge,omitempty"`
-	KnowledgeError string          `json:"knowledge_error,omitempty"`
-	Described      *DescribedInfo  `json:"described,omitempty"`
-	Threads        *ProjectThreads `json:"threads,omitempty"`
-	Notes          int             `json:"notes"`
-	// A knowledge base's fields.
-	Mode          string         `json:"mode,omitempty"`
-	Scope         string         `json:"scope,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Atlas       string `json:"atlas"`
+	Description string `json:"description,omitempty"`
+	Mode        string `json:"mode"`
+	// The work.
+	Git       *GitInfo       `json:"git,omitempty"`
+	Described *DescribedInfo `json:"described,omitempty"`
+	// The threads.
+	Threads *ProjectThreads `json:"threads,omitempty"`
+	// The wiki.
 	Pages         int            `json:"pages"`
-	InboxWaiting  int            `json:"inbox_waiting"`
-	Projects      []ProjectInfo  `json:"projects,omitempty"`
-	VaultGit      *txn.Status    `json:"vault_git,omitempty"`
-	LastOperation *txn.Operation `json:"last_operation,omitempty"`
 	Stubs         int            `json:"stubs"`
 	WantedPages   int            `json:"wanted_pages"`
-	// Both.
+	WikiGit       *txn.Status    `json:"wiki_git,omitempty"`
+	LastOperation *txn.Operation `json:"last_operation,omitempty"`
+	// The inbox, split by what each file looks like.
+	InboxSources int `json:"inbox_sources"`
+	InboxNotes   int `json:"inbox_notes"`
+
 	PendingRecovery bool     `json:"pending_recovery"`
 	Versions        Versions `json:"versions"`
 	Warnings        []string `json:"warnings"`
 }
 
 func (s *Server) status(ctx context.Context, req *mcp.CallToolRequest, a Empty) (*mcp.CallToolResult, Status, error) {
-	pl, err := s.where()
+	pl, p, err := s.place()
 	if err != nil {
 		return nil, Status{}, err
 	}
 	now := s.opts.Now()
 	out := Status{Warnings: []string{}, Versions: Versions{Binary: s.opts.Version, Plugin: s.pluginVersion()}}
-	if pl.InProject() {
-		s.projectStatus(pl, &out, now)
-	} else {
-		s.knowledgeStatus(pl, &out, now)
-	}
-	if pl.Vault != nil {
-		if pending, _ := txn.Pending(pl.Vault); pending != nil {
-			out.PendingRecovery = true
-			out.Warnings = append(out.Warnings, "an operation was interrupted in "+pl.Vault.Name()+"; run `claude-atlas recover "+pl.Vault.Root+"` before changing it")
-		}
-	}
-	if out.Versions.Plugin != "" && out.Versions.Binary != "dev" && out.Versions.Plugin != out.Versions.Binary {
-		out.Warnings = append(out.Warnings, fmt.Sprintf("plugin %s and binary %s differ; update one of them", out.Versions.Plugin, out.Versions.Binary))
-	}
-	return nil, out, nil
-}
-
-func (s *Server) projectStatus(pl *place.Place, out *Status, now time.Time) {
-	p := pl.Project
-	out.Kind, out.ID, out.Name, out.Path, out.Description = "project", p.Config.ID, p.Name(), p.Root, p.Config.Description
+	out.ID, out.Name, out.Path, out.Atlas = p.Config.ID, p.Name(), p.Root, p.Atlas()
+	out.Description, out.Mode = p.Config.Description, string(p.Config.Mode)
 	if fact := links.Inspect(links.Repo, p.Root); fact.OK {
 		git := &GitInfo{Branch: fact.Branch}
 		if fact.Dirty != nil {
@@ -252,32 +189,47 @@ func (s *Server) projectStatus(pl *place.Place, out *Status, now time.Time) {
 		}
 		out.Git = git
 	}
-	switch {
-	case pl.Vault != nil:
-		out.Knowledge = &KnowledgeRef{ID: pl.Vault.Config.ID, Name: pl.Vault.Name(), Path: pl.Vault.Root}
-		if pl.Entry != nil {
-			if d := describe.Page(*pl.Entry); d != nil {
-				out.Described = &DescribedInfo{Description: *d, Summary: d.Summary()}
-				if d.Behind > describe.BehindThreshold {
-					out.Warnings = append(out.Warnings, fmt.Sprintf("the page describing this project is %d commits behind; the describe skill brings it up to date", d.Behind))
-				}
-			} else {
-				out.Warnings = append(out.Warnings, registry.NotDescribed+"; the describe skill writes the page")
+	if pl.Entry != nil {
+		if d := describe.Page(*pl.Entry); d != nil {
+			out.Described = &DescribedInfo{Description: *d, Summary: d.Summary()}
+			if d.Behind > describe.BehindThreshold {
+				out.Warnings = append(out.Warnings, fmt.Sprintf("the page describing this work is %d commits behind; the describe skill brings it up to date", d.Behind))
+			}
+		} else {
+			out.Warnings = append(out.Warnings, registry.NotDescribed+"; the describe skill writes the page")
+		}
+	}
+	if st, err := txn.Inspect(p); err == nil {
+		out.WikiGit = st
+		if !st.HasHistory {
+			out.Warnings = append(out.Warnings, "the project has no git history, so no operation can run; make "+home.Display(p.Root)+" a git repository")
+		}
+	}
+	if report, err := lint.Run(p.Atlas(), lint.Options{AsOf: now}); err == nil {
+		out.Pages = report.Summary.PagesScanned
+		out.Stubs = len(report.Stubs)
+		out.WantedPages = len(report.WantedPages)
+	}
+	if files, err := capture.ListInbox(p, now); err == nil {
+		for _, f := range files {
+			switch {
+			case f.Captured:
+			case capture.LooksLikeNote(f):
+				out.InboxNotes++
+			default:
+				out.InboxSources++
 			}
 		}
-	case pl.KnowledgeError != "":
-		out.KnowledgeError = pl.KnowledgeError
-		out.Warnings = append(out.Warnings, pl.KnowledgeError)
-	default:
-		out.Warnings = append(out.Warnings, "this project uses no knowledge base; link one with `claude-atlas link KB`")
 	}
-	out.Notes = len(threads.Notes(p))
+	if ops, err := txn.History(p, 1, false); err == nil && len(ops) > 0 {
+		out.LastOperation = &ops[0]
+	}
 	if threads.Legacy(p) {
 		out.Warnings = append(out.Warnings, "this project holds task pages from before threads; `claude-atlas upgrade` turns each one into a thread")
 	}
 	if board, err := threads.Load(p); err == nil {
 		pt := &ProjectThreads{Counts: board.Counts(now), Phases: []string{}}
-		pt.Counts.Notes = out.Notes
+		pt.Counts.Notes = out.InboxNotes
 		for _, ph := range board.Phases {
 			pt.Phases = append(pt.Phases, ph.Title)
 		}
@@ -295,93 +247,52 @@ func (s *Server) projectStatus(pl *place.Place, out *Status, now time.Time) {
 			out.Warnings = append(out.Warnings, pr.Path+": "+pr.Reason)
 		}
 	}
-	if out.Notes > 0 {
-		out.Warnings = append(out.Warnings, fmt.Sprintf("%d note%s wait in %s/%s/; the thread-stub skill opens a thread from each", out.Notes, plural(out.Notes), pl.Project.Rel(), project.InboxDir))
+	if out.InboxNotes > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("%d note%s wait in %s/%s/; the thread-stub skill opens a thread from each", out.InboxNotes, plural(out.InboxNotes), p.Rel(), project.InboxDir))
 	}
-}
-
-func (s *Server) knowledgeStatus(pl *place.Place, out *Status, now time.Time) {
-	v := pl.Vault
-	out.Kind, out.ID, out.Name, out.Path, out.Mode, out.Scope = "knowledge", v.Config.ID, v.Name(), v.Root, string(v.Config.Mode), v.Config.Scope
-	out.Projects = []ProjectInfo{}
-	if st, err := txn.Inspect(v); err == nil {
-		out.VaultGit = st
-		if !st.HasHistory {
-			out.Warnings = append(out.Warnings, "the knowledge base has no git history; run `claude-atlas adopt "+v.Root+"`")
-		}
+	if pending, _ := txn.Pending(p); pending != nil {
+		out.PendingRecovery = true
+		out.Warnings = append(out.Warnings, "an operation was interrupted; run `claude-atlas recover "+p.Root+"` before changing the wiki")
 	}
-	if report, err := lint.Run(v.Root, lint.Options{AsOf: now}); err == nil {
-		out.Pages = report.Summary.PagesScanned
-		out.Stubs = len(report.Stubs)
-		out.WantedPages = len(report.WantedPages)
-	}
-	if files, err := capture.ListInbox(v, now); err == nil {
-		for _, f := range files {
-			if !f.Captured {
-				out.InboxWaiting++
-			}
-		}
-	}
-	if ops, err := txn.History(v, 1, false); err == nil && len(ops) > 0 {
-		out.LastOperation = &ops[0]
-	}
-	if pl.Index != nil && pl.Entry != nil {
-		for _, e := range pl.Index.ProjectsOf(pl.Entry.ID) {
-			info := ProjectInfo{ID: e.ID, Name: e.Name, Path: e.Path, Described: describe.Page(e) != nil}
-			if p, err := project.Open(e.Path); err == nil {
-				if board, err := threads.Load(p); err == nil {
-					info.HotTopics = board.Counts(now).Open
-				}
-			}
-			out.Projects = append(out.Projects, info)
-			if !info.Described {
-				out.Warnings = append(out.Warnings, "project "+e.Name+" is "+registry.NotDescribed+"; the describe skill writes the page")
-			}
-		}
-	}
-}
-
-// InboxOut is the knowledge base's inbox, and in a project session the notes too.
-type InboxOut struct {
-	Vault string              `json:"vault"`
-	Files []capture.InboxFile `json:"files"`
-	Notes []string            `json:"notes,omitempty"`
-}
-
-func (s *Server) inbox(ctx context.Context, req *mcp.CallToolRequest, a Empty) (*mcp.CallToolResult, InboxOut, error) {
-	pl, err := s.where()
-	if err != nil {
-		return nil, InboxOut{}, err
-	}
-	out := InboxOut{Files: []capture.InboxFile{}}
-	if pl.Vault != nil {
-		files, err := capture.ListInbox(pl.Vault, s.opts.Now())
-		if err != nil {
-			return nil, InboxOut{}, err
-		}
-		out.Vault, out.Files = pl.Vault.Root, files
-	}
-	if pl.InProject() {
-		out.Notes = threads.Notes(pl.Project)
-		if out.Notes == nil {
-			out.Notes = []string{}
-		}
-	} else if pl.Vault == nil {
-		return nil, InboxOut{}, place.ErrNoPlace
+	if out.Versions.Plugin != "" && out.Versions.Binary != "dev" && out.Versions.Plugin != out.Versions.Binary {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("plugin %s and binary %s differ; update one of them", out.Versions.Plugin, out.Versions.Binary))
 	}
 	return nil, out, nil
 }
 
+// InboxOut is what waits in the project's one inbox. Each file carries a hint, source or
+// note, which says which skill takes it.
+type InboxOut struct {
+	Project string              `json:"project"`
+	Files   []capture.InboxFile `json:"files"`
+	Next    string              `json:"next"`
+}
+
+// inboxNext says how the two kinds of inbox file are handled.
+const inboxNext = "A file hinted source is ingested into the wiki (the wiki-ingest skill); one hinted note opens a thread (the thread-stub skill, with from set to the file). The hint is a guess from the file's kind and size: say what you will do with each file before you do it."
+
+func (s *Server) inbox(ctx context.Context, req *mcp.CallToolRequest, a Empty) (*mcp.CallToolResult, InboxOut, error) {
+	_, p, err := s.place()
+	if err != nil {
+		return nil, InboxOut{}, err
+	}
+	files, err := capture.ListInbox(p, s.opts.Now())
+	if err != nil {
+		return nil, InboxOut{}, err
+	}
+	return nil, InboxOut{Project: p.Root, Files: files, Next: inboxNext}, nil
+}
+
 type CaptureArgs struct {
-	Paths []string `json:"paths" jsonschema:"files in the knowledge base's inbox/ to capture, as inbox-relative or vault-relative paths"`
+	Paths []string `json:"paths" jsonschema:"files in the project's inbox/ to capture, as inbox-relative or project-relative paths"`
 }
 
 func (s *Server) capture(ctx context.Context, req *mcp.CallToolRequest, a CaptureArgs) (*mcp.CallToolResult, capture.Result, error) {
-	pl, v, err := s.knowledge()
+	_, v, err := s.place()
 	if err != nil {
 		return nil, capture.Result{}, err
 	}
-	res, err := capture.Capture(v, a.Paths, via(pl), s.opts.Now())
+	res, err := capture.Capture(v, a.Paths, nil, s.opts.Now())
 	if err != nil {
 		return nil, capture.Result{}, err
 	}
@@ -398,14 +309,14 @@ const routeNext = "A match means link to it instead of creating a page."
 
 // RouteOut is where a page belongs and whether one by that title or alias already exists.
 type RouteOut struct {
-	vault.Route
-	Vault string       `json:"vault"`
-	Match *vault.Match `json:"match,omitempty"`
-	Next  string       `json:"next"`
+	project.Route
+	Project string         `json:"project"`
+	Match   *project.Match `json:"match,omitempty"`
+	Next    string         `json:"next"`
 }
 
 func (s *Server) route(ctx context.Context, req *mcp.CallToolRequest, a RouteArgs) (*mcp.CallToolResult, RouteOut, error) {
-	_, v, err := s.knowledge()
+	_, v, err := s.place()
 	if err != nil {
 		return nil, RouteOut{}, err
 	}
@@ -413,11 +324,11 @@ func (s *Server) route(ctx context.Context, req *mcp.CallToolRequest, a RouteArg
 	if err != nil {
 		return nil, RouteOut{}, err
 	}
-	match, err := vault.FindPage(v.Root, a.Title)
+	match, err := project.FindPage(v.Atlas(), a.Title)
 	if err != nil {
 		return nil, RouteOut{}, err
 	}
-	return nil, RouteOut{Route: *r, Vault: v.Root, Match: match, Next: routeNext}, nil
+	return nil, RouteOut{Route: *r, Project: v.Root, Match: match, Next: routeNext}, nil
 }
 
 type StubArgs struct {
@@ -426,22 +337,11 @@ type StubArgs struct {
 }
 
 func (s *Server) stub(ctx context.Context, req *mcp.CallToolRequest, a StubArgs) (*mcp.CallToolResult, txn.StubResult, error) {
-	pl, v, err := s.knowledge()
+	_, v, err := s.place()
 	if err != nil {
 		return nil, txn.StubResult{}, err
 	}
-	for _, t := range a.Titles {
-		if strings.TrimSpace(t.Target) != "" {
-			return nil, txn.StubResult{}, errors.New("target is gone: a session has one knowledge base, and every stub lands there")
-		}
-	}
-	now := s.opts.Now()
-	var res txn.StubResult
-	if pl.InProject() {
-		res, err = txn.StubVia(v, a.Titles, a.Type, pl.Project.Name(), now)
-	} else {
-		res, err = txn.StubPages(v, a.Titles, a.Type, now)
-	}
+	res, err := txn.StubPages(v, a.Titles, a.Type, s.opts.Now())
 	if err != nil {
 		return nil, txn.StubResult{}, err
 	}
@@ -453,7 +353,7 @@ func (s *Server) stub(ctx context.Context, req *mcp.CallToolRequest, a StubArgs)
 
 // ProjectArg names the project a thread tool acts on.
 type ProjectArg struct {
-	Project string `json:"project,omitempty" jsonschema:"the project, by name, id, or path; omit in a project session. In a knowledge base session it must be one of the projects that use it"`
+	Project string `json:"project,omitempty" jsonschema:"another project the atlas lists, by name, id, or path; omit for this session's project"`
 }
 
 // ThreadInfo is a thread with the absolute path of its card and of each document.
@@ -521,23 +421,11 @@ func (s *Server) threads(ctx context.Context, req *mcp.CallToolRequest, a Thread
 		return nil, ThreadsOut{}, err
 	}
 	out := ThreadsOut{Projects: []ProjectBoard{}}
-	var projects []*project.Project
-	switch {
-	case a.Project != "" || pl.InProject():
-		p, _, err := s.projectOf(pl, a.Project)
-		if err != nil {
-			return nil, ThreadsOut{}, err
-		}
-		projects = append(projects, p)
-	case pl.Index != nil && pl.Entry != nil:
-		for _, e := range pl.Index.ProjectsOf(pl.Entry.ID) {
-			p, err := project.Open(e.Path)
-			if err != nil {
-				continue
-			}
-			projects = append(projects, p)
-		}
+	p, _, err := s.projectOf(pl, a.Project)
+	if err != nil {
+		return nil, ThreadsOut{}, err
 	}
+	projects := []*project.Project{p}
 	now := s.opts.Now()
 	for _, p := range projects {
 		board, err := threads.Load(p)
@@ -569,9 +457,6 @@ func (s *Server) threads(ctx context.Context, req *mcp.CallToolRequest, a Thread
 			pb.Open, pb.Closed = threadInfos(p, board.Open(), now), threadInfos(p, board.Closed(), now)
 		}
 		out.Projects = append(out.Projects, pb)
-	}
-	if a.ID != "" && len(out.Projects) == 0 {
-		return nil, ThreadsOut{}, fmt.Errorf("no thread %q in any project of this knowledge base", a.ID)
 	}
 	return nil, out, nil
 }
@@ -741,7 +626,7 @@ type PlanArgs struct {
 type PlanOut struct {
 	PlanID      string      `json:"plan_id"`
 	OperationID string      `json:"operation_id"`
-	Vault       string      `json:"vault"`
+	Project     string      `json:"project"`
 	Kind        string      `json:"kind"`
 	Summary     string      `json:"summary"`
 	Preview     txn.Preview `json:"preview"`
@@ -750,7 +635,7 @@ type PlanOut struct {
 }
 
 func (s *Server) plan(ctx context.Context, req *mcp.CallToolRequest, a PlanArgs) (*mcp.CallToolResult, PlanOut, error) {
-	pl, v, err := s.knowledge()
+	_, v, err := s.place()
 	if err != nil {
 		return nil, PlanOut{}, err
 	}
@@ -764,14 +649,7 @@ func (s *Server) plan(ctx context.Context, req *mcp.CallToolRequest, a PlanArgs)
 	if !allowedKind {
 		return nil, PlanOut{}, fmt.Errorf("kind must be one of ingest, save, markdown, repair, fold, canvas, base")
 	}
-	if kind == txn.Config {
-		return nil, PlanOut{}, errors.New("to change the mode, call the mode tool with set")
-	}
-	summary := a.Summary
-	if pl.InProject() && summary != "" {
-		summary += " (via " + pl.Project.Name() + ")"
-	}
-	r := txn.Request{Kind: kind, Summary: summary}
+	r := txn.Request{Kind: kind, Summary: a.Summary}
 	for _, w := range a.Writes {
 		r.Writes = append(r.Writes, txn.Write{Path: w.Path, Mode: txn.WriteMode(w.Mode), Content: []byte(w.Content), BaseSHA256: w.BaseSHA256})
 	}
@@ -790,7 +668,7 @@ func (s *Server) hold(plan *txn.Plan) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, p := range s.plans {
-		if p.Vault == plan.Vault {
+		if p.Folder == plan.Folder {
 			delete(s.plans, id)
 		}
 	}
@@ -802,7 +680,7 @@ func (s *Server) planOut(plan *txn.Plan) PlanOut {
 	if len(plan.Warnings) > 0 {
 		next = "Resolve or explain the warnings, show the user the preview, then call apply with plan_id " + plan.ID + " if they approve."
 	}
-	return PlanOut{PlanID: plan.ID, OperationID: plan.OperationID, Vault: plan.Vault, Kind: string(plan.Kind), Summary: plan.Summary, Preview: plan.Preview, Warnings: plan.Warnings, Next: next}
+	return PlanOut{PlanID: plan.ID, OperationID: plan.OperationID, Project: plan.Folder, Kind: string(plan.Kind), Summary: plan.Summary, Preview: plan.Preview, Warnings: plan.Warnings, Next: next}
 }
 
 type ApplyArgs struct {
@@ -817,9 +695,9 @@ func (s *Server) apply(ctx context.Context, req *mcp.CallToolRequest, a ApplyArg
 	}
 	s.mu.Unlock()
 	if !ok {
-		return nil, txn.Result{}, fmt.Errorf("no plan %q is pending; plans are single-use and the newest plan for a knowledge base replaces older ones, so call plan again", a.PlanID)
+		return nil, txn.Result{}, fmt.Errorf("no plan %q is pending; plans are single-use and the newest plan replaces older ones, so call plan again", a.PlanID)
 	}
-	v, err := vault.Open(plan.Vault)
+	v, err := project.Open(project.FindAbove(plan.Folder))
 	if err != nil {
 		return nil, txn.Result{}, err
 	}
@@ -835,7 +713,7 @@ type UndoArgs struct {
 }
 
 func (s *Server) undo(ctx context.Context, req *mcp.CallToolRequest, a UndoArgs) (*mcp.CallToolResult, txn.Result, error) {
-	_, v, err := s.knowledge()
+	_, v, err := s.place()
 	if err != nil {
 		return nil, txn.Result{}, err
 	}
@@ -851,12 +729,12 @@ type HistoryArgs struct {
 }
 
 type HistoryOut struct {
-	Vault      string          `json:"vault"`
+	Project    string          `json:"project"`
 	Operations []txn.Operation `json:"operations"`
 }
 
 func (s *Server) history(ctx context.Context, req *mcp.CallToolRequest, a HistoryArgs) (*mcp.CallToolResult, HistoryOut, error) {
-	_, v, err := s.knowledge()
+	_, v, err := s.place()
 	if err != nil {
 		return nil, HistoryOut{}, err
 	}
@@ -871,7 +749,7 @@ func (s *Server) history(ctx context.Context, req *mcp.CallToolRequest, a Histor
 	if ops == nil {
 		ops = []txn.Operation{}
 	}
-	return nil, HistoryOut{Vault: v.Root, Operations: ops}, nil
+	return nil, HistoryOut{Project: v.Root, Operations: ops}, nil
 }
 
 type LintArgs struct {
@@ -879,55 +757,15 @@ type LintArgs struct {
 }
 
 func (s *Server) lint(ctx context.Context, req *mcp.CallToolRequest, a LintArgs) (*mcp.CallToolResult, lint.Report, error) {
-	_, v, err := s.knowledge()
+	_, v, err := s.place()
 	if err != nil {
 		return nil, lint.Report{}, err
 	}
-	report, err := lint.Run(v.Root, lint.Options{Exclude: a.Exclude, AsOf: s.opts.Now()})
+	report, err := lint.Run(v.Atlas(), lint.Options{Exclude: a.Exclude, AsOf: s.opts.Now()})
 	if err != nil {
 		return nil, lint.Report{}, err
 	}
 	return nil, *report, nil
-}
-
-type ModeArgs struct {
-	Set string `json:"set,omitempty" jsonschema:"generic or lyt; omit to read the current mode"`
-}
-
-type ModeOut struct {
-	Mode     string   `json:"mode"`
-	Types    []string `json:"types"`
-	Plan     *PlanOut `json:"plan,omitempty"`
-	Previous string   `json:"previous,omitempty"`
-}
-
-func (s *Server) mode(ctx context.Context, req *mcp.CallToolRequest, a ModeArgs) (*mcp.CallToolResult, ModeOut, error) {
-	_, v, err := s.knowledge()
-	if err != nil {
-		return nil, ModeOut{}, err
-	}
-	out := ModeOut{Mode: string(v.Config.Mode), Types: vault.RoutableTypes(v.Config.Mode)}
-	if a.Set == "" {
-		return nil, out, nil
-	}
-	mode, err := vault.ParseMode(a.Set)
-	if err != nil {
-		return nil, ModeOut{}, err
-	}
-	if mode == v.Config.Mode {
-		return nil, out, nil
-	}
-	plan, err := txn.Prepare(v, txn.ConfigRequest(v, mode), s.opts.Now())
-	if err != nil {
-		return nil, ModeOut{}, err
-	}
-	s.hold(plan)
-	po := s.planOut(plan)
-	out.Previous = string(v.Config.Mode)
-	out.Mode = string(mode)
-	out.Types = vault.RoutableTypes(mode)
-	out.Plan = &po
-	return nil, out, nil
 }
 
 func ro() *mcp.ToolAnnotations {
@@ -938,43 +776,39 @@ func ro() *mcp.ToolAnnotations {
 func (s *Server) MCP() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: Name, Title: "claude-atlas", Version: s.opts.Version}, nil)
 	mcp.AddTool(server, &mcp.Tool{Name: "status", Annotations: ro(),
-		Description: "Describe where the session is. In a project: its knowledge base, the page that describes it, its thread counts by stage, its phases, and warnings. In a knowledge base: mode, scope, page count, inbox, the projects that use it, git state, and warnings. Call this first."}, s.status)
+		Description: "Describe the session's project: its folder, its description and mode, what git says about the work, the page that describes the work, its thread counts by stage and its phases, its wiki's page count and git state, what waits in its inbox, and warnings. Call this first."}, s.status)
 	mcp.AddTool(server, &mcp.Tool{Name: "inbox", Annotations: ro(),
-		Description: "List the files waiting in the knowledge base's inbox/ with size, kind, hash, and whether each already has a captured copy; in a project, the notes waiting in atlas/<name>/inbox/ too."}, s.inbox)
+		Description: "List what waits in the project's inbox/ with size, kind, hash, whether each already has a captured copy, and a hint: source, to ingest into the wiki, or note, to open as a thread."}, s.inbox)
 	mcp.AddTool(server, &mcp.Tool{Name: "capture",
-		Description: "Copy files from the knowledge base's inbox into the immutable raw store and record them in the source ledger, as one commit. From a project the record names the project the source came through. Returns each file's source id and stored path; read the stored file afterwards with Read."}, s.capture)
+		Description: "Copy files from the project's inbox into the immutable raw store and record them in the source ledger, as one commit. Returns each file's source id and stored path; read the stored file afterwards with Read."}, s.capture)
 	mcp.AddTool(server, &mcp.Tool{Name: "route", Annotations: ro(),
-		Description: "Say where a new page of a type belongs under the knowledge base's mode, whether a page with that title or alias already exists, and give a skeleton with the frontmatter conventions."}, s.route)
+		Description: "Say where a new wiki page of a type belongs under the project's mode, whether a page with that title or alias already exists, and give a skeleton with the frontmatter conventions."}, s.route)
 	mcp.AddTool(server, &mcp.Tool{Name: "plan", Annotations: ro(),
-		Description: "Validate a set of file changes against the knowledge base and hold them as a plan. Returns a plan_id, a preview of creates, replaces, and deletes, and warnings such as links that do not resolve. Nothing is written. Show the preview to the user before apply."}, s.plan)
+		Description: "Validate a set of changes to the wiki and hold them as a plan. Returns a plan_id, a preview of creates, replaces, and deletes, and warnings such as links that do not resolve. Nothing is written. Show the preview to the user before apply."}, s.plan)
 	mcp.AddTool(server, &mcp.Tool{Name: "apply",
-		Description: "Apply a held plan as one git commit and write its log entry. Edits made by hand are committed first, so the operation can always be undone exactly. The plan is consumed."}, s.apply)
+		Description: "Apply a held plan as one git commit and write its log entry. Edits made by hand in the wiki are committed first, so the operation can always be undone exactly; the work outside the wiki is never touched. The plan is consumed."}, s.apply)
 	mcp.AddTool(server, &mcp.Tool{Name: "undo",
-		Description: "Revert one applied operation in the knowledge base as a new commit. Fails if later changes overlap it."}, s.undo)
+		Description: "Take back one applied operation as a new commit. It touches only the pages that operation wrote, and refuses when one of them changed since."}, s.undo)
 	mcp.AddTool(server, &mcp.Tool{Name: "history", Annotations: ro(),
-		Description: "List the knowledge base's recent operations, newest first, with their kind, summary, date, commit, and changed paths."}, s.history)
+		Description: "List the wiki's recent operations, newest first, with their kind, summary, date, commit, and changed paths."}, s.history)
 	mcp.AddTool(server, &mcp.Tool{Name: "lint", Annotations: ro(),
-		Description: "Run the deterministic wiki health check on the knowledge base: dead and ambiguous links, duplicate basenames, orphans, pages missing from every index, missing frontmatter, empty sections, stale index entries, and ledger problems. Read-only."}, s.lint)
+		Description: "Run the deterministic health check on the project's wiki: dead and ambiguous links, duplicate basenames, orphans, pages missing from every index, missing frontmatter, empty sections, stale index entries, and ledger problems. Read-only."}, s.lint)
 	mcp.AddTool(server, &mcp.Tool{Name: "stub",
-		Description: "Create seed pages in the knowledge base for the pages the wiki links to but nobody has written (lint's wanted pages). One commit, no plan preview; undo reverts it. Omit titles to stub every one of them with the mode's default type. Pass a title with a type when the name is a person, product, project, or organization (entity)."}, s.stub)
+		Description: "Create seed pages in the wiki for the pages it links to but nobody has written (lint's wanted pages). One commit, no plan preview; undo takes it back. Omit titles to stub every one of them with the mode's default type. Pass a title with a type when the name is a person, product, project, or organization (entity)."}, s.stub)
 	mcp.AddTool(server, &mcp.Tool{Name: "threads", Annotations: ro(),
-		Description: "List a project's threads: counts by stage, the phases in order, the open threads with the furthest stage first, the closed ones, the notes waiting in atlas/<name>/inbox/, and the pages it could not read. Each thread carries the absolute path of each of its documents. Pass id for one thread. In a knowledge base session with no project, every project that uses it."}, s.threads)
+		Description: "List the project's threads: counts by stage, the phases in order, the open threads with the furthest stage first, the closed ones, the notes waiting in the inbox, and the pages it could not read. Each thread carries the absolute path of each of its documents. Pass id for one thread."}, s.threads)
 	mcp.AddTool(server, &mcp.Tool{Name: "thread",
 		Description: "Open a thread or move one along. A thread is one line of work with a document per stage: stub, spec, plan, receipt. Without id: open a thread from text, which becomes its stub. With id and stage: file that stage's document from text, which moves the thread to that stage; a receipt needs outcome (completed or killed) and closes the thread. With id and priority, phase, blocked, or title: change its card. With id alone: mark it touched today. The stage is never set directly; it is the furthest document that exists."}, s.thread)
 	mcp.AddTool(server, &mcp.Tool{Name: "phase",
-		Description: "Create, rename, reorder, or remove a phase of a project: a named slice of the timeline that threads belong to. Rename follows every thread that names it; remove refuses while one does."}, s.phase)
-	mcp.AddTool(server, &mcp.Tool{Name: "mode",
-		Description: "Read the knowledge base's filing mode (generic or lyt) and the page types it files. Pass set to prepare a plan that changes it; apply that plan to make the change."}, s.mode)
+		Description: "Create, rename, reorder, or remove a phase of the project: a named slice of the timeline that threads belong to. Rename follows every thread that names it; remove refuses while one does."}, s.phase)
 	mcp.AddTool(server, &mcp.Tool{Name: "atlas",
-		Description: "Read the whole atlas: every knowledge base with its scope, path, projects, and state; every project with its path, knowledge base, and open threads; the folders the atlas cannot read; and the settings. Pass refresh to also rewrite the registry."}, s.atlasTool)
-	mcp.AddTool(server, &mcp.Tool{Name: "vault",
-		Description: "Create or adopt a knowledge base, edit its name or scope, or forget one the atlas lists (the folder stays); action is create, adopt, edit, or forget. State the change and get a yes before calling."}, s.vaultTool)
+		Description: "Read the whole atlas: every project on this machine with its path, description, wiki, and open threads; the folders the atlas cannot read; and the settings. Pass refresh to also rewrite the registry."}, s.atlasTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "project",
-		Description: "Make a folder a project (init), set or clear the knowledge base it uses (link, unlink), change its name or description (edit), or forget it (the folder and its atlas/<name>/ stay). State the change and get a yes before calling."}, s.projectTool)
+		Description: "Make a folder a project, with its wiki and its threads (init); change its name, description, or filing mode (edit); or drop it from the atlas, leaving the folder (forget). State the change and get a yes before calling."}, s.projectTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "settings",
-		Description: "Set an atlas setting and return them all: new_days, how long a knowledge base or project counts as new. With no arguments it only reads."}, s.settingsTool)
+		Description: "Set an atlas setting and return them all: new_days, how long a project counts as new. With no arguments it only reads."}, s.settingsTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "stage",
-		Description: "Copy files or folders from outside the knowledge base into its inbox, skipping what it already captured or holds; omit paths to stage what is new in the folders it staged from before. Or, with project (or in a project session with no arguments), write a snapshot of that project into the inbox for the describe skill. dry_run plans and copies nothing."}, s.stageTool)
+		Description: "Copy files or folders from outside the project into its inbox, skipping what it already captured or holds; omit paths to stage what is new in the folders it staged from before. With snapshot, write a snapshot of the work into the inbox for the describe skill. dry_run plans and copies nothing."}, s.stageTool)
 	return server
 }
 
@@ -985,7 +819,7 @@ func Run(ctx context.Context, opts Options) error {
 
 // ToolNames lists every tool MCP registers, sorted, for docs and tests.
 func ToolNames() []string {
-	names := []string{"apply", "atlas", "capture", "history", "inbox", "lint", "mode", "phase", "plan", "project", "route", "settings", "stage", "status", "stub", "thread", "threads", "undo", "vault"}
+	names := []string{"apply", "atlas", "capture", "history", "inbox", "lint", "phase", "plan", "project", "route", "settings", "stage", "status", "stub", "thread", "threads", "undo"}
 	sort.Strings(names)
 	return names
 }

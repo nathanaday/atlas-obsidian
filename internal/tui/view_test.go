@@ -14,50 +14,29 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/project"
 	"github.com/nathanaday/claude-atlas/internal/registry"
 	"github.com/nathanaday/claude-atlas/internal/threads"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
-func knowledge(name, heat string) Item {
+func proj(name, heat string) Item {
 	four, one := 4, 1
 	return Item{Entry: registry.Entry{
-		ID: "id-" + name, Kind: registry.Knowledge, Name: name, Path: "/v/" + name, Mode: vault.Generic,
-		Created: "2026-09-01", Scope: name + " sources",
+		ID: "id-" + name, Name: name, Path: "/code/" + name, Mode: project.Generic,
+		Created: "2026-09-01", Description: "the " + name + " work",
 		State: &registry.State{OK: true, Heat: heat, Pages: &four, Inbox: &one,
 			GeneratedAt: "2026-09-12T18:00:00Z", HotTopics: []string{"thread"}, LastOperation: "2026-09-10"},
 	}}
 }
 
-func proj(name, kb, heat string) Item {
-	e := registry.Entry{
-		ID: "id-" + name, Kind: registry.Project, Name: name, Path: "/code/" + name,
-		Created: "2026-09-01", Description: "the " + name + " work",
-		State: &registry.State{OK: true, Heat: heat, GeneratedAt: "2026-09-12T18:00:00Z"},
-	}
-	if kb != "" {
-		e.Knowledge = &registry.Ref{ID: "id-" + kb, Name: kb, Path: "/v/" + kb}
-	}
-	return Item{Entry: e}
-}
-
-// sample is two knowledge bases, three projects (two on papers, one with no knowledge
-// base), and one entry the scan could not read.
+// sample is three projects and one folder the scan could not read.
 func sample() []Item {
-	items := []Item{
-		knowledge("papers", "warm"),
-		knowledge("ai-ml", "cold"),
-		proj("webapp", "papers", "hot"),
-		proj("firmware", "papers", "cold"),
-		proj("thesis", "", "new"),
-	}
+	items := []Item{proj("webapp", "hot"), proj("firmware", "cold"), proj("thesis", "new")}
 	zero := 0
-	items[0].Entry.Projects = []registry.Ref{{ID: "id-webapp", Name: "webapp"}, {ID: "id-firmware", Name: "firmware"}}
-	items[2].Entry.State.DaysIdle = &zero
-	items[2].Entry.State.Threads = &registry.ThreadSummary{
+	items[0].Entry.State.DaysIdle = &zero
+	items[0].Entry.State.Threads = &registry.ThreadSummary{
 		Counts: threads.Counts{Open: 3, Plan: 1, Spec: 2, Phases: 1},
 		Open:   []registry.ThreadLine{{ID: "thr-20260917-0001", Title: "Filter vehicle false alarms", Stage: "plan", Priority: "high", Phase: "Alarm quality"}},
 		Phases: []string{"Alarm quality", "Launch"},
 	}
-	items[2].Entry.State.Described = &registry.Description{Page: "wiki/entities/webapp.md", Commit: "abc1234", Behind: 2}
+	items[0].Entry.State.Described = &registry.Description{Page: "wiki/entities/webapp.md", Commit: "abc1234", Behind: 2}
 	items = append(items, Item{Entry: registry.Entry{Path: "/old/gateway", Error: missingError, Reason: registry.ReasonMissing}})
 	return items
 }
@@ -119,21 +98,30 @@ func quits(cmd tea.Cmd) bool {
 	return ok
 }
 
-func TestTabBarAndArrows(t *testing.T) {
+func TestTheScreenIsOneListOfProjects(t *testing.T) {
 	v := newView(sample(), Opener{}, actions.Atlas{})
 	out := v.View()
 	t.Logf("\n%s", out)
-	for _, want := range []string{"Atlas   Knowledge (2)  Projects (3)  Problems (1)", "A knowledge base is the wiki", "refreshed 2026-09-1"} {
+	for _, want := range []string{"Atlas   Projects (3)  Problems (1)", "A project is an atlas/<name>/ folder", "refreshed 2026-09-1"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q", want)
 		}
 	}
-	if v.tab != tabKnowledge || len(v.boards[0].rows) != 2 {
-		t.Fatalf("the Knowledge tab lists the knowledge bases: tab=%d rows=%d", v.tab, len(v.boards[0].rows))
+	if v.tab != tabProjects || len(v.boards[0].rows) != 3 {
+		t.Fatalf("the Projects tab lists every project: tab=%d rows=%d", v.tab, len(v.boards[0].rows))
 	}
-	v = pressV(v, tea.KeyRight)
-	if v.tab != tabProjects || !strings.Contains(v.View(), "A project is an atlas/<name>/ folder") || len(v.boards[1].rows) != 3 {
-		t.Fatalf("right: tab=%d\n%s", v.tab, v.View())
+	// One box shows both halves: the wiki's pages and the threads.
+	for _, want := range []string{"webapp", "the webapp work", "/code/webapp", "4 pages", "3 threads open", "phase: Alarm quality", "1 in inbox", "🔥", "❄️", "✨"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	names := []string{}
+	for _, it := range v.boards[0].items {
+		names = append(names, it.Entry.Name)
+	}
+	if got := strings.Join(names, ","); got != "firmware,thesis,webapp" {
+		t.Fatalf("by name: %s", got)
 	}
 	v = pressV(v, tea.KeyRight)
 	if v.tab != tabProblems || !strings.Contains(v.View(), "could not read") {
@@ -143,45 +131,13 @@ func TestTabBarAndArrows(t *testing.T) {
 	if v.tab != tabProblems {
 		t.Fatal("the bar does not wrap")
 	}
-	v = pressV(v, tea.KeyLeft, tea.KeyLeft, tea.KeyLeft)
-	if v.tab != tabKnowledge {
-		t.Fatalf("left stops at Knowledge: tab=%d", v.tab)
+	v = pressV(v, tea.KeyLeft, tea.KeyLeft)
+	if v.tab != tabProjects {
+		t.Fatalf("left stops at Projects: tab=%d", v.tab)
 	}
-	clean := newView(sample()[:5], Opener{}, actions.Atlas{})
-	if strings.Contains(clean.View(), "Problems") || len(clean.tabs()) != 2 {
+	clean := newView(sample()[:3], Opener{}, actions.Atlas{})
+	if strings.Contains(clean.View(), "Problems") || len(clean.tabs()) != 1 {
 		t.Fatal("no problems, no Problems tab")
-	}
-}
-
-func TestKnowledgeBoxesShowScopePagesInboxAndProjects(t *testing.T) {
-	v := newView(sample(), Opener{}, actions.Atlas{})
-	out := v.View()
-	for _, want := range []string{"papers", "papers sources", "4 pages", "1 in inbox", "2 projects: webapp, firmware", "used by no project yet", "🌤️", "❄️"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("missing %q:\n%s", want, out)
-		}
-	}
-}
-
-func TestProjectsAreGroupedByKnowledgeBase(t *testing.T) {
-	v := newView(sample(), Opener{}, actions.Atlas{})
-	v.goTo(tabProjects)
-	out := v.View()
-	t.Logf("\n%s", out)
-	for _, want := range []string{"papers", "no knowledge base", "webapp", "firmware", "thesis", "3 threads open", "phase: Alarm quality", "touched today", "the webapp work", "/code/webapp"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("missing %q", want)
-		}
-	}
-	names := []string{}
-	for _, it := range v.boards[1].items {
-		names = append(names, it.Entry.Name)
-	}
-	if got := strings.Join(names, ","); got != "firmware,webapp,thesis" {
-		t.Fatalf("grouped by knowledge base, the ungrouped last: %s", got)
-	}
-	if strings.Index(out, "papers") > strings.Index(out, "no knowledge base") {
-		t.Fatal("the knowledge base group comes before the ungrouped projects")
 	}
 }
 
@@ -190,7 +146,13 @@ func TestEnterExpandsInPlace(t *testing.T) {
 	v = pressV(v, tea.KeyEnter)
 	out := v.View()
 	t.Logf("\n%s", out)
-	for _, want := range []string{"Path", "/code/webapp", "Knowledge", "papers", "Described", "described in wiki/entities/webapp.md at abc1234, 2 commits behind", "Threads", "3 open: 1 plan", "Phases", "Alarm quality → Launch", "[plan] Filter vehicle false alarms", "Enter collapse"} {
+	for _, want := range []string{
+		"Path", "/code/webapp", "Mode", "generic", "Description", "the webapp work",
+		"Described", "described in wiki/entities/webapp.md at abc1234, 2 commits behind",
+		"Wiki", "4 pages", "Last operation", "2026-09-10", "Hot topics", "- thread",
+		"Threads", "3 open: 1 plan", "Phases", "Alarm quality → Launch",
+		"[plan] Filter vehicle false alarms", "Enter collapse",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q", want)
 		}
@@ -199,18 +161,10 @@ func TestEnterExpandsInPlace(t *testing.T) {
 	if out := v.View(); strings.Contains(out, "Described") || !strings.Contains(out, "Enter details") {
 		t.Fatalf("Enter again collapses:\n%s", out)
 	}
-	v = findEntry(t, v, "papers")
-	v = pressV(v, tea.KeyEnter)
-	out = v.View()
-	for _, want := range []string{"Mode", "generic", "Scope", "papers sources", "Last operation", "2026-09-10", "Hot topics", "- thread", "Unfinished"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("knowledge base details miss %q:\n%s", want, out)
-		}
-	}
 	v = findEntry(t, v, "thesis")
 	v = pressV(v, tea.KeyEnter)
-	if out := v.View(); !strings.Contains(out, "Knowledge      none") {
-		t.Fatalf("a project without a knowledge base says so:\n%s", out)
+	if out := v.View(); !strings.Contains(out, registry.NotDescribed) {
+		t.Fatalf("a project with no page says so:\n%s", out)
 	}
 	v = findEntry(t, v, "gateway")
 	v = pressV(v, tea.KeyEnter)
@@ -239,7 +193,6 @@ func TestEscCollapsesThenQuits(t *testing.T) {
 
 func TestCursorMovesAndStopsAtTheEndMarker(t *testing.T) {
 	v := newView(sample(), Opener{}, actions.Atlas{})
-	v.goTo(tabProjects)
 	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyDown, tea.KeyDown)
 	if !v.board().atEnd() || v.current() != nil {
 		t.Fatalf("four downs land on the end marker: cursor=%d", v.board().cursor)
@@ -248,39 +201,38 @@ func TestCursorMovesAndStopsAtTheEndMarker(t *testing.T) {
 		t.Fatal("the end marker shows")
 	}
 	v = pressV(v, tea.KeyUp)
-	if it := v.current(); it == nil || it.Entry.Name != "thesis" {
+	if it := v.current(); it == nil || it.Entry.Name != "webapp" {
 		t.Fatal("up from the end lands on the last project")
 	}
 }
 
-func TestOpensOnlyKnowledgeBasesInObsidian(t *testing.T) {
+func TestOpenPutsTheProjectsFolderInObsidian(t *testing.T) {
 	opened := ""
 	opener := Opener{Obsidian: func(path string) error { opened = path; return nil }}
-	v := findEntry(t, newView(sample(), opener, actions.Atlas{}), "papers")
+	v := findEntry(t, newView(sample(), opener, actions.Atlas{}), "webapp")
 	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
 	v = next.(view)
 	if v.busy == "" || cmd == nil {
 		t.Fatal("o opens in the background")
 	}
 	v = runCmd(v, cmd)
-	if opened != "/v/papers" || v.busy != "" || !strings.Contains(v.status, "opened papers in Obsidian") {
+	if opened != "/code/webapp" || v.busy != "" || !strings.Contains(v.status, "opened webapp in Obsidian") {
 		t.Fatalf("opened=%q busy=%q status=%q", opened, v.busy, v.status)
 	}
-	v = findEntry(t, v, "webapp")
-	v = keyV(v, "o")
-	if !strings.Contains(v.errMsg, "not an Obsidian vault") {
-		t.Fatalf("a project does not open in Obsidian: %q", v.errMsg)
-	}
 	failing := Opener{Obsidian: func(string) error { return errors.New("no Obsidian") }}
-	v = findEntry(t, newView(sample(), failing, actions.Atlas{}), "papers")
+	v = findEntry(t, newView(sample(), failing, actions.Atlas{}), "webapp")
 	next, cmd = v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
 	v = runCmd(next.(view), cmd)
 	if v.errMsg != "no Obsidian" {
 		t.Fatalf("the error reaches the footer: %q", v.errMsg)
 	}
+	none := findEntry(t, newView(sample(), Opener{}, actions.Atlas{}), "webapp")
+	if none = keyV(none, "o"); !strings.Contains(none.errMsg, "not available") {
+		t.Fatalf("no opener: %q", none.errMsg)
+	}
 }
 
-func TestClaudeStartsInEitherKind(t *testing.T) {
+func TestClaudeStartsInTheWork(t *testing.T) {
 	launched := ""
 	opener := Opener{Claude: func(path string) error { launched = path; return nil }}
 	v := findEntry(t, newView(sample(), opener, actions.Atlas{}), "webapp")
@@ -288,12 +240,9 @@ func TestClaudeStartsInEitherKind(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("c hands the terminal to Claude Code")
 	}
-	msg := cmd()
-	if _, ok := msg.(tea.QuitMsg); ok {
+	if _, ok := cmd().(tea.QuitMsg); ok {
 		t.Fatal("c does not quit")
 	}
-	// The command wraps an exec; running its callback path is Bubble Tea's. Drive the
-	// done message by hand.
 	next, refreshCmd := v.Update(claudeDoneMsg{name: "webapp"})
 	v = next.(view)
 	if !strings.Contains(v.errMsg+v.status, "back from Claude Code in webapp") && refreshCmd != nil {
@@ -305,9 +254,8 @@ func TestClaudeStartsInEitherKind(t *testing.T) {
 	if l := (launch{run: func() error { launched = "ran"; return nil }}); l.Run() != nil || launched != "ran" {
 		t.Fatal("the launch adapter runs the opener")
 	}
-	none := findEntry(t, newView(sample(), Opener{}, actions.Atlas{}), "papers")
-	none = keyV(none, "c")
-	if !strings.Contains(none.errMsg, "not available") {
+	none := findEntry(t, newView(sample(), Opener{}, actions.Atlas{}), "webapp")
+	if none = keyV(none, "c"); !strings.Contains(none.errMsg, "not available") {
 		t.Fatalf("no opener: %q", none.errMsg)
 	}
 }
@@ -382,11 +330,6 @@ func TestNewThreadPromptsForOneLine(t *testing.T) {
 	if v.stub != nil || into != "webapp" || v.errMsg != "" {
 		t.Fatal("an empty line opens nothing and says nothing")
 	}
-	v = findEntry(t, v, "papers")
-	v = keyV(v, "n")
-	if v.stub != nil || !strings.Contains(v.errMsg, "open one in a project") {
-		t.Fatalf("a knowledge base has no threads: %q", v.errMsg)
-	}
 	failing := actions.Atlas{StartThread: func(registry.Entry, threads.New) (*threads.Thread, error) {
 		return nil, errors.New("no phase named x")
 	}}
@@ -397,19 +340,24 @@ func TestNewThreadPromptsForOneLine(t *testing.T) {
 	if v.errMsg != "no phase named x" {
 		t.Fatalf("an error reaches the footer: %q", v.errMsg)
 	}
+	none := findEntry(t, newView(sample(), Opener{}, actions.Atlas{}), "webapp")
+	if none = keyV(none, "n"); none.stub != nil || !strings.Contains(none.errMsg, "not available") {
+		t.Fatalf("no action: %q", none.errMsg)
+	}
 }
 
 func TestNewThreadWritesARealStub(t *testing.T) {
 	work := t.TempDir()
 	at := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
-	p, _, err := project.Init(work, project.Options{Name: "webapp"}, at)
+	res, err := project.Init(work, project.Options{Name: "webapp"}, at)
 	if err != nil {
 		t.Fatal(err)
 	}
+	p := res.Project
 	acts := actions.Atlas{StartThread: func(e registry.Entry, n threads.New) (*threads.Thread, error) {
 		return threads.Start(p, n, at)
 	}}
-	items := []Item{{Entry: registry.Entry{ID: "id", Kind: registry.Project, Name: "webapp", Path: work}}}
+	items := []Item{{Entry: registry.Entry{ID: "id", Name: "webapp", Path: work}}}
 	v := findEntry(t, newView(items, Opener{}, acts), "webapp")
 	v = keyV(v, "n")
 	for _, r := range "Write the README" {
@@ -434,30 +382,26 @@ func TestNewThreadWritesARealStub(t *testing.T) {
 }
 
 func TestHelpTogglesTheFooter(t *testing.T) {
-	v := findEntry(t, newView(sample(), Opener{}, actions.Atlas{}), "papers")
+	v := findEntry(t, newView(sample(), Opener{}, actions.Atlas{}), "webapp")
 	out := v.View()
-	if !strings.Contains(out, "Enter details · o Obsidian · c Claude · h help · q quit") || strings.Contains(out, "←→ tabs") {
-		t.Fatalf("help off names the tab's keys:\n%s", out)
+	if !strings.Contains(out, "Enter details · o Obsidian · c Claude · n new thread · h help · q quit") || strings.Contains(out, "←→ tabs") {
+		t.Fatalf("help off names the row's keys:\n%s", out)
 	}
 	v = keyV(v, "h")
 	out = v.View()
 	if !strings.Contains(out, "↑↓ move") || !strings.Contains(out, "←→ tabs · R refresh · h hide help · q quit") {
 		t.Fatalf("help on names every key:\n%s", out)
 	}
-	v = findEntry(t, keyV(v, "h"), "webapp")
-	if out := v.View(); !strings.Contains(out, "c Claude · n new thread") || strings.Contains(out, "o Obsidian") {
-		t.Fatalf("a project offers Claude and a new thread, not Obsidian:\n%s", out)
-	}
 }
 
-// Every frame is exactly as tall as the screen and no wider, so the terminal never
-// scrolls the tab bar out of sight on one tab and leaves it in place on another.
+// Every frame is exactly as tall as the screen and no wider, so the terminal never scrolls
+// the tab bar out of sight on one tab and leaves it in place on another.
 func TestEveryTabFillsTheScreenExactly(t *testing.T) {
 	for _, size := range []tea.WindowSizeMsg{{Width: 120, Height: 40}, {Width: 80, Height: 24}, {Width: 60, Height: 12}} {
 		v := newView(sample(), Opener{}, actions.Atlas{})
 		next, _ := v.Update(size)
 		v = next.(view)
-		for _, name := range []string{"Knowledge", "Projects", "Problems"} {
+		for _, name := range []string{"Projects", "Problems"} {
 			v = pressV(v, tea.KeyEnter)
 			out := v.View()
 			if got := strings.Count(out, "\n") + 1; got != size.Height {
@@ -473,14 +417,10 @@ func TestEveryTabFillsTheScreenExactly(t *testing.T) {
 	}
 }
 
-func TestEmptyTabsSayWhatToRun(t *testing.T) {
+func TestAnEmptyScreenSaysWhatToRun(t *testing.T) {
 	v := newView(nil, Opener{}, actions.Atlas{})
-	if out := v.View(); !strings.Contains(out, "claude-atlas new-knowledge NAME") {
-		t.Fatalf("empty knowledge tab:\n%s", out)
-	}
-	v.goTo(tabProjects)
 	if out := v.View(); !strings.Contains(out, "claude-atlas init") {
-		t.Fatalf("empty projects tab:\n%s", out)
+		t.Fatalf("empty:\n%s", out)
 	}
 }
 
@@ -490,12 +430,12 @@ func TestNarrowBarDropsTheStampThenTheCounts(t *testing.T) {
 	if !strings.Contains(v.tabBar(), "refreshed 2026") {
 		t.Fatal("a wide screen shows the stamp")
 	}
-	v.width = 50
-	if bar := v.tabBar(); strings.Contains(bar, "refreshed") || !strings.Contains(bar, "(2)") {
+	v.width = 40
+	if bar := v.tabBar(); strings.Contains(bar, "refreshed") || !strings.Contains(bar, "(3)") {
 		t.Fatalf("a narrower screen keeps the counts: %q", bar)
 	}
-	v.width = 30
-	if bar := v.tabBar(); strings.Contains(bar, "(2)") {
+	v.width = 22
+	if bar := v.tabBar(); strings.Contains(bar, "(3)") {
 		t.Fatalf("a narrow screen drops the counts: %q", bar)
 	}
 }

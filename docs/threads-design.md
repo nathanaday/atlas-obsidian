@@ -1,13 +1,16 @@
 # Threads: how a project tracks its state
 
-Status: designed and built 2026-09-17. The plugin and the binary are 3.0.0.
+Status: designed and built 2026-09-17. The plugin and the binary were 3.0.0.
 
 This document replaces the task model of `v3-design.md` (its sections "Tasks
 and phases", and the task rows of its tool, CLI, view, and skill tables) and
-the page contract of `tasks-design.md`. Everything else in `v3-design.md`
-stands: a project is `atlas/<name>/` in the work, it has no git of its own
-and no engine, and it uses one knowledge base. Phases stay as they were, with
-threads in the place of tasks.
+the page contract of `tasks-design.md`.
+
+`v4-design.md` supersedes two things here. The stage folders moved under
+`threads/`, so the layout below reads `threads/stubs/`, `threads/specs/`,
+`threads/plans/`, `threads/receipts/`, and `threads/phases/`; and a project no
+longer uses a separate knowledge base, so what a receipt offers goes into the
+project's own wiki. The thread model itself stands as written.
 
 ## What changes and why
 

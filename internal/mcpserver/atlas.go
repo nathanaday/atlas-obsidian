@@ -12,8 +12,9 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/actions"
 	"github.com/nathanaday/claude-atlas/internal/capture"
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/manage"
+	"github.com/nathanaday/claude-atlas/internal/project"
 	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/vaults"
 )
 
 // The atlas tools: the whole atlas as one read, and the writes that configure it. They
@@ -32,10 +33,10 @@ func (s *Server) bind() (actions.Atlas, *home.Config, error) {
 	return actions.Bind(s.home(), cfg, nil), cfg, nil
 }
 
-// entryOf resolves an entry a tool names: by name, by id, or by path. One the atlas
+// entryOf resolves a project a tool names: by name, by id, or by path. One the atlas
 // cannot read is an error that says why.
-func entryOf(ix *registry.Index, arg string, kind registry.Kind) (registry.Entry, error) {
-	en, err := anyEntryOf(ix, arg, kind)
+func entryOf(ix *registry.Index, arg string) (registry.Entry, error) {
+	en, err := anyEntryOf(ix, arg)
 	if err != nil {
 		return registry.Entry{}, err
 	}
@@ -45,12 +46,12 @@ func entryOf(ix *registry.Index, arg string, kind registry.Kind) (registry.Entry
 	return en, nil
 }
 
-// anyEntryOf is entryOf for an entry the atlas cannot read too, so forget can drop it.
-func anyEntryOf(ix *registry.Index, arg string, kind registry.Kind) (registry.Entry, error) {
+// anyEntryOf is entryOf for a project the atlas cannot read too, so forget can drop it.
+func anyEntryOf(ix *registry.Index, arg string) (registry.Entry, error) {
 	if strings.TrimSpace(arg) == "" {
-		return registry.Entry{}, fmt.Errorf("name a %s: its name, id, or path", kind.Noun())
+		return registry.Entry{}, errors.New("name a project: its name, id, or path")
 	}
-	found, err := ix.Find(arg, kind)
+	found, err := ix.Find(arg)
 	if err == nil {
 		return *found, nil
 	}
@@ -67,7 +68,7 @@ func anyEntryOf(ix *registry.Index, arg string, kind registry.Kind) (registry.En
 			return *e, nil
 		}
 	}
-	return registry.Entry{}, fmt.Errorf("no %s named %q; the atlas tool lists them", kind.Noun(), arg)
+	return registry.Entry{}, fmt.Errorf("no project named %q; the atlas tool lists them", arg)
 }
 
 // Settings are the atlas settings a session may read and set.
@@ -83,13 +84,12 @@ type AtlasArgs struct {
 	Refresh bool `json:"refresh,omitempty" jsonschema:"also rewrite the registry: what claude-atlas refresh does"`
 }
 
-// AtlasOut is the whole atlas: every knowledge base and project with its state, the
-// folders the atlas cannot read, and the settings.
+// AtlasOut is the whole atlas: every project with its state, the folders the atlas cannot
+// read, and the settings.
 type AtlasOut struct {
-	Knowledge []registry.Entry   `json:"knowledge"`
-	Projects  []registry.Entry   `json:"projects"`
-	Problems  []registry.Problem `json:"problems"`
-	Settings  Settings           `json:"settings"`
+	Projects []registry.Entry   `json:"projects"`
+	Problems []registry.Problem `json:"problems"`
+	Settings Settings           `json:"settings"`
 }
 
 func (s *Server) atlasTool(ctx context.Context, req *mcp.CallToolRequest, a AtlasArgs) (*mcp.CallToolResult, AtlasOut, error) {
@@ -106,10 +106,7 @@ func (s *Server) atlasTool(ctx context.Context, req *mcp.CallToolRequest, a Atla
 	if err != nil {
 		return nil, AtlasOut{}, err
 	}
-	out := AtlasOut{Knowledge: ix.Knowledge(), Projects: ix.Projects(), Problems: ix.Problems, Settings: settingsOf(cfg)}
-	if out.Knowledge == nil {
-		out.Knowledge = []registry.Entry{}
-	}
+	out := AtlasOut{Projects: ix.Projects(), Problems: ix.Problems, Settings: settingsOf(cfg)}
 	if out.Projects == nil {
 		out.Projects = []registry.Entry{}
 	}
@@ -119,126 +116,13 @@ func (s *Server) atlasTool(ctx context.Context, req *mcp.CallToolRequest, a Atla
 	return nil, out, nil
 }
 
-type VaultToolArgs struct {
-	Action string  `json:"action" jsonschema:"create, adopt, edit, or forget"`
-	Target string  `json:"target,omitempty" jsonschema:"edit, forget: the knowledge base, by name, id, or path"`
-	Name   string  `json:"name,omitempty" jsonschema:"create: the knowledge base's name; adopt: its display name, default the folder's; edit: the new name, which renames the folder too"`
-	Path   string  `json:"path,omitempty" jsonschema:"create: the new folder, an absolute or ~ path; adopt: the folder to adopt"`
-	Mode   string  `json:"mode,omitempty" jsonschema:"create, adopt: the filing mode, generic (default) or lyt"`
-	Scope  *string `json:"scope,omitempty" jsonschema:"create, adopt, edit: what the knowledge base covers, one or two sentences; on edit an empty string clears it"`
-}
-
-// VaultToolOut is the knowledge base as the atlas sees it after the change, or the path
-// forget dropped.
-type VaultToolOut struct {
-	Vault     *registry.Entry `json:"vault,omitempty"`
-	Forgotten string          `json:"forgotten,omitempty" jsonschema:"the path the atlas no longer lists; the folder stays"`
-}
-
-func (s *Server) vaultTool(ctx context.Context, req *mcp.CallToolRequest, a VaultToolArgs) (*mcp.CallToolResult, VaultToolOut, error) {
-	acts, _, err := s.bind()
-	if err != nil {
-		return nil, VaultToolOut{}, err
-	}
-	ix, err := acts.Scan()
-	if err != nil {
-		return nil, VaultToolOut{}, err
-	}
-	switch a.Action {
-	case "create", "adopt":
-		choice, err := knowledgeChoice(a)
-		if err != nil {
-			return nil, VaultToolOut{}, err
-		}
-		path, err := acts.CreateKnowledge(choice)
-		if err != nil {
-			return nil, VaultToolOut{}, err
-		}
-		return s.entryOut(acts, path)
-	case "edit":
-		en, err := entryOf(ix, a.Target, registry.Knowledge)
-		if err != nil {
-			return nil, VaultToolOut{}, err
-		}
-		if a.Name == "" && a.Scope == nil {
-			return nil, VaultToolOut{}, errors.New("edit needs name or scope")
-		}
-		path, err := acts.EditKnowledge(en, vaults.Edit{Name: a.Name, Scope: a.Scope})
-		if err != nil {
-			return nil, VaultToolOut{}, err
-		}
-		return s.entryOut(acts, path)
-	case "forget":
-		en, err := anyEntryOf(ix, a.Target, registry.Knowledge)
-		if err != nil {
-			return nil, VaultToolOut{}, err
-		}
-		if err := acts.ForgetKnowledge(en); err != nil {
-			return nil, VaultToolOut{}, err
-		}
-		if _, err := acts.Refresh(); err != nil {
-			return nil, VaultToolOut{}, err
-		}
-		return nil, VaultToolOut{Forgotten: en.Path}, nil
-	}
-	return nil, VaultToolOut{}, fmt.Errorf("action must be create, adopt, edit, or forget, not %q", a.Action)
-}
-
-// knowledgeChoice turns the create and adopt arguments into what CreateKnowledge takes.
-func knowledgeChoice(a VaultToolArgs) (actions.AddKnowledge, error) {
-	choice := actions.AddKnowledge{Name: a.Name, Mode: a.Mode, Adopt: a.Action == "adopt"}
-	if a.Scope != nil {
-		choice.Scope = *a.Scope
-	}
-	if choice.Adopt {
-		if a.Path == "" {
-			return actions.AddKnowledge{}, errors.New("adopt needs path: the folder to adopt")
-		}
-		abs, err := filepath.Abs(home.Expand(a.Path))
-		if err != nil {
-			return actions.AddKnowledge{}, err
-		}
-		choice.Path = abs
-		if choice.Name == "" {
-			choice.Name = filepath.Base(abs)
-		}
-		return choice, nil
-	}
-	if a.Name == "" {
-		return actions.AddKnowledge{}, errors.New("create needs name")
-	}
-	if !filepath.IsAbs(a.Path) && a.Path != "~" && !strings.HasPrefix(a.Path, "~/") {
-		return actions.AddKnowledge{}, errors.New("create needs path: the new folder, as an absolute or ~ path; ask the user where the knowledge base goes")
-	}
-	path, err := vaults.ResolvePath(a.Path)
-	if err != nil {
-		return actions.AddKnowledge{}, err
-	}
-	choice.Path = path
-	return choice, nil
-}
-
-// entryOut rewrites the registry after a write, so `claude-atlas list` and the view show
-// the change, and returns the entry at path as the atlas now sees it.
-func (s *Server) entryOut(acts actions.Atlas, path string) (*mcp.CallToolResult, VaultToolOut, error) {
-	ix, err := acts.Refresh()
-	if err != nil {
-		return nil, VaultToolOut{}, err
-	}
-	en := ix.ByPath(path)
-	if en == nil {
-		return nil, VaultToolOut{}, fmt.Errorf("%s was written but the scan does not list it; call atlas with refresh", home.Display(path))
-	}
-	return nil, VaultToolOut{Vault: en}, nil
-}
-
 type ProjectToolArgs struct {
-	Action      string  `json:"action" jsonschema:"init, link, unlink, edit, or forget"`
+	Action      string  `json:"action" jsonschema:"init, edit, or forget"`
 	Work        string  `json:"work,omitempty" jsonschema:"the project's folder: on init the folder that becomes one, default the session's folder; otherwise the project by name, id, or path, default the session's project"`
-	Name        string  `json:"name,omitempty" jsonschema:"init: the project's name, default the folder's; edit: the new name"`
-	Description *string `json:"description,omitempty" jsonschema:"init, edit: one sentence saying what the project is; on edit an empty string clears it"`
-	Knowledge   string  `json:"knowledge,omitempty" jsonschema:"init, link: the knowledge base the project uses, by name, id, or path"`
-	NoGit       bool    `json:"no_git,omitempty" jsonschema:"init: leave a folder that is in no git repository without one"`
+	Name        string  `json:"name,omitempty" jsonschema:"init: the project's name, default the folder's; edit: the new name, which renames atlas/<name>/ too"`
+	Description *string `json:"description,omitempty" jsonschema:"init, edit: one to three sentences saying what the work is and what its wiki should remember; the ingest and query skills read it. On edit an empty string clears it"`
+	Mode        string  `json:"mode,omitempty" jsonschema:"init, edit: the filing mode for new wiki pages, generic (default, a folder per type) or lyt (atomic notes and Maps of Content)"`
+	NoGit       bool    `json:"no_git,omitempty" jsonschema:"init: leave a folder that is in no git repository without one. The wiki then has no history and no operation can run"`
 }
 
 // ProjectToolOut is the project as the atlas sees it after the change, the files init
@@ -246,7 +130,8 @@ type ProjectToolArgs struct {
 type ProjectToolOut struct {
 	Project   *registry.Entry `json:"project,omitempty"`
 	Written   []string        `json:"written,omitempty" jsonschema:"init: what was written under atlas/<name>/"`
-	Git       string          `json:"git,omitempty" jsonschema:"init: created (the work is now a repository with no commit), existing, or enclosed (the work sits inside another repository)"`
+	Git       string          `json:"git,omitempty" jsonschema:"init: created (the work is now a repository), existing, enclosed (the work sits inside another repository), or skipped"`
+	Commit    string          `json:"commit,omitempty" jsonschema:"init: the setup commit"`
 	Forgotten string          `json:"forgotten,omitempty" jsonschema:"the path the atlas no longer lists; the folder and its atlas/<name>/ stay"`
 }
 
@@ -263,7 +148,7 @@ func (s *Server) projectTool(ctx context.Context, req *mcp.CallToolRequest, a Pr
 		if work == "" {
 			return nil, ProjectToolOut{}, errors.New("init needs work: the folder that becomes a project")
 		}
-		choice := actions.InitProject{Work: home.Expand(work), Name: a.Name, Knowledge: a.Knowledge, NoGit: a.NoGit}
+		choice := actions.InitProject{Work: home.Expand(work), Name: a.Name, Mode: a.Mode, NoGit: a.NoGit}
 		if a.Description != nil {
 			choice.Description = *a.Description
 		}
@@ -272,7 +157,7 @@ func (s *Server) projectTool(ctx context.Context, req *mcp.CallToolRequest, a Pr
 			return nil, ProjectToolOut{}, err
 		}
 		res, out, err := s.projectOut(acts, made.Project.Root)
-		out.Written, out.Git = made.Written, string(made.Git)
+		out.Written, out.Git, out.Commit = made.Written, string(made.Git), made.Commit
 		return res, out, err
 	}
 	ix, err := acts.Scan()
@@ -282,16 +167,16 @@ func (s *Server) projectTool(ctx context.Context, req *mcp.CallToolRequest, a Pr
 	var en registry.Entry
 	if a.Work != "" {
 		if a.Action == "forget" {
-			en, err = anyEntryOf(ix, a.Work, registry.Project)
+			en, err = anyEntryOf(ix, a.Work)
 		} else {
-			en, err = entryOf(ix, a.Work, registry.Project)
+			en, err = entryOf(ix, a.Work)
 		}
 		if err != nil {
 			return nil, ProjectToolOut{}, err
 		}
 	} else {
 		pl, err := s.where()
-		if err != nil || !pl.InProject() {
+		if err != nil || pl.Project == nil {
 			return nil, ProjectToolOut{}, errors.New("name the project with work; this session is not in one")
 		}
 		found := ix.ByPath(pl.Project.Root)
@@ -301,22 +186,19 @@ func (s *Server) projectTool(ctx context.Context, req *mcp.CallToolRequest, a Pr
 		en = *found
 	}
 	switch a.Action {
-	case "link":
-		if a.Knowledge == "" {
-			return nil, ProjectToolOut{}, errors.New("link needs knowledge: the knowledge base, by name, id, or path")
-		}
-		if _, err := acts.LinkProject(en, a.Knowledge); err != nil {
-			return nil, ProjectToolOut{}, err
-		}
-	case "unlink":
-		if err := acts.UnlinkProject(en); err != nil {
-			return nil, ProjectToolOut{}, err
-		}
 	case "edit":
-		if a.Name == "" && a.Description == nil {
-			return nil, ProjectToolOut{}, errors.New("edit needs name or description")
+		edit := manage.Edit{Name: a.Name, Description: a.Description}
+		if a.Mode != "" {
+			mode, err := project.ParseMode(a.Mode)
+			if err != nil {
+				return nil, ProjectToolOut{}, err
+			}
+			edit.Mode = mode
 		}
-		if err := acts.EditProject(en, vaults.ProjectEdit{Name: a.Name, Description: a.Description}); err != nil {
+		if len(edit.Fields()) == 0 {
+			return nil, ProjectToolOut{}, errors.New("edit needs name, description, or mode")
+		}
+		if err := acts.EditProject(en, edit); err != nil {
 			return nil, ProjectToolOut{}, err
 		}
 	case "forget":
@@ -328,7 +210,7 @@ func (s *Server) projectTool(ctx context.Context, req *mcp.CallToolRequest, a Pr
 		}
 		return nil, ProjectToolOut{Forgotten: en.Path}, nil
 	default:
-		return nil, ProjectToolOut{}, fmt.Errorf("action must be init, link, unlink, edit, or forget, not %q", a.Action)
+		return nil, ProjectToolOut{}, fmt.Errorf("action must be init, edit, or forget, not %q", a.Action)
 	}
 	return s.projectOut(acts, en.Path)
 }
@@ -371,15 +253,15 @@ func (s *Server) settingsTool(ctx context.Context, req *mcp.CallToolRequest, a S
 }
 
 type StageArgs struct {
-	Paths   []string `json:"paths,omitempty" jsonschema:"files or folders outside the knowledge base; omit to stage what is new in the folders it staged from before"`
-	Project string   `json:"project,omitempty" jsonschema:"a project that uses the knowledge base, by name, id, or path: write a snapshot of it into the inbox (its CLAUDE.md, README, file list, docs headings, and the log since the page describing it was written) for the describe skill; not with paths"`
-	DryRun  bool     `json:"dry_run,omitempty" jsonschema:"plan only: say what would be copied and copy nothing"`
+	Paths    []string `json:"paths,omitempty" jsonschema:"files or folders outside the project; omit to stage what is new in the folders it staged from before"`
+	Snapshot bool     `json:"snapshot,omitempty" jsonschema:"write a snapshot of the work into the inbox (its CLAUDE.md, README, file list, docs headings, and the log since the page describing it was written) for the describe skill; not with paths"`
+	DryRun   bool     `json:"dry_run,omitempty" jsonschema:"plan only: say what would be copied and copy nothing"`
 }
 
-// StageOut is the plan, and after a copy, what was copied and the folders the knowledge
-// base now stages from when paths is omitted; or the snapshot a stage of a project wrote.
+// StageOut is the plan, and after a copy, what was copied and the folders the project now
+// stages from when paths is omitted; or the snapshot a stage of the work wrote.
 type StageOut struct {
-	Vault      string                `json:"vault"`
+	Project    string                `json:"project"`
 	Plan       *capture.StagePlan    `json:"plan,omitempty"`
 	Result     *capture.StageResult  `json:"result,omitempty"`
 	Remembered []string              `json:"remembered,omitempty"`
@@ -387,7 +269,7 @@ type StageOut struct {
 }
 
 func (s *Server) stageTool(ctx context.Context, req *mcp.CallToolRequest, a StageArgs) (*mcp.CallToolResult, StageOut, error) {
-	pl, v, err := s.knowledge()
+	pl, p, err := s.place()
 	if err != nil {
 		return nil, StageOut{}, err
 	}
@@ -398,24 +280,17 @@ func (s *Server) stageTool(ctx context.Context, req *mcp.CallToolRequest, a Stag
 	if pl.Index == nil {
 		return nil, StageOut{}, errors.New("no atlas config on this machine; run claude-atlas setup")
 	}
-	kb := pl.Index.ByPath(v.Root)
-	if kb == nil || kb.Error != "" {
-		return nil, StageOut{}, fmt.Errorf("the atlas does not list %s; run `claude-atlas adopt %s`", v.Name(), v.Root)
+	en := pl.Index.ByPath(p.Root)
+	if en == nil || en.Error != "" {
+		return nil, StageOut{}, fmt.Errorf("the atlas does not list %s; start a session in it, or run `claude-atlas init`", p.Name())
 	}
-	out := StageOut{Vault: v.Root}
-	if a.Project != "" || (pl.InProject() && len(a.Paths) == 0) {
+	out := StageOut{Project: p.Root}
+	if a.Snapshot {
 		if len(a.Paths) > 0 {
-			return nil, StageOut{}, errors.New("stage takes project or paths, not both")
+			return nil, StageOut{}, errors.New("stage takes snapshot or paths, not both")
 		}
 		if a.DryRun {
-			return nil, StageOut{}, errors.New("a project snapshot has no dry run; it writes one file into the inbox or finds it already there")
-		}
-		_, en, err := s.projectOf(pl, a.Project)
-		if err != nil {
-			return nil, StageOut{}, err
-		}
-		if en == nil {
-			return nil, StageOut{}, errors.New("the atlas does not list this project; start a session in it first")
+			return nil, StageOut{}, errors.New("a snapshot has no dry run; it writes one file into the inbox or finds it already there")
 		}
 		snap, err := acts.StageProject(*en)
 		if err != nil {
@@ -429,7 +304,7 @@ func (s *Server) stageTool(ctx context.Context, req *mcp.CallToolRequest, a Stag
 		out.Snapshot = snap
 		return nil, out, nil
 	}
-	plan, err := acts.StagePlan(*kb, a.Paths)
+	plan, err := acts.StagePlan(*en, a.Paths)
 	if err != nil {
 		return nil, StageOut{}, err
 	}
@@ -437,7 +312,7 @@ func (s *Server) stageTool(ctx context.Context, req *mcp.CallToolRequest, a Stag
 	if a.DryRun {
 		return nil, out, nil
 	}
-	res, remembered, err := acts.Stage(*kb, plan)
+	res, remembered, err := acts.Stage(*en, plan)
 	if err != nil {
 		return nil, StageOut{}, err
 	}

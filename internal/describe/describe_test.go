@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/gitx"
+	"github.com/nathanaday/claude-atlas/internal/project"
 	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
 var now = time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
@@ -48,14 +48,14 @@ func page(id, commit string) string {
 
 func TestPageFindsTheProjectsPage(t *testing.T) {
 	code, first := repoWork(t)
-	kb := filepath.Join(t.TempDir(), "kb")
+	kb := filepath.Join(code, project.Dir, "code")
 	os.MkdirAll(filepath.Join(kb, "wiki", "entities"), 0o755)
-	e := registry.Entry{ID: "p-1", Kind: registry.Project, Name: "code", Path: code, Knowledge: &registry.Ref{ID: "k", Name: "kb", Path: kb}}
+	e := registry.Entry{ID: "p-1", Name: "code", Path: code}
 	if Page(e) != nil {
 		t.Fatal("no page yet")
 	}
-	if Page(registry.Entry{ID: "p-1", Path: code}) != nil {
-		t.Fatal("no knowledge base, no page")
+	if Page(registry.Entry{ID: "p-1", Path: filepath.Join(t.TempDir(), "nowhere")}) != nil {
+		t.Fatal("no project, no page")
 	}
 	os.WriteFile(filepath.Join(kb, "wiki", "entities", "other.md"), []byte(page("p-2", first)), 0o644)
 	os.WriteFile(filepath.Join(kb, "wiki", "entities", "repo.md"), []byte(strings.Replace(page("p-1", first), "entity_type: project", "entity_type: repository", 1)), 0o644)
@@ -90,8 +90,10 @@ func TestPageFindsTheProjectsPage(t *testing.T) {
 	}
 	// A work folder that is not a repository: pages match, commits never count.
 	plain := filepath.Join(t.TempDir(), "docs")
-	os.MkdirAll(plain, 0o755)
-	pe := registry.Entry{ID: "p-1", Kind: registry.Project, Name: "code", Path: plain, Knowledge: e.Knowledge}
+	os.MkdirAll(filepath.Join(plain, project.Dir, "code", "wiki", "entities"), 0o755)
+	os.WriteFile(filepath.Join(plain, project.Dir, "code", project.Marker), []byte("{}"), 0o644)
+	os.WriteFile(filepath.Join(plain, project.Dir, "code", "wiki", "entities", "code.md"), []byte(page("p-1", first)), 0o644)
+	pe := registry.Entry{ID: "p-1", Name: "code", Path: plain}
 	if d = Page(pe); d == nil || d.Behind != -1 {
 		t.Fatalf("plain folder: %+v", d)
 	}
@@ -99,7 +101,7 @@ func TestPageFindsTheProjectsPage(t *testing.T) {
 
 func TestTakeSnapshotOverARepository(t *testing.T) {
 	code, first := repoWork(t)
-	e := registry.Entry{ID: "p-1", Kind: registry.Project, Name: "code", Path: code, Description: "A thing."}
+	e := registry.Entry{ID: "p-1", Name: "code", Path: code, Description: "A thing."}
 	s, err := TakeSnapshot(e, "", now)
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +150,7 @@ func TestTakeSnapshotOverAPlainFolder(t *testing.T) {
 	os.WriteFile(filepath.Join(docs, "node_modules", "x", "i.js"), []byte("x"), 0o644)
 	os.WriteFile(filepath.Join(docs, "chapter1.md"), []byte("# One\n"), 0o644)
 	os.WriteFile(filepath.Join(docs, "readme"), []byte("plain readme\n"), 0o644)
-	e := registry.Entry{ID: "p-3", Kind: registry.Project, Name: "thesis", Path: docs}
+	e := registry.Entry{ID: "p-3", Name: "thesis", Path: docs}
 	s, err := TakeSnapshot(e, "abc", now)
 	if err != nil {
 		t.Fatal(err)
@@ -169,30 +171,26 @@ func TestTakeSnapshotOverAPlainFolder(t *testing.T) {
 	}
 }
 
-// TestAKnowledgeBaseInsideTheWorkIsNotTheWork covers a knowledge base that commits into the
-// project's repository: its commits do not put the page behind, and the snapshot leaves
-// its files out.
-func TestAKnowledgeBaseInsideTheWorkIsNotTheWork(t *testing.T) {
+// TestTheProjectsOwnFolderIsNotTheWork covers the wiki that commits into the work's
+// repository: its commits do not put the page behind, and the snapshot leaves its files
+// out.
+func TestTheProjectsOwnFolderIsNotTheWork(t *testing.T) {
 	code, first := repoWork(t)
-	kb := filepath.Join(code, "notes")
-	if _, err := vault.Init(kb, vault.Options{}, now); err != nil {
-		t.Fatal(err)
-	}
-	os.MkdirAll(filepath.Join(kb, "wiki", "entities"), 0o755)
-	os.WriteFile(filepath.Join(kb, "wiki", "entities", "code.md"), []byte(page("p-1", first)), 0o644)
-	r := vault.RepoAt(kb)
+	atlas := filepath.Join(code, "atlas", "code")
+	os.MkdirAll(filepath.Join(atlas, "wiki", "entities"), 0o755)
+	os.WriteFile(filepath.Join(atlas, "wiki", "entities", "code.md"), []byte(page("p-1", first)), 0o644)
+	r := gitx.Repo{Dir: code}
 	r.AddAll()
-	if _, err := r.Commit("page"); err != nil {
+	if _, err := r.Commit("save: the page"); err != nil {
 		t.Fatal(err)
 	}
-	e := registry.Entry{ID: "p-1", Kind: registry.Project, Name: "code", Path: code, Knowledge: &registry.Ref{ID: "k", Name: "notes", Path: kb}}
+	e := registry.Entry{ID: "p-1", Name: "code", Path: code}
 	if d := Page(e); d == nil || d.Behind != 0 {
-		t.Fatalf("the knowledge base's commits are not the work's: %+v", d)
+		t.Fatalf("the wiki's commits are not the work's: %+v", d)
 	}
 	os.WriteFile(filepath.Join(code, "main.go"), []byte("package main // two\n"), 0o644)
-	work := gitx.Repo{Dir: code}
-	work.Add("main.go")
-	if _, err := work.Commit("two"); err != nil {
+	r.Add("main.go")
+	if _, err := r.Commit("feat: two"); err != nil {
 		t.Fatal(err)
 	}
 	if d := Page(e); d == nil || d.Behind != 1 {
@@ -203,7 +201,7 @@ func TestAKnowledgeBaseInsideTheWorkIsNotTheWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(s.Content)
-	if strings.Contains(text, "notes/") || strings.Contains(text, "setup:") || !strings.Contains(text, "- main.go") || !strings.Contains(text, "two") {
-		t.Fatalf("the snapshot leaves the knowledge base out:\n%s", text)
+	if strings.Contains(text, "atlas/") || strings.Contains(text, "save:") || !strings.Contains(text, "- main.go") || !strings.Contains(text, "feat: two") {
+		t.Fatalf("the snapshot leaves the project's folder out:\n%s", text)
 	}
 }

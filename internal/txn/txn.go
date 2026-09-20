@@ -24,7 +24,7 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/gitx"
 	"github.com/nathanaday/claude-atlas/internal/ledger"
 	"github.com/nathanaday/claude-atlas/internal/lint"
-	"github.com/nathanaday/claude-atlas/internal/vault"
+	"github.com/nathanaday/claude-atlas/internal/project"
 )
 
 // Kind names the workflow that produced a plan. It bounds what the plan may write.
@@ -38,18 +38,18 @@ const (
 	Fold     Kind = "fold"
 	Canvas   Kind = "canvas"
 	Base     Kind = "base"
-	Config   Kind = "config"
 	Capture  Kind = "capture"
 	Undo     Kind = "undo"
 	Stub     Kind = "stub"
 )
 
-// ModelKinds are the kinds a plan from the model may use. Capture, undo, and stub are the core's own.
-var ModelKinds = []Kind{Ingest, Save, Markdown, Repair, Fold, Canvas, Base, Config}
+// ModelKinds are the kinds a plan from the model may use. Capture, undo, and stub are the
+// core's own, and the identity file changes only through project.UpdateConfig.
+var ModelKinds = []Kind{Ingest, Save, Markdown, Repair, Fold, Canvas, Base}
 
 func validKind(k Kind) bool {
 	switch k {
-	case Ingest, Save, Markdown, Repair, Fold, Canvas, Base, Config, Capture, Stub:
+	case Ingest, Save, Markdown, Repair, Fold, Canvas, Base, Capture, Stub:
 		return true
 	}
 	return false
@@ -117,7 +117,7 @@ type prepared struct {
 type Plan struct {
 	ID          string    `json:"id"`
 	OperationID string    `json:"operation_id"`
-	Vault       string    `json:"vault"`
+	Folder      string    `json:"folder"` // the project's folder, atlas/<name>/
 	Kind        Kind      `json:"kind"`
 	Summary     string    `json:"summary"`
 	Preview     Preview   `json:"preview"`
@@ -174,51 +174,50 @@ func normalizePath(p string) (string, error) {
 // allowed enforces each kind's write scope.
 func allowed(kind Kind, p string, mode WriteMode) error {
 	under := func(dir string) bool { return strings.HasPrefix(p, dir+"/") }
-	if under(vault.IdeasDir) {
-		return fmt.Errorf("%s/ is the user's scratch space; nothing writes it: %s", vault.IdeasDir, p)
+	if under(project.IdeasDir) {
+		return fmt.Errorf("%s/ is the user's scratch space; nothing writes it: %s", project.IdeasDir, p)
 	}
 	switch {
 	case p == ".git" || strings.HasPrefix(p, ".git/"),
-		p == vault.MetaDir || strings.HasPrefix(p, vault.MetaDir+"/"):
+		p == project.MetaDir || strings.HasPrefix(p, project.MetaDir+"/"):
 		return fmt.Errorf("%s is internal and cannot be written", p)
-	case p == vault.LogPage:
+	case p == project.LogPage:
 		return fmt.Errorf("%s is written by the core from the plan's summary; do not write it", p)
-	case p == vault.LedgerPath:
+	case p == project.LedgerPath:
 		return fmt.Errorf("%s is updated through the plan's sources field; do not write it", p)
 	}
+	if p == project.Marker {
+		return fmt.Errorf("%s changes only through the project tool and `claude-atlas edit`; do not write it", p)
+	}
 	switch kind {
-	case Config:
-		if p != vault.Marker || mode != Replace {
-			return fmt.Errorf("a config operation replaces only %s", vault.Marker)
-		}
 	case Capture:
-		if !under(vault.CapturedDir) || mode != Create || strings.Count(p, "/") != 2 {
-			return fmt.Errorf("a capture operation creates only files under %s/", vault.CapturedDir)
+		if !under(project.CapturedDir) || mode != Create || strings.Count(p, "/") != 2 {
+			return fmt.Errorf("a capture operation creates only files under %s/", project.CapturedDir)
 		}
 	case Ingest:
-		if under(vault.InboxDir) {
+		if under(project.InboxDir) {
 			if mode != Delete {
-				return fmt.Errorf("an ingest may only remove files from %s/, not write them", vault.InboxDir)
+				return fmt.Errorf("an ingest may only remove files from %s/, not write them", project.InboxDir)
 			}
 			return nil
 		}
-		if !under(vault.WikiDir) {
+		if !under(project.WikiDir) {
 			return fmt.Errorf("an ingest writes only under wiki/ (and removes from inbox/): %s", p)
 		}
 	case Canvas:
-		if !(under("wiki/canvases") && strings.HasSuffix(p, ".canvas")) && p != vault.CanvasIndex {
-			return fmt.Errorf("a canvas operation writes only wiki/canvases/*.canvas and %s: %s", vault.CanvasIndex, p)
+		if !(under("wiki/canvases") && strings.HasSuffix(p, ".canvas")) && p != project.CanvasIndex {
+			return fmt.Errorf("a canvas operation writes only wiki/canvases/*.canvas and %s: %s", project.CanvasIndex, p)
 		}
 	case Base:
-		if !under(vault.WikiDir) || !strings.HasSuffix(p, ".base") {
+		if !under(project.WikiDir) || !strings.HasSuffix(p, ".base") {
 			return fmt.Errorf("a base operation writes only .base files under wiki/: %s", p)
 		}
 	case Save, Markdown, Repair, Fold:
-		if !under(vault.WikiDir) {
+		if !under(project.WikiDir) {
 			return fmt.Errorf("a %s operation writes only under wiki/: %s", kind, p)
 		}
 	case Stub:
-		if !under(vault.WikiDir) || !strings.EqualFold(path.Ext(p), ".md") {
+		if !under(project.WikiDir) || !strings.EqualFold(path.Ext(p), ".md") {
 			return fmt.Errorf("a stub operation writes only pages under wiki/: %s", p)
 		}
 	default:
@@ -234,14 +233,14 @@ func validateContent(p string, content []byte) error {
 		if !utf8Valid(content) {
 			return fmt.Errorf("%s is not UTF-8", p)
 		}
-		fields, _, err := vault.Frontmatter(string(content))
+		fields, _, err := project.Frontmatter(string(content))
 		if err != nil {
 			return fmt.Errorf("%s: %w", p, err)
 		}
 		if fields == nil {
 			return fmt.Errorf("%s has no frontmatter; wiki pages start with a YAML block", p)
 		}
-		if missing := vault.MissingFrontmatter(fields); len(missing) > 0 {
+		if missing := project.MissingFrontmatter(fields); len(missing) > 0 {
 			return fmt.Errorf("%s frontmatter lacks %s", p, strings.Join(missing, ", "))
 		}
 	case ext == ".json" || ext == ".canvas":
@@ -260,7 +259,7 @@ func validateContent(p string, content []byte) error {
 func utf8Valid(b []byte) bool { return strings.ToValidUTF8(string(b), "�") == string(b) }
 
 // fileState returns the hash of a vault file, or "" and false when it is absent.
-func fileState(v *vault.Vault, rel string) (string, int, bool, error) {
+func fileState(v *project.Project, rel string) (string, int, bool, error) {
 	info, err := os.Lstat(v.Path(rel))
 	if errors.Is(err, os.ErrNotExist) {
 		return "", 0, false, nil
@@ -279,8 +278,8 @@ func fileState(v *vault.Vault, rel string) (string, int, bool, error) {
 }
 
 // Prepare validates a request against the vault's current state and returns a plan.
-func Prepare(v *vault.Vault, req Request, now time.Time) (*Plan, error) {
-	if err := v.Repo().CheckIdle(); err != nil {
+func Prepare(v *project.Project, req Request, now time.Time) (*Plan, error) {
+	if err := v.Engine().CheckIdle(); err != nil {
 		return nil, err
 	}
 	if !validKind(req.Kind) {
@@ -296,10 +295,10 @@ func Prepare(v *vault.Vault, req Request, now time.Time) (*Plan, error) {
 	if len(req.Writes) > MaxWrites {
 		return nil, fmt.Errorf("a plan may hold at most %d writes", MaxWrites)
 	}
-	plan := &Plan{ID: newPlanID(), OperationID: vault.NewOperationID(string(req.Kind), now), Vault: v.Root, Kind: req.Kind, Summary: summary, CreatedAt: now, Warnings: []string{}}
+	plan := &Plan{ID: newPlanID(), OperationID: project.NewOperationID(string(req.Kind), now), Folder: v.Atlas(), Kind: req.Kind, Summary: summary, CreatedAt: now, Warnings: []string{}}
 	seen := map[string]string{}
 	overlay := map[string][]byte{}
-	led, err := ledger.Load(v.Path(vault.LedgerPath), now)
+	led, err := ledger.Load(v.Path(project.LedgerPath), now)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +343,7 @@ func Prepare(v *vault.Vault, req Request, now time.Time) (*Plan, error) {
 			}
 		}
 		// An ingest removes an inbox file only once the vault captured it.
-		if req.Kind == Ingest && strings.HasPrefix(p, vault.InboxDir+"/") {
+		if req.Kind == Ingest && strings.HasPrefix(p, project.InboxDir+"/") {
 			if id, _ := led.FindBySHA(current); id == "" {
 				return nil, fmt.Errorf("%s has not been captured; capture it before removing it from the inbox", p)
 			}
@@ -388,7 +387,7 @@ func Prepare(v *vault.Vault, req Request, now time.Time) (*Plan, error) {
 		}
 	}
 	if len(written) > 0 {
-		report, err := lint.Run(v.Root, lint.Options{Overlay: overlay, AsOf: now})
+		report, err := lint.Run(v.Atlas(), lint.Options{Overlay: overlay, AsOf: now})
 		if err == nil {
 			plan.Warnings = append(plan.Warnings, report.Problems(written)...)
 		}
@@ -398,7 +397,7 @@ func Prepare(v *vault.Vault, req Request, now time.Time) (*Plan, error) {
 }
 
 // pageExists reports whether a path exists once the writes are applied.
-func pageExists(v *vault.Vault, writes []prepared) func(string) bool {
+func pageExists(v *project.Project, writes []prepared) func(string) bool {
 	planned := map[string]bool{}
 	for _, w := range writes {
 		planned[w.Path] = w.Mode != Delete
@@ -410,13 +409,6 @@ func pageExists(v *vault.Vault, writes []prepared) func(string) bool {
 		_, _, exists, _ := fileState(v, p)
 		return exists
 	}
-}
-
-// ConfigRequest builds the request that changes the vault's mode.
-func ConfigRequest(v *vault.Vault, mode vault.Mode) Request {
-	cfg := v.Config
-	cfg.Mode = mode
-	return Request{Kind: Config, Summary: fmt.Sprintf("set mode to %s", mode), Writes: []Write{{Path: vault.Marker, Mode: Replace, Content: cfg.Encode()}}}
 }
 
 // Inflight marks an apply that has started writing. It exists only until the commit.
@@ -432,10 +424,10 @@ type InflightPath struct {
 	Existed bool   `json:"existed"`
 }
 
-func inflightPath(v *vault.Vault) string { return v.Path(vault.MetaDir + "/inflight.json") }
+func inflightPath(v *project.Project) string { return v.Path(project.MetaDir + "/inflight.json") }
 
 // Pending returns the in-flight marker if an apply was interrupted.
-func Pending(v *vault.Vault) (*Inflight, error) {
+func Pending(v *project.Project) (*Inflight, error) {
 	data, err := os.ReadFile(inflightPath(v))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -458,8 +450,8 @@ type RecoverResult struct {
 
 // Recover restores every path an interrupted apply touched from HEAD and removes the marker.
 // It returns nil, nil when nothing was pending.
-func Recover(v *vault.Vault) (*RecoverResult, error) {
-	unlock, err := vault.Lock(v.Root)
+func Recover(v *project.Project) (*RecoverResult, error) {
+	unlock, err := project.Lock(v.Atlas())
 	if err != nil {
 		return nil, err
 	}
@@ -467,7 +459,7 @@ func Recover(v *vault.Vault) (*RecoverResult, error) {
 	return recoverLocked(v)
 }
 
-func recoverLocked(v *vault.Vault) (*RecoverResult, error) {
+func recoverLocked(v *project.Project) (*RecoverResult, error) {
 	in, err := Pending(v)
 	if err != nil {
 		return nil, err
@@ -476,7 +468,7 @@ func recoverLocked(v *vault.Vault) (*RecoverResult, error) {
 		return nil, nil
 	}
 	res := &RecoverResult{OperationID: in.OperationID}
-	repo := v.Repo()
+	repo := v.Engine()
 	var restore []string
 	for _, p := range in.Paths {
 		if p.Existed {
@@ -497,7 +489,7 @@ func recoverLocked(v *vault.Vault) (*RecoverResult, error) {
 
 func requireHistory(repo gitx.Repo) error {
 	if !repo.IsRepo() || !repo.HasHead() {
-		return errors.New("the vault has no git history; run `claude-atlas adopt` on it first")
+		return errors.New("the project has no git history; make its work folder a git repository, then try again")
 	}
 	return nil
 }
@@ -514,25 +506,25 @@ func commitManualEdits(repo gitx.Repo, now time.Time) (string, error) {
 	if err := repo.AddAll(); err != nil {
 		return "", err
 	}
-	id := vault.NewOperationID("manual", now)
+	id := project.NewOperationID("manual", now)
 	noun := "file"
 	if len(entries) != 1 {
 		noun = "files"
 	}
-	return repo.Commit(vault.CommitMessage("manual", fmt.Sprintf("%d %s changed by hand", len(entries), noun), id))
+	return repo.Commit(project.CommitMessage("manual", fmt.Sprintf("%d %s changed by hand", len(entries), noun), id))
 }
 
 // Apply writes the plan as one commit. The plan is consumed whether or not it succeeds.
-func Apply(v *vault.Vault, plan *Plan, now time.Time) (*Result, error) {
-	if plan.Vault != v.Root {
-		return nil, fmt.Errorf("plan belongs to %s, not %s", plan.Vault, v.Root)
+func Apply(v *project.Project, plan *Plan, now time.Time) (*Result, error) {
+	if plan.Folder != v.Atlas() {
+		return nil, fmt.Errorf("plan belongs to %s, not %s", plan.Folder, v.Atlas())
 	}
-	unlock, err := vault.Lock(v.Root)
+	unlock, err := project.Lock(v.Atlas())
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	repo := v.Repo()
+	repo := v.Engine()
 	if err := requireHistory(repo); err != nil {
 		return nil, err
 	}
@@ -555,7 +547,7 @@ func Apply(v *vault.Vault, plan *Plan, now time.Time) (*Result, error) {
 			return nil, fmt.Errorf("%w: %s changed after the plan was made; plan again", ErrConflict, w.Path)
 		}
 	}
-	led, err := ledger.Load(v.Path(vault.LedgerPath), now)
+	led, err := ledger.Load(v.Path(project.LedgerPath), now)
 	if err != nil {
 		return nil, err
 	}
@@ -563,20 +555,20 @@ func Apply(v *vault.Vault, plan *Plan, now time.Time) (*Result, error) {
 		return nil, err
 	}
 	writeLedger := len(led.DropPages(pageExists(v, plan.writes), now)) > 0 || len(plan.sources) > 0
-	logData, err := os.ReadFile(v.Path(vault.LogPage))
+	logData, err := os.ReadFile(v.Path(project.LogPage))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
 	logExisted := err == nil
-	_, _, ledgerExisted, _ := fileState(v, vault.LedgerPath)
+	_, _, ledgerExisted, _ := fileState(v, project.LedgerPath)
 
 	in := Inflight{OperationID: plan.OperationID, Kind: plan.Kind, Started: now.UTC().Format(time.RFC3339)}
 	for _, w := range plan.writes {
 		in.Paths = append(in.Paths, InflightPath{Path: w.Path, Existed: w.Existed})
 	}
-	in.Paths = append(in.Paths, InflightPath{Path: vault.LogPage, Existed: logExisted})
+	in.Paths = append(in.Paths, InflightPath{Path: project.LogPage, Existed: logExisted})
 	if writeLedger {
-		in.Paths = append(in.Paths, InflightPath{Path: vault.LedgerPath, Existed: ledgerExisted})
+		in.Paths = append(in.Paths, InflightPath{Path: project.LedgerPath, Existed: ledgerExisted})
 	}
 	if err := writeInflight(v, in); err != nil {
 		return nil, err
@@ -601,20 +593,20 @@ func Apply(v *vault.Vault, plan *Plan, now time.Time) (*Result, error) {
 		}
 	}
 	entry := logEntry(plan, now)
-	if err := writeAtomic(v.Path(vault.LogPage), prependLog(logData, entry, now)); err != nil {
+	if err := writeAtomic(v.Path(project.LogPage), prependLog(logData, entry, now)); err != nil {
 		return nil, rollback(err)
 	}
-	changed = append(changed, vault.LogPage)
+	changed = append(changed, project.LogPage)
 	if writeLedger {
-		if err := writeAtomic(v.Path(vault.LedgerPath), led.Encode()); err != nil {
+		if err := writeAtomic(v.Path(project.LedgerPath), led.Encode()); err != nil {
 			return nil, rollback(err)
 		}
-		changed = append(changed, vault.LedgerPath)
+		changed = append(changed, project.LedgerPath)
 	}
 	if err := repo.Add(changed...); err != nil {
 		return nil, rollback(err)
 	}
-	commit, err := repo.Commit(vault.CommitMessage(string(plan.Kind), plan.Summary, plan.OperationID))
+	commit, err := repo.Commit(project.CommitMessage(string(plan.Kind), plan.Summary, plan.OperationID))
 	if err != nil {
 		return nil, rollback(err)
 	}
@@ -627,8 +619,8 @@ func Apply(v *vault.Vault, plan *Plan, now time.Time) (*Result, error) {
 	return res, nil
 }
 
-func writeInflight(v *vault.Vault, in Inflight) error {
-	if err := os.MkdirAll(v.Path(vault.MetaDir), 0o755); err != nil {
+func writeInflight(v *project.Project, in Inflight) error {
+	if err := os.MkdirAll(v.Path(project.MetaDir), 0o755); err != nil {
 		return err
 	}
 	data, _ := json.MarshalIndent(in, "", "  ")
@@ -668,7 +660,7 @@ func prependLog(existing []byte, entry string, now time.Time) []byte {
 	if text == "" {
 		text = "---\ntype: meta\ntitle: Wiki Log\nstatus: evergreen\ncreated: " + now.Format("2006-01-02") + "\nupdated: " + now.Format("2006-01-02") + "\ntags:\n  - meta\n  - log\n---\n\n# Wiki Log\n\nNewest completed operations appear first.\n"
 	}
-	if front, _, ok, err := vault.SplitFrontmatter(text); ok && err == nil {
+	if front, _, ok, err := project.SplitFrontmatter(text); ok && err == nil {
 		newFront := updatedLine.ReplaceAllString(front, "updated: "+now.Format("2006-01-02"))
 		text = "---\n" + newFront + "---" + text[len("---\n")+len(front)+len("---"):]
 	}
@@ -719,11 +711,11 @@ func pageTitleOf(p string, content []byte) string {
 	if !strings.HasPrefix(p, "wiki/") || !strings.EqualFold(path.Ext(p), ".md") || len(content) == 0 {
 		return ""
 	}
-	fields, _, err := vault.Frontmatter(string(content))
+	fields, _, err := project.Frontmatter(string(content))
 	if err != nil || fields == nil {
 		return ""
 	}
-	return strings.TrimSpace(vault.StringField(fields, "title"))
+	return strings.TrimSpace(project.StringField(fields, "title"))
 }
 
 // pageRef links a wiki page by its stem, showing its title when that differs, and
@@ -731,7 +723,7 @@ func pageTitleOf(p string, content []byte) string {
 func pageRef(c Change, deleted bool) string {
 	p := c.Path
 	if !deleted && strings.HasPrefix(p, "wiki/") && strings.EqualFold(path.Ext(p), ".md") {
-		stem := vault.PageTitle(p)
+		stem := project.PageTitle(p)
 		if c.Title != "" && c.Title != stem && !strings.ContainsAny(c.Title, "[]|#") {
 			return "[[" + stem + "|" + c.Title + "]]"
 		}
@@ -752,8 +744,8 @@ type Operation struct {
 }
 
 // History lists the newest operations, most recent first. Manual-edit commits are included.
-func History(v *vault.Vault, limit int, withPaths bool) ([]Operation, error) {
-	repo := v.Repo()
+func History(v *project.Project, limit int, withPaths bool) ([]Operation, error) {
+	repo := v.Engine()
 	commits, err := repo.Log(0)
 	if err != nil {
 		return nil, err
@@ -778,7 +770,7 @@ func History(v *vault.Vault, limit int, withPaths bool) ([]Operation, error) {
 }
 
 // Find returns the operation with the given id.
-func Find(v *vault.Vault, id string) (*Operation, error) {
+func Find(v *project.Project, id string) (*Operation, error) {
 	ops, err := History(v, 0, false)
 	if err != nil {
 		return nil, err
@@ -792,13 +784,13 @@ func Find(v *vault.Vault, id string) (*Operation, error) {
 }
 
 // UndoOperation reverts one operation's commit as a new commit.
-func UndoOperation(v *vault.Vault, operationID string, now time.Time) (*Result, error) {
-	unlock, err := vault.Lock(v.Root)
+func UndoOperation(v *project.Project, operationID string, now time.Time) (*Result, error) {
+	unlock, err := project.Lock(v.Atlas())
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	repo := v.Repo()
+	repo := v.Engine()
 	if err := requireHistory(repo); err != nil {
 		return nil, err
 	}
@@ -812,23 +804,39 @@ func UndoOperation(v *vault.Vault, operationID string, now time.Time) (*Result, 
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{OperationID: vault.NewOperationID("undo", now)}
+	paths, err := repo.ChangedPaths(op.Commit)
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("%s changed no page in the wiki; there is nothing to take back", operationID)
+	}
+	// Undo is exact: it puts every page the operation wrote back to what it was before,
+	// and refuses when one of them changed since, because putting that page back would
+	// throw the later change away.
+	same, err := repo.Unchanged(op.Commit, paths...)
+	if err != nil {
+		return nil, err
+	}
+	if !same {
+		return nil, fmt.Errorf("cannot undo %s: a page it wrote changed after it (%s); repair by hand or with a repair operation", operationID, strings.Join(paths, ", "))
+	}
+	res := &Result{OperationID: project.NewOperationID("undo", now)}
 	if res.ManualCommit, err = commitManualEdits(repo, now); err != nil {
 		return nil, err
 	}
-	if err := repo.RevertNoCommit(op.Commit); err != nil {
-		return nil, fmt.Errorf("cannot undo %s: later changes overlap it (%v); repair by hand or with a repair operation", operationID, err)
+	if err := repo.RestoreFrom(repo.Parent(op.Commit), paths...); err != nil {
+		return nil, fmt.Errorf("cannot undo %s: %w", operationID, err)
 	}
-	defer repo.ClearRevert()
-	logData, _ := os.ReadFile(v.Path(vault.LogPage))
+	logData, _ := os.ReadFile(v.Path(project.LogPage))
 	entry := fmt.Sprintf("## %s — %s\n\nUndid %s: %s\n", now.Format("2006-01-02"), res.OperationID, op.ID, op.Summary)
-	if err := writeAtomic(v.Path(vault.LogPage), prependLog(logData, entry, now)); err != nil {
+	if err := writeAtomic(v.Path(project.LogPage), prependLog(logData, entry, now)); err != nil {
 		return nil, err
 	}
-	if err := repo.Add(vault.LogPage); err != nil {
+	if err := repo.Add(project.LogPage); err != nil {
 		return nil, err
 	}
-	message := vault.CommitMessage("undo", op.Summary, res.OperationID) + "atlas-undoes: " + op.ID + "\n"
+	message := project.CommitMessage("undo", op.Summary, res.OperationID) + "atlas-undoes: " + op.ID + "\n"
 	res.Commit, err = repo.Commit(message)
 	if err != nil {
 		return nil, err
@@ -849,8 +857,8 @@ type Status struct {
 }
 
 // Inspect reports the git state without changing anything.
-func Inspect(v *vault.Vault) (*Status, error) {
-	repo := v.Repo()
+func Inspect(v *project.Project) (*Status, error) {
+	repo := v.Engine()
 	st := &Status{HasHistory: repo.IsRepo() && repo.HasHead()}
 	if in, err := Pending(v); err == nil && in != nil {
 		st.Pending = true
@@ -863,8 +871,8 @@ func Inspect(v *vault.Vault) (*Status, error) {
 		return nil, err
 	}
 	st.Dirty = len(entries)
-	// The head is the newest commit that touched the vault. Inside a repository that is not
-	// the repository's own head, which the code moves on without the vault.
+	// The head is the newest commit that touched the project. Inside a repository that is not
+	// the repository's own head, which the code moves on without the project.
 	if commits, err := repo.Log(1); err == nil && len(commits) == 1 {
 		st.Head = commits[0].SHA
 		st.LastCommit = commits[0].Date.Format("2006-01-02")

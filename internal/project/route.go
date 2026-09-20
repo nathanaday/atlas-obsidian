@@ -1,4 +1,4 @@
-package vault
+package project
 
 import (
 	"fmt"
@@ -74,15 +74,15 @@ func lastRune(s string) (rune, int) {
 
 // RouteFor says where a page of pageType titled title goes in this vault, and returns a
 // skeleton with the vault's frontmatter conventions. It reads nothing but the target path.
-func (v *Vault) RouteFor(pageType, title string, now time.Time) (*Route, error) {
-	mode := v.Config.Mode
+func (p *Project) RouteFor(pageType, title string, now time.Time) (*Route, error) {
+	mode := p.Config.Mode
 	folder, err := folderFor(mode, pageType)
 	if err != nil {
 		return nil, err
 	}
 	stem := SanitizeTitle(title)
 	route := &Route{Path: folder + "/" + stem + ".md", Type: pageType, Mode: mode}
-	if _, err := os.Stat(v.Path(route.Path)); err == nil {
+	if _, err := os.Stat(p.Path(route.Path)); err == nil {
 		route.Exists = true
 	}
 	route.Skeleton = Skeleton(pageType, stem, now)

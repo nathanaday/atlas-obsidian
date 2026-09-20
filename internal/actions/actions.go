@@ -9,29 +9,19 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/capture"
 	"github.com/nathanaday/claude-atlas/internal/console"
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/manage"
 	"github.com/nathanaday/claude-atlas/internal/project"
 	"github.com/nathanaday/claude-atlas/internal/refresh"
 	"github.com/nathanaday/claude-atlas/internal/registry"
 	"github.com/nathanaday/claude-atlas/internal/threads"
-	"github.com/nathanaday/claude-atlas/internal/vault"
-	"github.com/nathanaday/claude-atlas/internal/vaults"
 )
-
-// AddKnowledge is what a caller chose for a new or adopted knowledge base.
-type AddKnowledge struct {
-	Name  string // display name as typed, or the folder's name when adopting
-	Path  string // where the vault will be created, or the vault being adopted
-	Mode  string // generic or lyt
-	Scope string
-	Adopt bool // Path exists already and is adopted rather than created
-}
 
 // InitProject is what a caller chose for a new project.
 type InitProject struct {
 	Work        string // the folder that becomes the project
 	Name        string
 	Description string
-	Knowledge   string // a knowledge base by name, id, or path; "" for none
+	Mode        string // generic or lyt
 	NoGit       bool   // leave a work folder that is in no repository without one
 }
 
@@ -44,28 +34,19 @@ type Atlas struct {
 	Load    func() ([]registry.Entry, error)
 	Scan    func() (*registry.Index, error)
 	Refresh func() (*registry.Index, error)
-	// CreateKnowledge makes or adopts a knowledge base and registers it; it returns the
-	// vault's path. EditKnowledge changes its identity and returns the path it sits at
-	// afterwards; a rename moves the folder. ForgetKnowledge forgets a knowledge base the
-	// config names; the folder stays.
-	CreateKnowledge func(AddKnowledge) (string, error)
-	EditKnowledge   func(registry.Entry, vaults.Edit) (string, error)
-	ForgetKnowledge func(registry.Entry) error
-	// The project calls: init a folder, set or clear its knowledge base, change its name
-	// or description, forget it.
-	InitProject   func(InitProject) (*vaults.ProjectInit, error)
-	LinkProject   func(registry.Entry, string) (*registry.Entry, error)
-	UnlinkProject func(registry.Entry) error
-	EditProject   func(registry.Entry, vaults.ProjectEdit) error
+	// The project calls: make a folder a project, change its name, description, or mode,
+	// and drop it from the atlas. The folder stays.
+	InitProject   func(InitProject) (*project.InitResult, error)
+	EditProject   func(registry.Entry, manage.Edit) error
 	ForgetProject func(registry.Entry) error
-	// StagePlan says which files under the sources are new to a knowledge base; no
+	// StagePlan says which files under the sources are new to a project's inbox; no
 	// sources means the folders it staged from before. Stage copies a plan's files into
-	// the inbox and reports the folders the vault now remembers. Sources lists them.
+	// the inbox and reports the folders the project now remembers. Sources lists them.
 	StagePlan func(registry.Entry, []string) (*capture.StagePlan, error)
 	Stage     func(registry.Entry, *capture.StagePlan) (*capture.StageResult, []string, error)
 	Sources   func(registry.Entry) []string
-	// StageProject writes a snapshot of a project into the inbox of its knowledge base,
-	// for the describe skill to ingest.
+	// StageProject writes a snapshot of the work into the project's own inbox, for the
+	// describe skill to ingest.
 	StageProject func(registry.Entry) (*capture.ProjectStage, error)
 	// The thread calls, on a project: read the board and the notes waiting in its inbox,
 	// open a thread, file a document, change a card, reopen, and the phase calls.
@@ -81,7 +62,7 @@ type Atlas struct {
 }
 
 // Bind builds the struct over an atlas home and its loaded config. The console is for
-// CreateKnowledge's preview when a caller wants one; nil and the view pass none.
+// InitProject's preview when a caller wants one; the view passes none.
 func Bind(h home.Home, cfg *home.Config, c *console.Console) Atlas {
 	openProject := func(en registry.Entry) (*project.Project, error) { return project.Open(en.Path) }
 	return Atlas{
@@ -91,39 +72,23 @@ func Bind(h home.Home, cfg *home.Config, c *console.Console) Atlas {
 			_, ix, err := refresh.All(h, cfg, time.Now())
 			return ix, err
 		},
-		CreateKnowledge: func(choice AddKnowledge) (string, error) { return createOrAdopt(h, cfg, c, choice) },
-		EditKnowledge: func(en registry.Entry, edit vaults.Edit) (string, error) {
-			return vaults.EditIdentity(h, cfg, en, edit, time.Now())
-		},
-		ForgetKnowledge: func(en registry.Entry) error { return vaults.Unregister(h, cfg, en.Path) },
-		InitProject: func(choice InitProject) (*vaults.ProjectInit, error) {
-			opts := project.Options{Name: choice.Name, Description: choice.Description}
-			return vaults.InitProject(h, cfg, choice.Work, opts, choice.Knowledge, !choice.NoGit, time.Now())
-		},
-		LinkProject: func(en registry.Entry, knowledge string) (*registry.Entry, error) {
-			p, err := openProject(en)
-			if err != nil {
-				return nil, err
+		InitProject: func(choice InitProject) (*project.InitResult, error) {
+			mode := project.Mode("")
+			if choice.Mode != "" {
+				var err error
+				if mode, err = project.ParseMode(choice.Mode); err != nil {
+					return nil, err
+				}
 			}
-			return vaults.LinkKnowledge(cfg, p, knowledge)
+			opts := project.Options{Name: choice.Name, Description: choice.Description, Mode: mode, NoGit: choice.NoGit}
+			return manage.Init(h, cfg, choice.Work, opts, c, c != nil)
 		},
-		UnlinkProject: func(en registry.Entry) error {
-			p, err := openProject(en)
-			if err != nil {
-				return err
-			}
-			return vaults.UnlinkKnowledge(p)
+		EditProject: func(en registry.Entry, edit manage.Edit) error {
+			return manage.EditProject(en.Path, edit, time.Now())
 		},
-		EditProject: func(en registry.Entry, edit vaults.ProjectEdit) error {
-			p, err := openProject(en)
-			if err != nil {
-				return err
-			}
-			return vaults.EditProject(p, edit)
-		},
-		ForgetProject: func(en registry.Entry) error { return vaults.ForgetProject(h, cfg, en.Path) },
+		ForgetProject: func(en registry.Entry) error { return manage.Forget(h, cfg, en.Path) },
 		StagePlan: func(en registry.Entry, given []string) (*capture.StagePlan, error) {
-			v, err := vault.Open(en.Path)
+			v, err := project.Open(en.Path)
 			if err != nil {
 				return nil, err
 			}
@@ -134,7 +99,7 @@ func Bind(h home.Home, cfg *home.Config, c *console.Console) Atlas {
 			return capture.PlanStage(v, sources, time.Now())
 		},
 		Stage: func(en registry.Entry, plan *capture.StagePlan) (*capture.StageResult, []string, error) {
-			v, err := vault.Open(en.Path)
+			v, err := project.Open(en.Path)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -145,22 +110,18 @@ func Bind(h home.Home, cfg *home.Config, c *console.Console) Atlas {
 			return res, res.Remembered, nil
 		},
 		Sources: func(en registry.Entry) []string {
-			v, err := vault.Open(en.Path)
+			v, err := project.Open(en.Path)
 			if err != nil {
 				return nil
 			}
 			return capture.Sources(v)
 		},
 		StageProject: func(en registry.Entry) (*capture.ProjectStage, error) {
-			kb := en.KnowledgePath()
-			if kb == "" {
-				return nil, errNoKnowledge(en)
-			}
-			v, err := vault.Open(kb)
+			p, err := openProject(en)
 			if err != nil {
 				return nil, err
 			}
-			return capture.StageProject(v, en, time.Now())
+			return capture.StageProject(p, en, time.Now())
 		},
 		Threads: func(en registry.Entry) (*threads.Board, []string, error) {
 			p, err := openProject(en)

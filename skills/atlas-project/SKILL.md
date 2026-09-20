@@ -1,65 +1,68 @@
 ---
 name: atlas-project
-description: "Make the current folder a project, or change one: name, description, which knowledge base it uses; link, unlink, rename, describe, forget. Use for new project, init here, make this a project, project for this repo, link the knowledge base, unlink, rename the project, forget this project."
+description: "Make the current folder a project, with its wiki and its threads, or change one: name, description, filing mode, describe, forget. Use for new project, init here, make this a project, project for this repo, set up a wiki here, rename the project, change the mode, forget this project, adopt this vault."
 ---
 
 # Make or change a project
 
 Tools: `atlas`, `project` on the atlas MCP server. A project is a folder
-`atlas/<name>/` inside the user's work, a repository or a folder of
-documents. The folder takes the project's name. It holds the project's
-identity, its threads, its phases, and an inbox for notes. It has no git of its own: when the work is a
-repository, the repository tracks `atlas/` like any other folder. It uses
-one knowledge base.
+`atlas/<name>/` inside the user's work, a repository or a folder of documents.
+The folder takes the project's name, and it holds both halves of what the
+project knows: the wiki under `wiki/`, with its inbox and its raw store, and
+the threads under `threads/`. The work's repository tracks it like any other
+folder; the wiki's operations commit into that repository, scoped to the
+wiki's own paths.
 
-Call `atlas` first: the knowledge bases and their scopes, and the projects
-that exist.
+Call `atlas` first, to see the projects that exist.
 
 ## Make one
 
 Ask one question at a time. Offer the default; accept a yes.
 
 1. **Where.** The current folder, when the session is in the work. Otherwise
-   the path the user names. Never a folder inside a knowledge base or inside
-   another project.
+   the path the user names. Never a folder inside another project.
 2. **Name.** Default: the folder's name.
-3. **Description.** One sentence saying what the project is. Draft it from the
-   folder's README or CLAUDE.md when there is one, and read it back.
-4. **Knowledge base.** Read each scope from `atlas` and suggest the one that
-   fits. None is a valid answer; the thread skills work without one, and
-   `link` adds one later.
+3. **Description.** One to three sentences saying what the work is and what
+   its wiki should remember. `wiki-ingest` and `wiki-query` read it to judge
+   what belongs. Draft it from the folder's README or CLAUDE.md when there is
+   one, and read it back.
+4. **Mode.** `generic` files a new page by type, which suits most work;
+   `lyt` keeps atomic notes in `wiki/notes/` and navigates them through Maps
+   of Content. Offer generic unless the user asks otherwise.
 
 State the whole change in one line. When the folder is in no git repository,
-init makes it one, with no commit; say so in the line:
+init makes it one; say so in the line:
 
-> Make `~/code/webapp` the project `webapp`, "The customer-facing web application for the fire-detection product", using `product-x`?
+> Make `~/code/webapp` the project `webapp` (generic mode), "The customer-facing web application for the fire-detection product; its wiki holds the alarm pipeline and the field tests"?
 
 On yes: `project` with `action: init`, `work`, `name`, `description`, and
-`knowledge`; add `no_git` when the user wants no repository. It writes
-`atlas/<name>/`, lists the folder in the atlas config, and reports `git`: created,
-existing, or enclosed.
-Report the result, then offer `describe`, which writes the project's page in
-the knowledge base, and say how to work: a session anywhere inside the work
-is the project's session.
+`mode`; add `no_git` only when the user refuses a repository, and say that the
+wiki then has no history and no operation can run. It writes `atlas/<name>/`
+with both halves, commits them, and lists the folder in the atlas config.
+
+Report the result, then offer `describe`, which writes the page in the wiki
+that says what the work is, and say how to work: a session anywhere inside the
+work is the project's session, and `claude-atlas open-vault NAME` opens
+`atlas/<name>/` in Obsidian.
 
 If the tool refuses, say why in the tool's words and ask again for that one
 answer; do not retry with a guess.
 
 ## Change one
 
-- Link or unlink: `project` with `action: link` and `knowledge`, or
-  `action: unlink`. Linking changes nothing in either folder; it is one
-  field in `atlas/<name>/project.json`.
-- Rename or describe: `project` with `action: edit`, `name` or
-  `description`. A new name moves `atlas/<name>/` to match; say so in the
-  one-line statement. The work folder does not move; it is the user's.
+- Rename, describe, or set the mode: `project` with `action: edit`, and
+  `name`, `description`, or `mode`. A new name moves `atlas/<name>/` to match;
+  say so in the one-line statement. The work folder does not move; it is the
+  user's. A new mode routes future pages only and moves nothing.
 - Forget: `project` with `action: forget`. The work folder and its
   `atlas/<name>/` stay. Deleting `atlas/<name>/` is how a project ends, and
   that is the user's to do by hand.
-- A project that 2.2.0 or earlier made sits directly in `atlas/`, and the
-  tools refuse it with the command to run: `claude-atlas upgrade PATH`. That
-  command moves the user's files, so give it to the user to run.
+- A folder of an earlier version is refused with the command to run:
+  `claude-atlas upgrade PATH`. It absorbs a 3.x knowledge base into the
+  project, moves the thread folders under `threads/`, and turns the task pages
+  of 2.x into threads. It moves the user's files, so give it to the user to
+  run rather than running it.
 
-In a knowledge base session, `work` names the project by name; in a project
-session it is implied. Every question comes before the tool call, and the
-tool call comes after a yes. Never make the folder or its files yourself.
+`work` names another project by name; this session's project is implied. Every
+question comes before the tool call, and the tool call comes after a yes. Never
+make the folder or its files yourself.

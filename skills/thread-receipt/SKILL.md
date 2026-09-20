@@ -1,12 +1,12 @@
 ---
 name: thread-receipt
-description: "Close a thread with its receipt: completed, with what was delivered and how it was verified, or killed, with the reason; then offer the knowledge base what the work taught. Use for finish, done, close this thread, complete, ship it, kill, cancel, abandon, drop this thread, wrap up."
+description: "Close a thread with its receipt: completed, with what was delivered and how it was verified, or killed, with the reason; then offer the wiki what the work taught. Use for finish, done, close this thread, complete, ship it, kill, cancel, abandon, drop this thread, wrap up."
 ---
 
 # Close a thread
 
 Read [threads.md](../wiki/references/threads.md). Tools: `threads`, `thread`,
-and `status`, `route`, `plan`, `apply` for the knowledge base.
+and `status`, `route`, `plan`, `apply` for the wiki.
 
 The receipt is the record of how the thread ended. A thread may close from
 any stage: a stub that was never worth doing gets a receipt as much as a
@@ -44,17 +44,17 @@ thread's phase is now finished, say so.
 Work left undone is a new thread: offer a stub for each item, in the same
 phase, and open the ones the user picks.
 
-## The knowledge base learns from completed work
+## The wiki learns from completed work
 
-Only for a `completed` thread whose project has a knowledge base, offer one
-operation there. Say what it would hold, and wait for a yes.
+Only for a `completed` thread, offer one operation in the project's wiki. Say
+what it would hold, and wait for a yes.
 
-- **The project's page.** `status` says whether one exists and how far
-  behind it is. When it exists, an update: what the project now delivers.
-  When it does not, offer `describe`.
-- **A durable fact.** Knowledge about the ecosystem, not this project alone
-  (a cause found, a mitigation that works, a measurement), belongs on a
-  concept page. `route` says whether one exists.
+- **The page that describes the work.** `status` says whether one exists and
+  how far behind it is. When it exists, an update: what the project now
+  delivers. When it does not, offer `describe`.
+- **A durable fact.** Something the work taught that outlives it (a cause
+  found, a mitigation that works, a measurement) belongs on a concept page.
+  `route` says whether one exists.
 
 On yes: read the pages and [operations.md](../wiki/references/operations.md),
 build one plan of kind `save` with the page writes, `wiki/index.md` when a

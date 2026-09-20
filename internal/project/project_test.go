@@ -9,284 +9,400 @@ import (
 	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/vault"
+	"github.com/nathanaday/claude-atlas/internal/home"
 )
 
-var now = time.Date(2026, 9, 17, 12, 0, 0, 0, time.Local)
+var now = time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 
-func TestInitWritesTheIdentityFileAndTheFolders(t *testing.T) {
-	work := filepath.Join(t.TempDir(), "webapp")
+func needGit(t *testing.T) {
+	t.Helper()
+	if !gitx.Available() {
+		t.Skip("git is not installed")
+	}
+}
+
+// newWork is an empty folder to make a project in.
+func newWork(t *testing.T, name string) string {
+	t.Helper()
+	needGit(t)
+	work := filepath.Join(t.TempDir(), name)
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	p, written, err := Init(work, Options{Description: "The web app.", Knowledge: &Knowledge{ID: "kb-1", Name: "product"}}, now)
+	return work
+}
+
+func newProject(t *testing.T) *Project {
+	t.Helper()
+	res, err := Init(newWork(t, "webapp"), Options{}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Name() != "webapp" || p.Config.Schema != Schema || p.Config.ID == "" || p.Config.Created != "2026-09-17" || p.Config.Description != "The web app." {
-		t.Fatalf("config %+v", p.Config)
+	return res.Project
+}
+
+func TestInitWritesBothHalvesAndCommitsThem(t *testing.T) {
+	work := newWork(t, "webapp")
+	res, err := Init(work, Options{Description: "The app.", Mode: Generic}, now)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if p.Config.Knowledge == nil || p.Config.Knowledge.ID != "kb-1" || p.Config.Knowledge.Name != "product" {
-		t.Fatalf("knowledge %+v", p.Config.Knowledge)
+	p := res.Project
+	if p.Root != work || p.Folder != "webapp" || p.Rel() != "atlas/webapp" {
+		t.Fatalf("project %+v", p)
 	}
-	if strings.Join(written, ",") != "threads/,threads/archive/,stubs/,specs/,plans/,receipts/,phases/,inbox/,project.json,.obsidian/snippets/claude-atlas.css" {
-		t.Fatalf("written %v", written)
+	if res.Git != GitCreated || res.Commit == "" || !Same(res.Host, work) {
+		t.Fatalf("git %+v", res)
+	}
+	// The wiki, the threads, the inbox, the ideas, and the Obsidian settings, in one folder.
+	for _, rel := range []string{
+		Marker, LedgerPath, LogPage, HotPage, IndexPage, OverviewPage, Snippet, AppFile, AppearanceFile, ".gitignore",
+		"inbox/.gitkeep", "ideas/.gitkeep",
+	} {
+		if _, err := os.Stat(p.Path(rel)); err != nil {
+			t.Errorf("a new project lacks %s", rel)
+		}
 	}
 	for _, dir := range Folders {
 		if info, err := os.Stat(p.Path(dir)); err != nil || !info.IsDir() {
-			t.Fatalf("%s should be a folder", dir)
+			t.Errorf("a new project lacks the folder %s", dir)
 		}
 	}
-	if !IsProject(work) || p.Folder != "webapp" || p.Atlas() != filepath.Join(work, Dir, "webapp") || p.Rel() != "atlas/webapp" {
-		t.Fatalf("layout %+v", p)
+	// Nothing of the two-entity layout is left.
+	for _, rel := range []string{KnowledgeMarker, "stubs", "specs", "plans", "receipts", "phases", "wiki/questions", "kb", "repos"} {
+		if _, err := os.Stat(p.Path(rel)); err == nil {
+			t.Errorf("a new project has %s", rel)
+		}
 	}
-	data, _ := os.ReadFile(filepath.Join(work, Dir, "webapp", Marker))
-	if !strings.Contains(string(data), `"schema": "claude-atlas.project.v3"`) || strings.Contains(string(data), work) {
-		t.Fatalf("the identity file holds no path:\n%s", data)
+	cfg, ok := ReadMarker(p.Atlas())
+	if !ok || cfg.Schema != Schema || cfg.ID == "" || cfg.Name != "webapp" || cfg.Mode != Generic || cfg.Description != "The app." || cfg.Created != "2026-09-19" {
+		t.Fatalf("identity %+v", cfg)
 	}
-	// The name comes from the caller when given, and an empty knowledge id is none.
-	other := filepath.Join(t.TempDir(), "docs")
-	os.MkdirAll(other, 0o755)
-	q, _, err := Init(other, Options{Name: " Thesis ", Knowledge: &Knowledge{}}, now)
-	if err != nil || q.Name() != "Thesis" || q.Config.Knowledge != nil || q.Folder != "Thesis" {
-		t.Fatalf("%+v %v", q.Config, err)
+	// The setup commit holds the whole folder, and the work is clean afterwards.
+	repo := p.Work()
+	if dirty, _ := repo.Dirty(); dirty {
+		st, _ := repo.Status()
+		t.Fatalf("the work is clean after init: %+v", st)
 	}
-	// The folder is the name cleaned for Obsidian.
-	third := filepath.Join(t.TempDir(), "third")
-	os.MkdirAll(third, 0o755)
-	if r, _, err := Init(third, Options{Name: "Web: v2/beta"}, now); err != nil || r.Folder != "Web- v2-beta" {
-		t.Fatalf("%+v %v", r, err)
+	ops, err := repo.Log(1)
+	if err != nil || len(ops) != 1 || !strings.HasPrefix(ops[0].Subject, "setup: initialize project webapp") {
+		t.Fatalf("log %+v %v", ops, err)
 	}
-	if _, _, err := Init(t.TempDir(), Options{Name: "///"}, now); err == nil || !strings.Contains(err.Error(), "no usable folder name") {
-		t.Fatalf("a name with no usable folder: %v", err)
+}
+
+func TestInitInsideARepositoryCommitsThereAndNeverInitsAgain(t *testing.T) {
+	needGit(t)
+	host := gitx.Repo{Dir: t.TempDir()}
+	if err := host.Init(); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(host.Dir, "main.go"), []byte("package main\n"), 0o644)
+	host.AddAll()
+	host.Commit("feat: code")
+	work := filepath.Join(host.Dir, "sub")
+	os.MkdirAll(work, 0o755)
+	res, err := Init(work, Options{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Git != GitEnclosed || !Same(res.Host, host.Dir) {
+		t.Fatalf("git %+v", res)
+	}
+	if _, err := os.Stat(filepath.Join(work, ".git")); err == nil {
+		t.Fatal("no repository inside another")
+	}
+	if commits, _ := host.Log(0); len(commits) != 2 {
+		t.Fatalf("the setup commit goes into the host: %+v", commits)
 	}
 }
 
 func TestInitRefusals(t *testing.T) {
-	root := t.TempDir()
-	work := filepath.Join(root, "webapp")
-	os.MkdirAll(work, 0o755)
-	if _, _, err := Init(filepath.Join(root, "missing"), Options{}, now); err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("a missing folder: %v", err)
-	}
-	file := filepath.Join(root, "file.txt")
-	os.WriteFile(file, []byte("x"), 0o644)
-	if _, _, err := Init(file, Options{}, now); err == nil || !strings.Contains(err.Error(), "not a directory") {
-		t.Fatalf("a file: %v", err)
-	}
-	if _, _, err := Init(work, Options{}, now); err != nil {
+	needGit(t)
+	work := newWork(t, "webapp")
+	if _, err := Init(work, Options{}, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := Init(work, Options{}, now); err == nil || !strings.Contains(err.Error(), "is a project already") {
+	if _, err := Init(work, Options{}, now); err == nil || !strings.Contains(err.Error(), "a project already") {
 		t.Fatalf("twice: %v", err)
 	}
-	nested := filepath.Join(work, "src", "pkg")
-	os.MkdirAll(nested, 0o755)
-	if _, _, err := Init(nested, Options{}, now); err == nil || !strings.Contains(err.Error(), "inside the project") {
+	inside := filepath.Join(work, "deep")
+	os.MkdirAll(inside, 0o755)
+	if _, err := Init(inside, Options{}, now); err == nil || !strings.Contains(err.Error(), "inside the project") {
 		t.Fatalf("inside another project: %v", err)
 	}
-	taken := filepath.Join(root, "taken")
-	os.MkdirAll(filepath.Join(taken, Dir, "taken", "notes"), 0o755)
-	if _, _, err := Init(taken, Options{}, now); err == nil || !strings.Contains(err.Error(), "not a project") {
-		t.Fatalf("a foreign atlas/<name>/ folder: %v", err)
+	if _, err := Init(filepath.Join(t.TempDir(), "gone"), Options{}, now); err == nil {
+		t.Fatal("a folder that is not there")
 	}
-	if _, _, err := Init(taken, Options{Name: "other"}, now); err != nil {
-		t.Fatalf("atlas/ may hold other folders: %v", err)
+	// A 3.x knowledge base is not a folder to init; upgrade absorbs it.
+	kb := newWork(t, "notes")
+	os.WriteFile(filepath.Join(kb, KnowledgeMarker), []byte(`{"schema":"claude-atlas.vault.v3","id":"k1","kind":"knowledge","name":"notes"}`), 0o644)
+	if _, err := Init(kb, Options{}, now); err == nil || !strings.Contains(err.Error(), "upgrade") {
+		t.Fatalf("a 3.x knowledge base: %v", err)
 	}
-	empty := filepath.Join(root, "emptyatlas")
-	os.MkdirAll(filepath.Join(empty, Dir), 0o755)
-	if _, _, err := Init(empty, Options{}, now); err != nil {
-		t.Fatalf("an empty atlas/ folder is fine: %v", err)
+	// A folder the repository ignores could not be committed.
+	host := newWork(t, "host")
+	repo := gitx.Repo{Dir: host}
+	repo.Init()
+	os.WriteFile(filepath.Join(host, ".gitignore"), []byte("atlas/\n"), 0o644)
+	if _, err := Init(host, Options{}, now); err == nil || !strings.Contains(err.Error(), "ignored") {
+		t.Fatalf("an ignored folder: %v", err)
 	}
-	if !gitx.Available() {
-		t.Skip("git is not installed")
+	// A name that leaves no folder.
+	if _, err := Init(newWork(t, "n2"), Options{Name: "///"}, now); err == nil || !strings.Contains(err.Error(), "usable folder name") {
+		t.Fatalf("an unusable name: %v", err)
 	}
-	kb := filepath.Join(root, "kb")
-	if _, err := vault.Init(kb, vault.Options{Name: "kb"}, now); err != nil {
-		t.Fatal(err)
-	}
-	inKB := filepath.Join(kb, "wiki", "work")
-	os.MkdirAll(inKB, 0o755)
-	if _, _, err := Init(inKB, Options{}, now); err == nil || !strings.Contains(err.Error(), "inside the knowledge base") {
-		t.Fatalf("inside a knowledge base: %v", err)
+	// A taken atlas/<name>/.
+	taken := newWork(t, "taken")
+	os.MkdirAll(filepath.Join(taken, Dir, "taken"), 0o755)
+	os.WriteFile(filepath.Join(taken, Dir, "taken", "notes.md"), []byte("x"), 0o644)
+	if _, err := Init(taken, Options{}, now); err == nil || !strings.Contains(err.Error(), "holds something") {
+		t.Fatalf("a taken folder: %v", err)
 	}
 }
 
-func TestOpenFindAboveSaveAndEnsureFolders(t *testing.T) {
-	root := t.TempDir()
-	work := filepath.Join(root, "webapp")
-	os.MkdirAll(work, 0o755)
-	if _, err := Open(work); !errors.Is(err, ErrNotProject) {
-		t.Fatalf("open before init: %v", err)
-	}
-	if FindAbove(work) != "" {
-		t.Fatal("nothing above yet")
-	}
-	p, _, err := Init(work, Options{}, now)
+func TestInitWithoutGitLeavesNoHistory(t *testing.T) {
+	work := newWork(t, "docs")
+	res, err := Init(work, Options{NoGit: true}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nested := filepath.Join(work, "src", "deep")
-	os.MkdirAll(nested, 0o755)
-	deepFile := filepath.Join(nested, "main.go")
-	os.WriteFile(deepFile, []byte("package main"), 0o644)
-	if FindAbove(nested) != work || FindAbove(deepFile) != work || FindAbove(work) != work {
-		t.Fatalf("FindAbove: %q %q", FindAbove(nested), FindAbove(deepFile))
+	if res.Git != GitSkipped || res.Commit != "" || res.Host != "" {
+		t.Fatalf("git %+v", res)
 	}
-	if FindAbove(root) != "" {
-		t.Fatal("the parent is not inside the project")
+	if _, err := os.Stat(filepath.Join(work, ".git")); err == nil {
+		t.Fatal("--no-git made a repository")
 	}
-	opened, err := Open(work)
-	if err != nil || opened.Config.ID != p.Config.ID || opened.Root != work {
-		t.Fatalf("%+v %v", opened, err)
+}
+
+func TestOpenRefusesTheLayoutsOfEarlierVersions(t *testing.T) {
+	needGit(t)
+	// A 3.x project, which named a knowledge base of its own.
+	work := newWork(t, "webapp")
+	os.MkdirAll(filepath.Join(work, Dir, "webapp"), 0o755)
+	os.WriteFile(filepath.Join(work, Dir, "webapp", Marker),
+		[]byte(`{"schema":"claude-atlas.project.v3","id":"p1","name":"webapp","knowledge":{"id":"k1","name":"notes"}}`), 0o644)
+	if !IsProject(work) {
+		t.Fatal("a 3.x project is still a project on disk")
 	}
-	opened.Config.Name = " Renamed "
-	opened.Config.Description = " Now with words. "
-	opened.Config.Knowledge = &Knowledge{ID: "kb-2", Name: "notes"}
-	if err := opened.Save(); err != nil {
-		t.Fatal(err)
+	_, err := Open(work)
+	if !errors.Is(err, ErrSplit) || !strings.Contains(err.Error(), "upgrade") {
+		t.Fatalf("v3: %v", err)
 	}
-	again, err := Open(work)
-	if err != nil || again.Name() != "Renamed" || again.Folder != "Renamed" || again.Config.Description != "Now with words." || again.Config.Knowledge.ID != "kb-2" {
-		t.Fatalf("saved %+v %v", again.Config, err)
+	if v3, ok := ReadV3(work); !ok || v3.Knowledge == nil || v3.Knowledge.ID != "k1" {
+		t.Fatalf("ReadV3 %+v %v", v3, ok)
 	}
-	again.Config.Name = "  "
-	if err := again.Save(); err == nil {
-		t.Fatal("a blank name is refused")
+	// The flat layout of 2.2.0 and earlier.
+	flat := newWork(t, "flat")
+	os.MkdirAll(filepath.Join(flat, Dir), 0o755)
+	os.WriteFile(filepath.Join(flat, Dir, Marker), []byte(`{"schema":"claude-atlas.project.v3","id":"p2","name":"flat"}`), 0o644)
+	if _, err := Open(flat); !errors.Is(err, ErrFlat) {
+		t.Fatalf("flat: %v", err)
 	}
-	again.Config.Name = "webapp"
-	again.Config.Knowledge = &Knowledge{Name: "orphan"}
-	if err := again.Save(); err != nil {
-		t.Fatal(err)
+	// An unknown schema, and a folder that is no project at all.
+	later := newWork(t, "later")
+	os.MkdirAll(filepath.Join(later, Dir, "later"), 0o755)
+	os.WriteFile(filepath.Join(later, Dir, "later", Marker), []byte(`{"schema":"claude-atlas.project.v9","id":"p3"}`), 0o644)
+	if _, err := Open(later); err == nil || !strings.Contains(err.Error(), "unsupported schema") {
+		t.Fatalf("v9: %v", err)
 	}
-	if reread, _ := Open(work); reread.Config.Knowledge != nil {
-		t.Fatal("a knowledge reference without an id is dropped")
+	if _, err := Open(t.TempDir()); !errors.Is(err, ErrNotProject) {
+		t.Fatalf("no project: %v", err)
 	}
-	// A clone without empty folders gets them back.
-	os.RemoveAll(again.Path(PhasesDir))
-	os.RemoveAll(again.Path(InboxDir))
-	if err := again.EnsureFolders(); err != nil {
-		t.Fatal(err)
+}
+
+func TestLocateRefusesTwoProjectsAndReadsPastAFileNamedAtlas(t *testing.T) {
+	needGit(t)
+	work := newWork(t, "two")
+	for _, name := range []string{"a", "b"} {
+		os.MkdirAll(filepath.Join(work, Dir, name), 0o755)
+		os.WriteFile(filepath.Join(work, Dir, name, Marker), []byte(`{"schema":"`+Schema+`","id":"`+name+`"}`), 0o644)
 	}
-	for _, dir := range Folders {
-		if info, err := os.Stat(again.Path(dir)); err != nil || !info.IsDir() {
-			t.Fatalf("%s should be back", dir)
-		}
-	}
-	// Bad identity files.
-	marker := again.Path(Marker)
-	os.WriteFile(marker, []byte("{not json"), 0o644)
-	if _, ok := ReadConfig(work); ok {
-		t.Fatal("ReadConfig reports a file that is not JSON")
-	}
-	if _, err := Open(work); err == nil {
-		t.Fatal("Open refuses a file that is not JSON")
-	}
-	os.WriteFile(marker, []byte(`{"schema":"claude-atlas.project.v9","id":"x","name":"x"}`), 0o644)
-	if _, err := Open(work); err == nil || !strings.Contains(err.Error(), "unsupported schema") {
-		t.Fatalf("schema: %v", err)
-	}
-	os.WriteFile(marker, []byte(`{"schema":"`+Schema+`","name":"x"}`), 0o644)
-	if _, err := Open(work); err == nil || !strings.Contains(err.Error(), "no id") {
-		t.Fatalf("id: %v", err)
-	}
-	os.WriteFile(marker, []byte(`{"schema":"`+Schema+`","id":"x"}`), 0o644)
-	if p, err := Open(work); err != nil || p.Name() != "webapp" {
-		t.Fatalf("a nameless project takes the folder's name: %+v %v", p, err)
-	}
-	// A work folder holds one project.
-	os.MkdirAll(filepath.Join(work, Dir, "second"), 0o755)
-	os.WriteFile(filepath.Join(work, Dir, "second", Marker), []byte(`{}`), 0o644)
-	if _, err := Open(work); err == nil || !strings.Contains(err.Error(), "holds 2 projects") {
+	if _, err := Locate(work); err == nil || !strings.Contains(err.Error(), "holds 2 projects") {
 		t.Fatalf("two projects: %v", err)
 	}
+	// A file named atlas, such as a binary, is not a project.
+	bin := newWork(t, "bin")
+	os.WriteFile(filepath.Join(bin, Dir), []byte("ELF"), 0o644)
+	if _, err := Locate(bin); !errors.Is(err, ErrNotProject) {
+		t.Fatalf("a file named atlas: %v", err)
+	}
+	if IsProject(bin) {
+		t.Fatal("a file named atlas is not a project")
+	}
 }
 
-func TestRenameMovesTheFolder(t *testing.T) {
-	work := filepath.Join(t.TempDir(), "webapp")
-	os.MkdirAll(work, 0o755)
-	p, _, err := Init(work, Options{}, now)
-	if err != nil {
-		t.Fatal(err)
+func TestFindAboveAndKnowledgeAbove(t *testing.T) {
+	p := newProject(t)
+	deep := filepath.Join(p.Root, "src", "deep")
+	os.MkdirAll(deep, 0o755)
+	if FindAbove(deep) != p.Root {
+		t.Fatal("a session anywhere inside the work belongs to the project")
 	}
-	os.WriteFile(p.Path("stubs/Fix it.md"), []byte("x"), 0o644)
+	if FindAbove(p.Atlas()) != p.Root {
+		t.Fatal("inside the project's own folder too")
+	}
+	if FindAbove(t.TempDir()) != "" {
+		t.Fatal("nothing above")
+	}
+	kb := newWork(t, "notes")
+	os.WriteFile(filepath.Join(kb, KnowledgeMarker), []byte("{}"), 0o644)
+	if KnowledgeAbove(filepath.Join(kb, "wiki")) != kb || KnowledgeAbove(p.Root) != "" {
+		t.Fatal("KnowledgeAbove")
+	}
+}
+
+func TestSaveRenamesTheFolderAndRefusesATakenOne(t *testing.T) {
+	p := newProject(t)
 	p.Config.Name = "Web App"
+	p.Config.Description = "  spaced  "
 	if err := p.Save(); err != nil {
 		t.Fatal(err)
 	}
-	if p.Folder != "Web App" {
+	if p.Folder != "Web App" || p.Rel() != "atlas/Web App" {
 		t.Fatalf("folder %q", p.Folder)
 	}
-	if _, err := os.Stat(filepath.Join(work, Dir, "webapp")); !os.IsNotExist(err) {
+	if _, err := os.Stat(p.Path(Marker)); err != nil {
+		t.Fatal("the identity file moved with the folder")
+	}
+	if _, err := os.Stat(filepath.Join(p.Root, Dir, "webapp")); err == nil {
 		t.Fatal("the old folder is gone")
 	}
-	if opened, err := Open(work); err != nil || opened.Folder != "Web App" || opened.Name() != "Web App" {
-		t.Fatalf("%+v %v", opened, err)
+	again, err := Open(p.Root)
+	if err != nil || again.Config.Name != "Web App" || again.Config.Description != "spaced" {
+		t.Fatalf("reopened %+v %v", again, err)
 	}
-	if _, err := os.Stat(filepath.Join(work, Dir, "Web App", "stubs", "Fix it.md")); err != nil {
-		t.Fatal("the pages move with the folder")
-	}
-	// A change of case alone is a rename, on any filesystem.
-	p.Config.Name = "web app"
-	if err := p.Save(); err != nil || p.Folder != "web app" {
-		t.Fatalf("case: %q %v", p.Folder, err)
-	}
-	// A taken folder refuses the whole save.
-	os.MkdirAll(filepath.Join(work, Dir, "Other"), 0o755)
+	// A folder that is taken refuses the whole save.
+	os.MkdirAll(filepath.Join(p.Root, Dir, "Other"), 0o755)
 	p.Config.Name = "Other"
 	if err := p.Save(); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("taken: %v", err)
 	}
-	if opened, _ := Open(work); opened.Name() != "web app" || p.Folder != "web app" {
-		t.Fatalf("nothing changed: %+v", opened)
+	if p.Folder != "Web App" {
+		t.Fatalf("the folder stays after a refused save: %q", p.Folder)
+	}
+	p.Config.Name = " "
+	if err := p.Save(); err == nil {
+		t.Fatal("a blank name")
 	}
 }
 
-func TestUpgradeMovesAFlatProject(t *testing.T) {
-	work := filepath.Join(t.TempDir(), "webapp")
-	flat := filepath.Join(work, Dir)
-	// 2.2.0 and earlier held tasks/, phases/, and inbox/ directly in atlas/. A project
-	// named like one of its own folders moves as cleanly as any other.
-	for _, dir := range []string{"tasks/archive", "phases", "inbox"} {
-		os.MkdirAll(filepath.Join(flat, dir), 0o755)
+func TestUpdateConfigCommitsOnceAndValidates(t *testing.T) {
+	p := newProject(t)
+	before, _ := p.Engine().Log(0)
+	if err := UpdateConfig(p.Root, "edit mode", now, func(c *Config) error {
+		c.Mode = LYT
+		c.Description = "Notes about the app."
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(flat, Marker), []byte(`{"schema":"`+Schema+`","id":"id-1","name":"tasks"}`), 0o644)
-	os.WriteFile(filepath.Join(flat, "tasks", "Fix it.md"), []byte("x"), 0o644)
-	if !IsProject(work) || FindAbove(filepath.Join(flat, "tasks")) != work {
-		t.Fatal("a flat project is still found, so a session can say what to do")
+	after, _ := Open(p.Root)
+	if after.Config.Mode != LYT || after.Config.Description != "Notes about the app." {
+		t.Fatalf("identity %+v", after.Config)
 	}
-	if _, err := Open(work); !errors.Is(err, ErrFlat) || !strings.Contains(err.Error(), "claude-atlas upgrade") {
-		t.Fatalf("open a flat project: %v", err)
+	log, _ := p.Engine().Log(0)
+	if len(log) != len(before)+1 || log[0].Subject != "setup: edit mode" {
+		t.Fatalf("one commit: %+v", log)
 	}
-	if _, ok := ReadConfig(work); ok {
-		t.Fatal("ReadConfig reads only the current layout")
+	// An unchanged file makes no commit.
+	if err := UpdateConfig(p.Root, "edit again", now, func(c *Config) error { return nil }); err != nil {
+		t.Fatal(err)
 	}
-	moved, err := Upgrade(work)
-	if err != nil || !moved {
-		t.Fatalf("upgrade: %v %v", moved, err)
+	if again, _ := p.Engine().Log(0); len(again) != len(log) {
+		t.Fatalf("no commit for no change: %+v", again)
 	}
-	p, err := Open(work)
-	if err != nil || p.Folder != "tasks" || p.Config.ID != "id-1" {
-		t.Fatalf("%+v %v", p, err)
+	for _, bad := range []func(*Config){
+		func(c *Config) { c.ID = "other" },
+		func(c *Config) { c.Name = "" },
+		func(c *Config) { c.Mode = "para" },
+	} {
+		if err := UpdateConfig(p.Root, "bad", now, func(c *Config) error { bad(c); return nil }); err == nil {
+			t.Fatal("an invalid change was accepted")
+		}
 	}
-	if _, err := os.Stat(p.Path("tasks/Fix it.md")); err != nil {
-		t.Fatal("the pages moved")
-	}
-	if entries, _ := os.ReadDir(flat); len(entries) != 1 {
-		t.Fatalf("atlas/ holds the project folder only: %v", entries)
-	}
-	if moved, err := Upgrade(work); err != nil || moved {
-		t.Fatalf("a second upgrade does nothing: %v %v", moved, err)
-	}
-	if _, err := Upgrade(t.TempDir()); !errors.Is(err, ErrNotProject) {
-		t.Fatalf("not a project: %v", err)
+	if err := UpdateConfig(p.Root, "x", now, func(c *Config) error { return errors.New("no") }); err == nil {
+		t.Fatal("the change function's error stands")
 	}
 }
 
-func TestAFileNamedAtlasIsNotAProject(t *testing.T) {
-	work := t.TempDir()
-	os.WriteFile(filepath.Join(work, Dir), []byte("a binary"), 0o755)
-	if IsProject(work) || FindAbove(work) != "" {
-		t.Fatal("a file named atlas made the folder a project")
+func TestTheEngineScopeIsTheWikiAndNothingElse(t *testing.T) {
+	p := newProject(t)
+	engine := p.Engine()
+	if engine.Prefix != "atlas/webapp/" || len(engine.Scope) != 4 {
+		t.Fatalf("scope %+v", engine)
+	}
+	// A change to the code and to a thread document is outside the engine's sight.
+	os.WriteFile(filepath.Join(p.Root, "main.go"), []byte("package main\n"), 0o644)
+	os.WriteFile(p.Path(PlansDir+"/Fix it.md"), []byte("progress\n"), 0o644)
+	os.MkdirAll(p.Path("wiki/concepts"), 0o755)
+	if err := os.WriteFile(p.Path("wiki/concepts/A.md"), []byte("---\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := engine.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st) != 1 || st[0].Path != "wiki/concepts/A.md" {
+		t.Fatalf("the engine sees the wiki only: %+v", st)
+	}
+	if dirty, _ := p.Work().Dirty(); !dirty {
+		t.Fatal("the work has its own changes")
+	}
+}
+
+func TestEnsureFoldersRebuildsWhatACloneLeftOut(t *testing.T) {
+	p := newProject(t)
+	for _, dir := range Folders {
+		os.RemoveAll(p.Path(dir))
+	}
+	if err := p.EnsureFolders(); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range Folders {
+		if info, err := os.Stat(p.Path(dir)); err != nil || !info.IsDir() {
+			t.Errorf("%s was not rebuilt", dir)
+		}
+	}
+}
+
+func TestFolderNameAndHostFor(t *testing.T) {
+	needGit(t)
+	if FolderName(" Web App ") != "Web App" || FolderName("a/b") == "a/b" || FolderName("///") != "" {
+		t.Fatalf("FolderName: %q %q %q", FolderName(" Web App "), FolderName("a/b"), FolderName("///"))
+	}
+	host := newWork(t, "host")
+	repo := gitx.Repo{Dir: host}
+	repo.Init()
+	got, err := HostFor(filepath.Join(host, Dir, "x"))
+	if err != nil || got != host {
+		t.Fatalf("HostFor inside a repository: %q %v", got, err)
+	}
+	if got, err := HostFor(filepath.Join(t.TempDir(), "nowhere")); err != nil || got != "" {
+		t.Fatalf("HostFor outside one: %q %v", got, err)
+	}
+}
+
+func TestResolveOrder(t *testing.T) {
+	p := newProject(t)
+	other := newProject(t)
+	if got, err := Resolve(other.Root, p.Root, p.Root); err != nil || got.Root != other.Root {
+		t.Fatalf("explicit wins: %v %v", got, err)
+	}
+	if got, err := Resolve("", p.Root, ""); err != nil || got.Root != p.Root {
+		t.Fatalf("the environment next: %v %v", got, err)
+	}
+	if got, err := Resolve("", "", filepath.Join(p.Root, "src")); err != nil || got.Root != p.Root {
+		t.Fatalf("then the walk up: %v %v", got, err)
+	}
+	if _, err := Resolve("", "", t.TempDir()); !errors.Is(err, ErrNotProject) {
+		t.Fatalf("nothing: %v", err)
+	}
+}
+
+func TestDisplayPathsInErrors(t *testing.T) {
+	// home.Display shortens a path under the user's home, so a message never carries the
+	// full path when it need not.
+	if home.Display(filepath.Join(os.Getenv("HOME"), "code")) != "~/code" {
+		t.Skip("no HOME to shorten")
 	}
 }

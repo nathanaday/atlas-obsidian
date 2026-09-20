@@ -9,7 +9,7 @@ import (
 )
 
 func TestStagePlansOnlyNewFiles(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	src := filepath.Join(t.TempDir(), "Papers")
 	os.MkdirAll(filepath.Join(src, "2024", ".hidden"), 0o755)
 	os.WriteFile(filepath.Join(src, "a.pdf"), []byte("aaa"), 0o644)
@@ -62,7 +62,7 @@ func TestStagePlansOnlyNewFiles(t *testing.T) {
 }
 
 func TestStageRefusesVaultPathsAndMissingSources(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	if _, err := PlanStage(v, nil, now); err == nil {
 		t.Fatal("no sources")
 	}
@@ -78,14 +78,14 @@ func TestStageRefusesVaultPathsAndMissingSources(t *testing.T) {
 	if err != nil || len(plan.New) != 1 || plan.New[0].To != "inbox/note.md" || len(plan.Dirs) != 0 {
 		t.Fatalf("single file %+v %v", plan, err)
 	}
-	other := newVault(t)
+	other := newProject(t)
 	if _, err := ApplyStage(other, plan, now); err == nil {
 		t.Fatal("a plan applies only to its own vault")
 	}
 }
 
 func TestSourcesForExpandsGivenPathsAndFallsBackToRememberedFolders(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	got, err := SourcesFor(v, []string{"~/Desktop/notes"})
 	if err != nil || len(got) != 1 || strings.HasPrefix(got[0], "~") {
 		t.Fatalf("given paths are expanded: %v %v", got, err)

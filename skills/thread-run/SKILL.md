@@ -38,7 +38,7 @@ plan of a few lines and go on.
   its slice, and let it own the slice end to end, tests included. A
   subagent that sees one small step decides for that step alone. Review
   what comes back before you build on it.
-- **The knowledge base** changes only through `plan` and `apply`. A decision
+- **The wiki** changes only through `plan` and `apply`. A decision
   the user should find later is a `save`.
 
 ## Write progress

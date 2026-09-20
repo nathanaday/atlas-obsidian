@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
 const (
@@ -107,9 +106,7 @@ func IsPhasePage(p string) bool { return isMarkdown(p) && path.Dir(p) == project
 
 // Owned reports whether code owns a path relative to the project folder in full: the
 // cards and the board.
-func Owned(p string) bool {
-	return p == project.ThreadsIndex || strings.HasPrefix(p, project.ThreadsDir+"/")
-}
+func Owned(p string) bool { return p == project.ThreadsIndex || IsCard(p) }
 
 func isMarkdown(p string) bool { return strings.HasSuffix(strings.ToLower(p), ".md") }
 
@@ -166,24 +163,24 @@ type Phase struct {
 
 // parseCard reads a thread's card. The stage on it is not read: the documents say it.
 func parseCard(p string, content []byte) (*Thread, error) {
-	fields, _, err := vault.Frontmatter(string(content))
+	fields, _, err := project.Frontmatter(string(content))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", p, err)
 	}
 	if fields == nil {
 		return nil, fmt.Errorf("%s: no frontmatter", p)
 	}
-	if vault.StringField(fields, "type") != "thread" {
+	if project.StringField(fields, "type") != "thread" {
 		return nil, fmt.Errorf("%s: a page under %s/ needs `type: thread`", p, project.ThreadsDir)
 	}
 	t := &Thread{
-		Path: p, ID: vault.StringField(fields, "thread_id"), Title: strings.TrimSpace(vault.StringField(fields, "title")),
-		Priority: vault.StringField(fields, "priority"), Phase: strings.TrimSpace(vault.StringField(fields, "phase")),
-		Blocked: strings.TrimSpace(vault.StringField(fields, "blocked")),
+		Path: p, ID: project.StringField(fields, "thread_id"), Title: strings.TrimSpace(project.StringField(fields, "title")),
+		Priority: project.StringField(fields, "priority"), Phase: strings.TrimSpace(project.StringField(fields, "phase")),
+		Blocked: strings.TrimSpace(project.StringField(fields, "blocked")),
 		Created: dateField(fields, "created"), Updated: dateField(fields, "updated"), Docs: []Doc{},
 	}
 	if t.Title == "" {
-		t.Title = vault.PageTitle(p)
+		t.Title = project.PageTitle(p)
 	}
 	if t.Priority == "" {
 		t.Priority = "normal"
@@ -205,23 +202,23 @@ func parseCard(p string, content []byte) (*Thread, error) {
 // parseDoc reads a stage document: its type is its stage, and `thread` names its thread.
 func parseDoc(p string, content []byte) (*Doc, string, error) {
 	stage := DocStage(p)
-	fields, _, err := vault.Frontmatter(string(content))
+	fields, _, err := project.Frontmatter(string(content))
 	if err != nil {
 		return nil, "", fmt.Errorf("%s: %w", p, err)
 	}
 	if fields == nil {
 		return nil, "", fmt.Errorf("%s: no frontmatter; file a %s with the thread tool so it names its thread", p, stage)
 	}
-	if got := vault.StringField(fields, "type"); got != stage {
+	if got := project.StringField(fields, "type"); got != stage {
 		return nil, "", fmt.Errorf("%s: a page under %s/ needs `type: %s`", p, stageDir[stage], stage)
 	}
-	id := vault.StringField(fields, "thread")
+	id := project.StringField(fields, "thread")
 	if !idPattern.MatchString(id) {
 		return nil, "", fmt.Errorf("%s: `thread` must hold the thread's id, like thr-20260913-3f2a", p)
 	}
 	d := &Doc{Stage: stage, Path: p, Created: dateField(fields, "created")}
 	if stage == Receipt {
-		d.Outcome = vault.StringField(fields, "outcome")
+		d.Outcome = project.StringField(fields, "outcome")
 		if !contains(Outcomes, d.Outcome) {
 			return nil, "", fmt.Errorf("%s: outcome must be %s", p, strings.Join(Outcomes, " or "))
 		}
@@ -234,19 +231,19 @@ func ParsePhase(p string, content []byte) (*Phase, error) {
 	if !IsPhasePage(p) {
 		return nil, fmt.Errorf("%s: phase pages sit directly in %s/", p, project.PhasesDir)
 	}
-	fields, _, err := vault.Frontmatter(string(content))
+	fields, _, err := project.Frontmatter(string(content))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", p, err)
 	}
 	if fields == nil {
 		return nil, fmt.Errorf("%s: no frontmatter", p)
 	}
-	if vault.StringField(fields, "type") != "phase" {
+	if project.StringField(fields, "type") != "phase" {
 		return nil, fmt.Errorf("%s: a page under %s/ needs `type: phase`", p, project.PhasesDir)
 	}
-	ph := &Phase{Path: p, Title: strings.TrimSpace(vault.StringField(fields, "title")), Created: dateField(fields, "created"), Updated: dateField(fields, "updated")}
+	ph := &Phase{Path: p, Title: strings.TrimSpace(project.StringField(fields, "title")), Created: dateField(fields, "created"), Updated: dateField(fields, "updated")}
 	if ph.Title == "" {
-		ph.Title = vault.PageTitle(p)
+		ph.Title = project.PageTitle(p)
 	}
 	switch v := fields["order"].(type) {
 	case int:
@@ -271,7 +268,7 @@ func dateField(fields map[string]any, key string) string {
 	if t, ok := fields[key].(time.Time); ok {
 		return t.Format("2006-01-02")
 	}
-	return strings.TrimSpace(vault.StringField(fields, key))
+	return strings.TrimSpace(project.StringField(fields, key))
 }
 
 // NewID makes a thread id: the date and four hex digits.
@@ -713,7 +710,7 @@ func stemTaken(p *project.Project, stem string) bool {
 // freeStem is the file name, without its extension, that every page of a new thread
 // titled title takes.
 func freeStem(p *project.Project, title string) string {
-	base := vault.SanitizeTitle(title)
+	base := project.SanitizeTitle(title)
 	stem := base
 	for n := 2; stemTaken(p, stem); n++ {
 		stem = fmt.Sprintf("%s (%d)", base, n)
@@ -1002,7 +999,7 @@ func Set(p *project.Project, key string, ch Changes, now time.Time) (*Thread, er
 // rewrites the title each document carries.
 func rename(p *project.Project, t *Thread, title string) error {
 	stem := stemOf(t.Path)
-	if !strings.EqualFold(vault.SanitizeTitle(title), stem) {
+	if !strings.EqualFold(project.SanitizeTitle(title), stem) {
 		stem = freeStem(p, title)
 	}
 	move := func(rel string) error {
@@ -1047,7 +1044,7 @@ var frontLine = regexp.MustCompile(`(?m)^([A-Za-z_][A-Za-z0-9_]*):[^\n]*$`)
 // setField replaces a scalar frontmatter line, or adds one before the closing fence, and
 // leaves every other line as it is. value is written as given.
 func setField(content, key, value string) string {
-	front, body, ok, err := vault.SplitFrontmatter(content)
+	front, body, ok, err := project.SplitFrontmatter(content)
 	if !ok || err != nil {
 		return content
 	}
@@ -1092,7 +1089,7 @@ func CreatePhase(p *project.Project, title, goal string, order *int, now time.Ti
 	if err := p.EnsureFolders(); err != nil {
 		return nil, err
 	}
-	rel := project.PhasesDir + "/" + vault.SanitizeTitle(title) + ".md"
+	rel := project.PhasesDir + "/" + project.SanitizeTitle(title) + ".md"
 	if exists(p, rel) {
 		return nil, fmt.Errorf("%s exists; choose another title", rel)
 	}
@@ -1128,7 +1125,7 @@ func RenamePhase(p *project.Project, old, title string, now time.Time) (*Phase, 
 	}
 	content := setField(setField(string(data), "title", strconv.Quote(title)), "updated", now.Format("2006-01-02"))
 	content = replaceLead(content, phaseLead(title))
-	dest := project.PhasesDir + "/" + vault.SanitizeTitle(title) + ".md"
+	dest := project.PhasesDir + "/" + project.SanitizeTitle(title) + ".md"
 	if !strings.EqualFold(dest, ph.Path) && exists(p, dest) {
 		return nil, fmt.Errorf("%s exists; choose another title", dest)
 	}

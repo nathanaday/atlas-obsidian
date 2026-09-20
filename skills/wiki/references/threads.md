@@ -2,14 +2,14 @@
 
 A thread is one line of work in a project: an issue, a feature, a chore. It
 moves through four stages, and each stage is a document in its own folder
-under `atlas/<name>/`. Read this before any thread skill changes a page.
+under `atlas/<name>/threads/`. Read this before any thread skill changes a page.
 
 | Stage | Folder | The document holds | Skill |
 |---|---|---|---|
-| stub | `stubs/` | where the thread begins, in the user's words | `thread-stub` |
-| spec | `specs/` | what will be true when the thread is done, and why | `thread-spec` |
-| plan | `plans/` | how the work will go, then its progress | `thread-plan`, `thread-run` |
-| receipt | `receipts/` | how the thread ended: completed or killed | `thread-receipt` |
+| stub | `threads/stubs/` | where the thread begins, in the user's words | `thread-stub` |
+| spec | `threads/specs/` | what will be true when the thread is done, and why | `thread-spec` |
+| plan | `threads/plans/` | how the work will go, then its progress | `thread-plan`, `thread-run` |
+| receipt | `threads/receipts/` | how the thread ended: completed or killed | `thread-receipt` |
 
 ## The rule that matters
 
@@ -28,16 +28,17 @@ thread.
 
 ```text
 atlas/<name>/
+├── wiki/                       the project's knowledge, a separate half
 ├── threads/
-│   ├── threads.md          the board, generated
-│   ├── <Title>.md          the card of an open thread, generated
-│   └── archive/<Title>.md  the card of a closed thread
-├── stubs/<Title>.md
-├── specs/<Title>.md
-├── plans/<Title>.md
-├── receipts/<Title>.md
-├── phases/<Title>.md
-└── inbox/                  notes that wait to become threads
+│   ├── threads.md              the board, generated
+│   ├── <Title>.md              the card of an open thread, generated
+│   ├── archive/<Title>.md      the card of a closed thread
+│   ├── stubs/<Title>.md
+│   ├── specs/<Title>.md
+│   ├── plans/<Title>.md
+│   ├── receipts/<Title>.md
+│   └── phases/<Title>.md
+└── inbox/                      what the user drops in: notes, and sources
 ```
 
 The card holds the thread's identity: `thread_id` (like
@@ -77,13 +78,14 @@ markdown with no frontmatter. A document that exists is never filed again;
 revise it with Edit. An Edit on a document marks its thread as updated today;
 nothing else needs to say so.
 
-In a knowledge base session every tool takes `project`, the name of a project
-that uses the knowledge base; `threads` with no `project` lists them all.
+Every tool acts on this session's project. `project` names another project the
+atlas lists.
 
 ## Phases
 
 A phase is a named slice of the timeline with an order and a goal, a page
-under `phases/`. A thread names its phase; a phase never lists its threads.
+under `threads/phases/`. A thread names its phase; a phase never lists its
+threads.
 A phase has no status: it is finished when every thread in it is closed and
 it holds at least one.
 
@@ -93,9 +95,10 @@ The documents are the only memory between sessions. Before a session ends,
 the plan says where the work stopped and what is next. A thread with a plan
 and no update for 14 days is stale; `status`, the hook, and the atlas say so.
 
-## The knowledge base
+## The wiki, the other half
 
-An open thread never reaches the knowledge base. A completed one may:
-`thread-receipt` offers one operation there, as a plan the user sees. The
-knowledge base is evidence for a spec and a plan; the documents are the
-project's own state.
+An open thread never reaches the wiki. A completed one may: `thread-receipt`
+offers one operation there, as a plan the user sees. The wiki is evidence for a
+spec and a plan; the documents are the state of the work. The two halves sit in
+one folder and follow different rules: only an operation writes `wiki/`, while a
+document's prose is the model's to write with Edit.

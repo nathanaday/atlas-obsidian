@@ -9,12 +9,12 @@ import (
 
 	"github.com/nathanaday/claude-atlas/internal/gitx"
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/project"
 	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
-// oneVault builds an atlas home whose config lists one knowledge base.
-func oneVault(t *testing.T) (home.Home, *home.Config) {
+// oneProject builds an atlas home whose config lists one project.
+func oneProject(t *testing.T) (home.Home, *home.Config) {
 	t.Helper()
 	if !gitx.Available() {
 		t.Skip("git is not installed")
@@ -23,11 +23,14 @@ func oneVault(t *testing.T) (home.Home, *home.Config) {
 	h := home.Home{Root: filepath.Join(root, "home")}
 	cfg := h.Default()
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
-	kb := filepath.Join(root, "Vaults", "kb")
-	if _, err := vault.Init(kb, vault.Options{Name: "kb"}, now); err != nil {
+	work := filepath.Join(root, "Code", "webapp")
+	if err := os.MkdirAll(work, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cfg.AddKnowledge(kb)
+	if _, err := project.Init(work, project.Options{Name: "webapp"}, now); err != nil {
+		t.Fatal(err)
+	}
+	cfg.AddProject(work)
 	if err := h.Save(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +38,7 @@ func oneVault(t *testing.T) (home.Home, *home.Config) {
 }
 
 func TestDerivedWritesNothing(t *testing.T) {
-	h, cfg := oneVault(t)
+	h, cfg := oneProject(t)
 	ix, err := Derived(cfg, time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +52,7 @@ func TestDerivedWritesNothing(t *testing.T) {
 }
 
 func TestEntriesWritesTheRegistryOnceThenReadsIt(t *testing.T) {
-	h, cfg := oneVault(t)
+	h, cfg := oneProject(t)
 	entries, err := Entries(h, cfg, time.Now())
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("entries: %v %v", entries, err)
@@ -64,7 +67,7 @@ func TestEntriesWritesTheRegistryOnceThenReadsIt(t *testing.T) {
 }
 
 func TestAllReturnsTheIndex(t *testing.T) {
-	h, cfg := oneVault(t)
+	h, cfg := oneProject(t)
 	entries, ix, err := All(h, cfg, time.Now())
 	if err != nil || len(entries) != 1 || ix == nil || len(ix.Entries) != 1 {
 		t.Fatalf("all: %d entries, ix %v, err %v", len(entries), ix, err)
@@ -72,7 +75,7 @@ func TestAllReturnsTheIndex(t *testing.T) {
 }
 
 func TestEntriesRebuildsAStaleRegistry(t *testing.T) {
-	h, cfg := oneVault(t)
+	h, cfg := oneProject(t)
 	for _, stale := range []string{`{"schema":"claude-atlas.registry.v1","entries":[]}`, `not json`} {
 		os.MkdirAll(h.StateDir(), 0o755)
 		if err := os.WriteFile(registry.File(h.StateDir()), []byte(stale), 0o644); err != nil {

@@ -1,6 +1,6 @@
-// Package place finds where a session is: in a project, anywhere inside its work, or
-// in a knowledge base. The hooks, the MCP server, and the CLI resolve a session the same
-// way through it, and a session heals its own entry in the atlas config.
+// Package place finds where a session is: in a project, anywhere inside its work. The
+// hooks, the MCP server, and the CLI resolve a session the same way through it, and a
+// session heals its own entry in the atlas config.
 package place
 
 import (
@@ -10,45 +10,35 @@ import (
 	"path/filepath"
 
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/manage"
 	"github.com/nathanaday/claude-atlas/internal/project"
 	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/vault"
-	"github.com/nathanaday/claude-atlas/internal/vaults"
 )
 
-// EnvPlace names the place explicitly for the MCP server and hooks: a knowledge base's
-// root or a project's work folder. It is the variable the launcher sets.
-const EnvPlace = vault.EnvVault
+// EnvPlace names the project explicitly for the MCP server and the hooks. It is the
+// variable the launcher sets.
+const EnvPlace = project.EnvProject
 
-// Place is where a session is.
+// Place is the project a session is in, with what the atlas knows about it.
 type Place struct {
-	// Project is set in a project session.
 	Project *project.Project
-	// Vault is the knowledge base in scope: the session's own, or the project's. nil
-	// for a project that uses none, or whose knowledge base the atlas cannot find.
-	Vault *vault.Vault
-	// KnowledgeError says why Vault is nil for a project that names a knowledge base.
-	KnowledgeError string
-	// Entry is the registry's entry for the project or the knowledge base, with the
-	// whole index behind it; nil when there is no atlas config or the scan failed.
+	// Entry is the registry's entry for the project, with the whole index behind it; nil
+	// when there is no atlas config or the scan failed.
 	Entry *registry.Entry
 	Index *registry.Index
-	// Heal is what registering the project or the knowledge base did to the config,
-	// when asked to.
-	Heal vaults.Heal
+	// Heal is what registering the project did to the config, when asked to.
+	Heal manage.Heal
+	// ConfigError says why Entry is nil when the config could not be read.
+	ConfigError string
 }
 
-// InProject reports whether the session is in a project.
-func (p *Place) InProject() bool { return p != nil && p.Project != nil }
+// ErrNoPlace means the session is not in a project.
+var ErrNoPlace = errors.New("not in a claude-atlas project")
 
-// ErrNoPlace means the session is in neither a project nor a knowledge base.
-var ErrNoPlace = errors.New("not in a claude-atlas project or knowledge base")
-
-// Resolve finds the place: the explicit path, then the environment, then the nearest
-// project or knowledge base at or above start. A knowledge base inside a project's work is
-// nearer than the project from anywhere inside it. An explicit path may be a
-// knowledge base's root or a project's work folder. With register set, the session heals
-// the atlas config so it lists the project or the knowledge base at this path.
+// Resolve finds the project: the explicit path, then the environment, then the nearest
+// project at or above start. An explicit path is the work folder, or anywhere inside it.
+// With register set, the session heals the atlas config so it lists the project at this
+// path.
 func Resolve(h home.Home, explicit, envValue, start string, register bool) (*Place, error) {
 	for _, given := range []string{explicit, envValue} {
 		if given == "" {
@@ -58,28 +48,26 @@ func Resolve(h home.Home, explicit, envValue, start string, register bool) (*Pla
 		if err != nil {
 			return nil, err
 		}
-		switch {
-		case project.IsProject(abs):
-			return resolveProject(h, abs, register)
-		case vault.IsVault(abs):
-			return resolveKnowledge(h, abs, register)
-		}
-		return nil, fmt.Errorf("%w: %s is neither", ErrNoPlace, abs)
+		return from(h, abs, register)
 	}
 	if start == "" {
 		return nil, ErrNoPlace
 	}
-	work, root := project.FindAbove(start), vault.FindAbove(start)
-	switch {
-	case root != "" && (work == "" || len(root) > len(work)):
-		return resolveKnowledge(h, root, register)
-	case work != "":
-		return resolveProject(h, work, register)
-	}
-	return nil, fmt.Errorf("%w: nothing at or above %s", ErrNoPlace, start)
+	return from(h, start, register)
 }
 
-func resolveProject(h home.Home, work string, register bool) (*Place, error) {
+// from resolves the project at or above dir.
+func from(h home.Home, dir string, register bool) (*Place, error) {
+	if work := project.FindAbove(dir); work != "" {
+		return resolve(h, work, register)
+	}
+	if known := project.KnowledgeAbove(dir); known != "" {
+		return nil, fmt.Errorf("%w: %s is a knowledge base of 3.x; run claude-atlas upgrade %s to make it a project", ErrNoPlace, home.Display(known), home.Display(known))
+	}
+	return nil, fmt.Errorf("%w: none at or above %s", ErrNoPlace, home.Display(dir))
+}
+
+func resolve(h home.Home, work string, register bool) (*Place, error) {
 	p, err := project.Open(work)
 	if err != nil {
 		return nil, err
@@ -88,13 +76,13 @@ func resolveProject(h home.Home, work string, register bool) (*Place, error) {
 	cfg, err := h.Load()
 	if err != nil {
 		if errors.Is(err, home.ErrNoAtlas) {
-			out.KnowledgeError = "no atlas config on this machine; run claude-atlas setup"
+			out.ConfigError = "no atlas config on this machine; run claude-atlas setup"
 			return out, nil
 		}
 		return nil, err
 	}
 	if register {
-		if out.Heal, err = vaults.RegisterProject(h, cfg, p); err != nil {
+		if out.Heal, err = manage.RegisterProject(h, cfg, p); err != nil {
 			return nil, err
 		}
 	}
@@ -104,49 +92,6 @@ func resolveProject(h home.Home, work string, register bool) (*Place, error) {
 	}
 	out.Index = ix
 	if e := ix.ByPath(work); e != nil && e.Error == "" {
-		out.Entry = e
-	}
-	if p.Config.Knowledge == nil {
-		return out, nil
-	}
-	kb := ix.ByID(p.Config.Knowledge.ID)
-	if kb == nil || kb.Kind != registry.Knowledge || kb.Error != "" {
-		out.KnowledgeError = fmt.Sprintf("the knowledge base %s (%s) is not on this machine", p.Config.Knowledge.Name, p.Config.Knowledge.ID)
-		return out, nil
-	}
-	v, err := vault.Open(kb.Path)
-	if err != nil {
-		out.KnowledgeError = err.Error()
-		return out, nil
-	}
-	out.Vault = v
-	return out, nil
-}
-
-func resolveKnowledge(h home.Home, root string, register bool) (*Place, error) {
-	v, err := vault.Open(root)
-	if err != nil {
-		return nil, err
-	}
-	out := &Place{Vault: v}
-	cfg, err := h.Load()
-	if err != nil {
-		if errors.Is(err, home.ErrNoAtlas) {
-			return out, nil
-		}
-		return nil, err
-	}
-	if register {
-		if out.Heal, err = vaults.RegisterKnowledge(h, cfg, v); err != nil {
-			return nil, err
-		}
-	}
-	ix, err := registry.Scan(cfg)
-	if err != nil {
-		return nil, err
-	}
-	out.Index = ix
-	if e := ix.ByPath(root); e != nil && e.Error == "" {
 		out.Entry = e
 	}
 	return out, nil

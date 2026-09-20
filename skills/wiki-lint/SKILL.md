@@ -1,12 +1,12 @@
 ---
 name: wiki-lint
-description: "Run the deterministic, read-only health check on the knowledge base. Use for lint, vault health, audit wiki health, find orphans, find dead links, frontmatter audit, wiki audit. Reports links, orphans, index gaps, frontmatter, empty sections, and ledger problems; it does not repair files."
+description: "Run the deterministic, read-only health check on the project's wiki. Use for lint, wiki health, audit wiki health, find orphans, find dead links, frontmatter audit, wiki audit. Reports links, orphans, index gaps, frontmatter, empty sections, and ledger problems; it does not repair files."
 ---
 
 # Lint the wiki
 
 The `lint` tool is the source of truth. It observes; it never writes. It runs
-on the knowledge base in scope: the session's own, or a project's.
+on this session's project.
 
 ## Run
 
@@ -42,7 +42,7 @@ finding; the `stub` tool seeds it.
 3. Say when an orphan may be intentional and when an ambiguous basename needs a
    folder-qualified link. Do not infer intent from a finding alone.
 
-Return the explanation in chat. Do not write a report into the knowledge base.
+Return the explanation in chat. Do not write a report into the wiki.
 
 ## Repair is a separate operation
 

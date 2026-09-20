@@ -1,13 +1,12 @@
 ---
 name: wiki-mode
-description: "Read or change the knowledge base's filing mode and see where a new page of a type belongs: generic (typed folders) or lyt (atomic notes and Maps of Content). Use for wiki mode, what is my vault mode, set vault mode, switch to LYT, use generic, methodology routing. Does not move existing notes."
+description: "Read or change the project's filing mode and see where a new wiki page of a type belongs: generic (typed folders) or lyt (atomic notes and Maps of Content). Use for wiki mode, what is my mode, set the mode, switch to LYT, use generic, methodology routing. Does not move existing notes."
 ---
 
 # Filing mode
 
-The mode decides where a new page goes in the knowledge base. It changes
-nothing about evidence or existing files. Tools: `mode`, `route`, `apply`.
-The skill runs in a knowledge base session.
+The mode decides where a new page goes in the wiki. It changes nothing about
+evidence or existing files. Tools: `route` to read it, `project` to change it.
 
 | Mode | New pages | Navigation |
 |---|---|---|
@@ -16,19 +15,17 @@ The skill runs in a knowledge base session.
 
 ## Read and route
 
-Call `mode` with no arguments for the current mode and the page types it files.
-Call `route` with a `type` and `title` to see the path a new page would take, the
-skeleton it starts from, and whether that page already exists. A calling skill
-may choose a more specific destination when the user names one, but every write
-still goes through `plan`.
+`status` gives the current mode. Call `route` with a `type` and `title` to see
+the path a new page would take, the skeleton it starts from, and whether that
+page already exists. A calling skill may choose a more specific destination when
+the user names one, but every write still goes through `plan`.
 
 ## Change the mode
 
 1. Confirm the target mode with the user: `generic` or `lyt`.
-2. Call `mode` with `set`. It returns a plan that replaces `.claude-atlas.json`
-   and nothing else.
-3. Show the old mode, the new mode, and the changed path.
-4. Call `apply` with the plan id.
+2. Call `project` with `action: edit` and `mode`. It rewrites one field of
+   `project.json` as one commit and nothing else.
+3. Show the old mode and the new one, and say that only future pages follow it.
 
 The change affects future pages only. It never creates folders, moves notes,
 rewrites links, or migrates content. If the user wants existing pages

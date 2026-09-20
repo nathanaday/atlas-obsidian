@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	ConfigSchema   = "claude-atlas.config.v3"
+	ConfigSchema   = "claude-atlas.config.v4"
+	ConfigSchemaV3 = "claude-atlas.config.v3"
 	ConfigSchemaV2 = "claude-atlas.config.v2"
 	ConfigSchemaV1 = "claude-atlas.config.v1"
 	EnvHome        = "CLAUDE_ATLAS_HOME"
@@ -56,13 +57,15 @@ type Config struct {
 	ClaudeCode LaunchConfig `json:"claude_code"`
 	// Heat is nil in a config written before the section existed; NewDays reads it.
 	Heat *HeatConfig `json:"heat,omitempty"`
-	// Knowledge holds every knowledge base's root.
+	// Knowledge holds the root of every knowledge base 3.x kept outside a project. Nothing
+	// adds to it; upgrade absorbs each one into a project and forget drops it.
 	Knowledge []string `json:"knowledge,omitempty"`
 	// Projects holds every project's work folder, the parent of its atlas/<name>/ folder.
 	Projects []string `json:"projects,omitempty"`
 }
 
-// AddKnowledge records a knowledge base's root; it reports whether root was added.
+// AddKnowledge records a 3.x knowledge base's root, for a test and for nothing else; it
+// reports whether root was added.
 func (c *Config) AddKnowledge(root string) bool {
 	root = Expand(root)
 	if contains(c.Knowledge, root) {
@@ -202,6 +205,8 @@ func (h Home) Load() (*Config, error) {
 	}
 	switch cfg.Schema {
 	case ConfigSchema:
+	case ConfigSchemaV3:
+		cfg.Schema = ConfigSchema
 	case ConfigSchemaV2:
 		// A v2 config listed vaults of both kinds outside the vaults directory; the
 		// knowledge bases among them still resolve, and a v2 project vault reports itself

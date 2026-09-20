@@ -9,8 +9,9 @@ Read [threads.md](../wiki/references/threads.md). Tools: `status`, `threads`,
 `thread`, `phase`.
 
 A thread is one line of work. It moves stub, spec, plan, receipt, and each
-stage is a document the user can open. In a knowledge base session pass
-`project`; with no name, `threads` lists every project that uses it.
+stage is a document the user can open, under `threads/` in the project's folder.
+Pass `project` to reach another project the atlas lists; this session's project
+is implied.
 
 ## Show the board
 
@@ -54,9 +55,9 @@ page; refine it with Edit.
 ## Review
 
 When the user asks what to work on, or whether the board makes sense: read
-the open threads' documents and the phase goals, and the knowledge base for
-the subjects they name (`wiki/hot.md`, the project's page, a Grep). Then say
+the open threads' documents and the phase goals, and the wiki for the subjects
+they name (`wiki/hot.md`, the page that describes the work, a Grep). Then say
 what you see: threads that would not reach their phase's goal or that treat
 a symptom, duplicates of each other or of closed threads, what matters most
 and why, and what is missing. Offer the changes as a list and make the ones
-the user picks. The review reads the knowledge base and never writes it.
+the user picks. The review reads the wiki and never writes it.

@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/nathanaday/claude-atlas/internal/lint"
-	"github.com/nathanaday/claude-atlas/internal/vault"
+	"github.com/nathanaday/claude-atlas/internal/project"
 )
 
-func writeFile(t *testing.T, v *vault.Vault, rel, text string) {
+func writeFile(t *testing.T, v *project.Project, rel, text string) {
 	t.Helper()
 	os.MkdirAll(filepath.Dir(v.Path(rel)), 0o755)
 	if err := os.WriteFile(v.Path(rel), []byte(text), 0o644); err != nil {
@@ -20,7 +20,7 @@ func writeFile(t *testing.T, v *vault.Vault, rel, text string) {
 }
 
 func TestStubPagesRefusesWhatIsNotWanted(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	writeFile(t, v, "wiki/concepts/Training.md", string(mkpage("Training", "# Training\n\nSee [[Gradient Clipping]] and [[Traning]].\n")))
 	cases := []struct {
 		title, pageType, want string
@@ -40,7 +40,7 @@ func TestStubPagesRefusesWhatIsNotWanted(t *testing.T) {
 }
 
 func TestStubPagesCreatesWantedPagesAndMovesClickedOnes(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	writeFile(t, v, "wiki/concepts/Training.md", string(mkpage("Training", "# Training\n\nSuffers from the [[vanishing gradient problem]] and needs [[Gradient Clipping]]; see [[Clicked]].\n")))
 	writeFile(t, v, "wiki/Clicked.md", "")
 
@@ -87,7 +87,7 @@ func TestStubPagesCreatesWantedPagesAndMovesClickedOnes(t *testing.T) {
 }
 
 func TestStubPagesReplacesAnEmptyPageAtItsRoutedPath(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	if res, err := StubPages(v, nil, "", now); err != nil || len(res.Stubs) != 0 || res.Stubs == nil || res.OperationID != "" {
 		t.Fatalf("nothing wanted: %+v %v", res, err)
 	}
@@ -113,7 +113,7 @@ func TestStubPagesReplacesAnEmptyPageAtItsRoutedPath(t *testing.T) {
 }
 
 func TestStubConflictsWhenTheUserTypesIntoTheEmptyPage(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	writeFile(t, v, "wiki/concepts/Later.md", string(mkpage("Later", "# Later\n\n[[Typed Into]]\n")))
 	writeFile(t, v, "wiki/Typed Into.md", "")
 	req, _, _, err := StubRequest(v, nil, "", now)
@@ -136,7 +136,7 @@ func TestStubConflictsWhenTheUserTypesIntoTheEmptyPage(t *testing.T) {
 // The request carries the hash of the empty page as the stub read it, so text typed before
 // the plan is a conflict too, not a base the plan overwrites.
 func TestStubConflictsWhenTheUserTypesBeforeThePlan(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	writeFile(t, v, "wiki/concepts/Later.md", string(mkpage("Later", "# Later\n\n[[In Place]]\n")))
 	writeFile(t, v, "wiki/concepts/In Place.md", "")
 	req, _, _, err := StubRequest(v, nil, "", now)
@@ -167,7 +167,7 @@ func TestStubConflictsWhenTheUserTypesBeforeThePlan(t *testing.T) {
 // With no titles the stub takes what it can and reports the rest, so one candidate it
 // cannot file does not cost the user the others.
 func TestStubWithNoTitlesSkipsWhatItCannotStub(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	writeFile(t, v, "wiki/concepts/Linker.md", string(mkpage("Linker", "# Linker\n\n[one](Two.md), [two](notes/Two.md), and [[Ordinary]]\n")))
 	writeFile(t, v, "wiki/concepts/Two.md", "")
 	writeFile(t, v, "wiki/concepts/notes/Two.md", "")
@@ -191,7 +191,7 @@ func TestStubWithNoTitlesSkipsWhatItCannotStub(t *testing.T) {
 }
 
 func TestStubSummaryNamesAtMostThreeTitles(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	writeFile(t, v, "wiki/concepts/Linker.md", string(mkpage("Linker", "# Linker\n\n[[Alpha]] [[Bravo]] [[Charlie]] [[Delta]] [[Echo]]\n")))
 	res, err := StubPages(v, nil, "", now)
 	if err != nil || len(res.Stubs) != 5 {
@@ -205,14 +205,7 @@ func TestStubSummaryNamesAtMostThreeTitles(t *testing.T) {
 
 func TestStubInLYTMode(t *testing.T) {
 	needGit(t)
-	root := filepath.Join(t.TempDir(), "lyt")
-	if _, err := vault.Init(root, vault.Options{Mode: vault.LYT}, now); err != nil {
-		t.Fatal(err)
-	}
-	v, err := vault.Open(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	v := newProjectIn(t, filepath.Join(t.TempDir(), "lyt"), project.LYT)
 	writeFile(t, v, "wiki/notes/Linker.md", string(mkpage("Linker", "# Linker\n\nSee [[Atomic]] and [[Everything]].\n")))
 
 	res, err := StubPages(v, []StubTitle{{Title: "Everything", Type: "moc"}}, "", now)
@@ -227,7 +220,7 @@ func TestStubInLYTMode(t *testing.T) {
 	if !strings.Contains(page, "type: note") || !strings.Contains(page, "status: seed") || !strings.Contains(page, "# Atomic") {
 		t.Fatalf("stub page:\n%s", page)
 	}
-	report, err := lint.Run(v.Root, lint.Options{AsOf: now})
+	report, err := lint.Run(v.Atlas(), lint.Options{AsOf: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +234,7 @@ func TestStubInLYTMode(t *testing.T) {
 }
 
 func TestStubLeavesAnUnsanitizableEmptyPageAlone(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	writeFile(t, v, "wiki/concepts/Linker.md", string(mkpage("Linker", "# Linker\n\nSee [[What?]], [[a  b]], and [[Ordinary]].\n")))
 	writeFile(t, v, "wiki/What?.md", "")
 	writeFile(t, v, "wiki/a  b.md", "")
@@ -269,7 +262,7 @@ func TestStubLeavesAnUnsanitizableEmptyPageAlone(t *testing.T) {
 		t.Fatalf("a  b.md stays untouched: %q %v", data, err)
 	}
 
-	report, err := lint.Run(v.Root, lint.Options{AsOf: now})
+	report, err := lint.Run(v.Atlas(), lint.Options{AsOf: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,13 +278,13 @@ func TestStubLeavesAnUnsanitizableEmptyPageAlone(t *testing.T) {
 	}
 }
 
-// The user can delete an empty page while the stub is reading the vault. The candidate is
+// The user can delete an empty page while the stub is reading the project. The candidate is
 // then gone, and a run with no titles reports it instead of failing.
 func TestStubSkipsAnEmptyPageThatDisappeared(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	writeFile(t, v, "wiki/concepts/Linker.md", string(mkpage("Linker", "# Linker\n\nSee [[Clicked]] and [[Ordinary]].\n")))
 	writeFile(t, v, "wiki/Clicked.md", "")
-	report, err := lint.Run(v.Root, lint.Options{AsOf: now})
+	report, err := lint.Run(v.Atlas(), lint.Options{AsOf: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,14 +296,14 @@ func TestStubSkipsAnEmptyPageThatDisappeared(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a page that is gone is not an error: %v", err)
 	}
-	_, stubbed, skipped, err := set.writes(v, v, set.all(), "concept", true, now)
+	_, stubbed, skipped, err := set.writes(v, set.all(), "concept", true, now)
 	if err != nil || len(stubbed) != 1 || stubbed[0].Title != "Ordinary" {
 		t.Fatalf("the rest still stubs: %+v %v", stubbed, err)
 	}
 	if len(skipped) != 1 || skipped[0] != (Skipped{Title: "Clicked", Reason: "wiki/Clicked.md disappeared before the stub"}) {
 		t.Fatalf("skipped %+v", skipped)
 	}
-	if _, _, _, err := set.writes(v, v, []StubTitle{{Title: "Clicked"}}, "concept", false, now); err == nil ||
+	if _, _, _, err := set.writes(v, []StubTitle{{Title: "Clicked"}}, "concept", false, now); err == nil ||
 		err.Error() != "wiki/Clicked.md disappeared before the stub" {
 		t.Fatalf("a named title: %v", err)
 	}
@@ -318,7 +311,7 @@ func TestStubSkipsAnEmptyPageThatDisappeared(t *testing.T) {
 
 // Three pages with one name name the first two: the user keeps one and runs the stub again.
 func TestStubNamesTwoOfThreePagesSharingAName(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	writeFile(t, v, "wiki/concepts/Linker.md", string(mkpage("Linker", "# Linker\n\n[a](Three.md), [b](notes/Three.md), [c](other/Three.md)\n")))
 	for _, rel := range []string{"wiki/concepts/Three.md", "wiki/concepts/notes/Three.md", "wiki/concepts/other/Three.md"} {
 		writeFile(t, v, rel, "")
@@ -334,8 +327,8 @@ func TestStubNamesTwoOfThreePagesSharingAName(t *testing.T) {
 
 // Without a wiki to walk, the refusal says the vault could not be read.
 func TestStubSaysWhenItCannotReadTheWiki(t *testing.T) {
-	v := newVault(t)
-	if err := os.RemoveAll(v.Path(vault.WikiDir)); err != nil {
+	v := newProject(t)
+	if err := os.RemoveAll(v.Path(project.WikiDir)); err != nil {
 		t.Fatal(err)
 	}
 	_, _, _, err := StubRequest(v, []StubTitle{{Title: "Anything"}}, "", now)
@@ -345,8 +338,8 @@ func TestStubSaysWhenItCannotReadTheWiki(t *testing.T) {
 }
 
 func TestStubKind(t *testing.T) {
-	v := newVault(t)
-	if defaultStubType(vault.LYT) != "note" || defaultStubType(vault.Generic) != "concept" {
+	v := newProject(t)
+	if defaultStubType(project.LYT) != "note" || defaultStubType(project.Generic) != "concept" {
 		t.Fatal("default stub types")
 	}
 	if _, err := Prepare(v, Request{Kind: Stub, Summary: "x", Writes: []Write{{Path: "wiki/concepts/x.canvas", Mode: Create, Content: []byte("{}")}}}, now); err == nil {
@@ -374,20 +367,20 @@ func TestStubKind(t *testing.T) {
 	}
 }
 
-func TestStubViaNamesTheProject(t *testing.T) {
-	kb := newVault(t)
-	writeFile(t, kb, "wiki/concepts/Seed.md", string(mkpage("Seed", "# Seed\n\nSee [[Attention]].\n")))
-	res, err := StubVia(kb, nil, "", "webapp", now)
+func TestStubCommitsInTheProject(t *testing.T) {
+	p := newProject(t)
+	writeFile(t, p, "wiki/concepts/Seed.md", string(mkpage("Seed", "# Seed\n\nSee [[Attention]].\n")))
+	res, err := StubPages(p, nil, "", now)
 	if err != nil || len(res.Stubs) != 1 || res.Stubs[0].Path != "wiki/concepts/Attention.md" || res.Commit == "" {
-		t.Fatalf("stub via a project: %+v %v", res, err)
+		t.Fatalf("stub: %+v %v", res, err)
 	}
-	if ops, err := History(kb, 1, false); err != nil || ops[0].Kind != "stub" || ops[0].Summary != "stub Attention (via webapp)" {
+	if ops, err := History(p, 1, false); err != nil || ops[0].Kind != "stub" || ops[0].Summary != "stub Attention" {
 		t.Fatalf("summary: %+v %v", ops, err)
 	}
-	if r, err := lint.Run(kb.Root, lint.Options{AsOf: now}); err != nil || len(r.WantedPages) != 0 {
+	if r, err := lint.Run(p.Atlas(), lint.Options{AsOf: now}); err != nil || len(r.WantedPages) != 0 {
 		t.Fatalf("the stub resolves the link: %+v %v", r.WantedPages, err)
 	}
-	if _, err := StubVia(kb, []StubTitle{{Title: "Nowhere"}}, "", "webapp", now); err == nil || !strings.Contains(err.Error(), "nothing in the wiki links to") {
+	if _, err := StubPages(p, []StubTitle{{Title: "Nowhere"}}, "", now); err == nil || !strings.Contains(err.Error(), "nothing in the wiki links to") {
 		t.Fatalf("a title nothing links to: %v", err)
 	}
 }

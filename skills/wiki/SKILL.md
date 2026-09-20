@@ -1,70 +1,73 @@
 ---
 name: wiki
-description: "Orient in a claude-atlas session and route work to the right skill. Use for /wiki, set up wiki, vault status, what is in this knowledge base, which skill should I use, adopt this vault, Obsidian vault, second brain, persistent wiki, knowledge base setup."
+description: "Orient in a claude-atlas session and route work to the right skill. Use for /wiki, set up wiki, project status, what is in this wiki, which skill should I use, make this a project, Obsidian vault, second brain, persistent wiki, wiki setup."
 ---
 
 # Orientation
 
-Atlas has two things. A **knowledge base** is an Obsidian vault: `inbox/`
-for sources you have not processed, `ideas/` for the user's own scratch
-notes, `.raw/captured/` for immutable copies of ingested sources, and
-`wiki/` for the pages: sources, entities, and concepts. Every change to
-`wiki/` is one reviewed operation and one git commit. A **project** is a
-folder `atlas/<name>/` inside the user's work, a repository or a folder of
-documents. It holds `project.json`, the threads (`threads/`, and one folder per
-stage: `stubs/`, `specs/`, `plans/`, `receipts/`), `phases/`, and `inbox/`
-for notes. It has no git of its own and no engine. A project uses one knowledge
-base; a knowledge base serves many projects.
+Atlas has one thing. A **project** is a folder `atlas/<name>/` inside the
+user's work, a repository or a folder of documents, and it holds both halves of
+what the project knows:
+
+- The **wiki**, under `wiki/`: sources, entities, and concepts, with `inbox/`
+  for what the user drops in, `ideas/` for their own scratch notes, and
+  `.raw/captured/` for immutable copies of ingested sources. Every change to
+  `wiki/` is one reviewed operation and one git commit.
+- The **threads**, under `threads/`: one line of work each, with a document per
+  stage in `threads/stubs/`, `threads/specs/`, `threads/plans/`, and
+  `threads/receipts/`, the cards and the board at the top of `threads/`, and
+  `threads/phases/` for the timeline.
+
+The folder is an Obsidian vault the user opens, and `project.json` says what it
+is. The wiki commits into the repository that holds the work, scoped to the
+wiki's own paths, so an operation never touches the code.
 
 The atlas MCP server (tools named `mcp__plugin_claude-atlas_atlas__<tool>`,
 called `status`, `plan`, `apply`, and so on below) is the only write path
-into a knowledge base.
+into the wiki.
 
 ## Find the place
 
-Call `status` first. In a project session it reports `kind: project`, the
-project's id, name, description, and path, its knowledge base (or why none
-resolves), the page that describes it there, and its thread counts by stage. In a
-knowledge base session it reports `kind: knowledge`, the mode, scope, page
-count, files waiting in the inbox, git state, warnings, and the projects that
-use it. The session hook's first line already names the place:
-`claude-atlas: project …` or `claude-atlas: knowledge base …`.
+Call `status` first. It reports the project's id, name, description, and path,
+its mode, what git says about the work, the page that describes the work, its
+thread counts by stage, its wiki's page count and git state, what waits in the
+inbox, and warnings. The session hook's first line already names the place:
+`claude-atlas: project …`.
 
-If `status` fails because the session is in neither, hand off: `atlas-project`
-makes the current folder a project, `atlas-knowledge` creates a knowledge base
-or adopts an existing Obsidian vault, and `atlas` shows what exists.
+If `status` fails because the session is in no project, hand off:
+`atlas-project` makes the current folder a project, and `atlas` shows what
+exists. A folder of an earlier version says so and names
+`claude-atlas upgrade`.
 
-Do not create knowledge base files yourself. If `status` warns that an
-operation was interrupted, tell the user to run `claude-atlas recover` before
-anything else.
+Do not create wiki files yourself. If `status` warns that an operation was
+interrupted, tell the user to run `claude-atlas recover` before anything else.
 
 ## Never write wiki pages directly
 
-Write, Edit, MultiEdit, and NotebookEdit are refused under a knowledge base's
-`wiki/` by a hook. Read pages with Read, Grep, and Glob as usual; change them
-only through `plan` and `apply`. The core writes `wiki/log.md` and the source
-ledger itself; a plan that names either is rejected.
+Write, Edit, MultiEdit, and NotebookEdit are refused under `wiki/` by a hook.
+Read pages with Read, Grep, and Glob as usual; change them only through `plan`
+and `apply`. The core writes `wiki/log.md` and the source ledger itself; a plan
+that names either is rejected.
 
-A project's stage documents and phase pages are different: their prose is the
-model's to write with Edit. The hook refuses everything under
-`atlas/<name>/threads/`, `atlas/<name>/project.json`, and a new file written
-straight into a stage folder; the `thread`, `phase`, and `project` tools make
-those changes.
+The stage documents and the phase pages are different: their prose is the
+model's to write with Edit. The hook refuses the cards and the board (the pages
+directly under `threads/`), `project.json`, and a new file written straight into
+a stage folder; the `thread`, `phase`, and `project` tools make those changes.
 
 ## Route the request
 
 | Intent | Skill |
 |---|---|
-| Process files in the knowledge base inbox, or supplied text, into pages | `wiki-ingest` |
-| Answer from what the knowledge base already holds | `wiki-query` |
+| Turn the sources waiting in `inbox/`, or supplied text, into pages | `wiki-ingest` |
+| Answer from what the wiki already holds | `wiki-query` |
 | Keep a specific answer, decision, or insight | `save` |
-| Check the knowledge base's health | `wiki-lint` |
+| Check the wiki's health | `wiki-lint` |
 | Read or change the filing mode | `wiki-mode` |
 | Roll up log entries | `wiki-fold` |
-| Describe a project in its knowledge base, or bring its page up to date | `describe` |
+| Describe the work in the project's own wiki, or bring its page up to date | `describe` |
 | Make a change now: do this, implement, fix this | `work` |
 | See, change, review, or route threads; create or change a phase | `thread` |
-| Note an idea as a thread, or open threads from the notes in a project's inbox | `thread-stub` |
+| Note an idea as a thread, or open threads from the notes in `inbox/` | `thread-stub` |
 | Define what done means for a thread | `thread-spec` |
 | Decide how to do a thread | `thread-plan` |
 | Work on a thread, or resume one | `thread-run` |
@@ -73,21 +76,19 @@ those changes.
 | Author a Bases `.base` view | `obsidian-bases` |
 | Obsidian syntax questions | `obsidian-markdown` |
 | Reason carefully before a consequential change | `think` |
-| See every knowledge base and project, refresh, or change a setting | `atlas` |
-| Make this folder a project; link, unlink, rename, or forget one | `atlas-project` |
-| Create a knowledge base, or change its scope or mode | `atlas-knowledge` |
+| See every project on the machine, refresh, or change a setting | `atlas` |
+| Make this folder a project; rename it, change its description or mode, or forget it | `atlas-project` |
 
 Query is read-only. Keeping an answer is a separate `save` operation the user
 asks for. Never update the hot cache merely because a session ended.
 
-In a project session, the wiki tools act on the project's knowledge base.
-In a knowledge base session, the thread tools take `project` to reach any
-project that uses it; the hook's `Projects:` line names them.
+Every tool acts on this session's project. The thread tools take `project` to
+reach another project the atlas lists; the `atlas` tool names them.
 
 ## The operation contract
 
-Read [operations.md](references/operations.md) before any change to a
-knowledge base. In short:
+Read [operations.md](references/operations.md) before any change to the wiki.
+In short:
 
 1. Read every page you will change and keep its `sha256` from the plan preview
    or compute it; a page that changed since you read it makes apply fail
@@ -111,7 +112,7 @@ when a user hesitates rather than skipping a review.
 Read only what the request needs:
 
 - [operations.md](references/operations.md) for the plan and apply contract;
-- [threads.md](references/threads.md) for a project's threads and phase pages;
+- [threads.md](references/threads.md) for the threads and the phase pages;
 - [provenance.md](references/provenance.md) when a source enters or a claim
   needs support;
 - [frontmatter.md](references/frontmatter.md) when defining or adopting page

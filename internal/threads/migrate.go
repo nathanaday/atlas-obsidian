@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
 var (
@@ -70,11 +69,11 @@ func Migrate(p *project.Project, now time.Time) (moved int, left []Problem, err 
 }
 
 func migrateOne(p *project.Project, board *Board, rel, content string, now time.Time) error {
-	fields, body, err := vault.Frontmatter(content)
+	fields, body, err := project.Frontmatter(content)
 	if err != nil {
 		return err
 	}
-	if fields == nil || vault.StringField(fields, "type") != "task" {
+	if fields == nil || project.StringField(fields, "type") != "task" {
 		return fmt.Errorf("not a task page")
 	}
 	today := now.Format("2006-01-02")
@@ -85,11 +84,11 @@ func migrateOne(p *project.Project, board *Board, rel, content string, now time.
 		return today
 	}
 	t := Thread{
-		Title: strings.TrimSpace(vault.StringField(fields, "title")), Priority: vault.StringField(fields, "priority"),
-		Phase: strings.TrimSpace(vault.StringField(fields, "phase")), Created: date("created"), Updated: date("updated"),
+		Title: strings.TrimSpace(project.StringField(fields, "title")), Priority: project.StringField(fields, "priority"),
+		Phase: strings.TrimSpace(project.StringField(fields, "phase")), Created: date("created"), Updated: date("updated"),
 	}
 	if t.Title == "" {
-		t.Title = vault.PageTitle(rel)
+		t.Title = project.PageTitle(rel)
 	}
 	if !contains(Priorities, t.Priority) {
 		t.Priority = "normal"
@@ -97,12 +96,12 @@ func migrateOne(p *project.Project, board *Board, rel, content string, now time.
 	if t.Phase != "" && board.Phase(t.Phase) == nil {
 		t.Phase = ""
 	}
-	if m := legacyID.FindStringSubmatch(vault.StringField(fields, "task_id")); m != nil && board.Find("thr-"+m[1]) == nil {
+	if m := legacyID.FindStringSubmatch(project.StringField(fields, "task_id")); m != nil && board.Find("thr-"+m[1]) == nil {
 		t.ID = "thr-" + m[1]
 	} else {
 		t.ID = NewID(now)
 	}
-	status := vault.StringField(fields, "status")
+	status := project.StringField(fields, "status")
 	if status == "blocked" {
 		t.Blocked = "blocked as a task; the plan's progress says on what"
 	}

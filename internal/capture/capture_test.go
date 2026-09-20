@@ -10,26 +10,34 @@ import (
 
 	"github.com/nathanaday/claude-atlas/internal/gitx"
 	"github.com/nathanaday/claude-atlas/internal/ledger"
-	"github.com/nathanaday/claude-atlas/internal/vault"
+	"github.com/nathanaday/claude-atlas/internal/project"
 )
 
 var now = time.Date(2026, 9, 12, 15, 0, 0, 0, time.UTC)
 
-func newVault(t *testing.T) *vault.Vault {
+// newProject makes a project in a work folder of its own, which git init makes a
+// repository, so the engine has a history.
+func newProject(t *testing.T) *project.Project {
 	t.Helper()
 	if !gitx.Available() {
 		t.Skip("git is not installed")
 	}
-	root := filepath.Join(t.TempDir(), "v")
-	if _, err := vault.Init(root, vault.Options{Mode: vault.Generic}, now); err != nil {
+	work := filepath.Join(t.TempDir(), "webapp")
+	if err := os.MkdirAll(work, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	v, _ := vault.Open(root)
-	return v
+	if _, err := project.Init(work, project.Options{Mode: project.Generic}, now); err != nil {
+		t.Fatal(err)
+	}
+	p, err := project.Open(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }
 
 func TestListAndCapture(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	os.WriteFile(v.Path("inbox/paper.PDF"), []byte("%PDF fake"), 0o644)
 	os.MkdirAll(v.Path("inbox/notes"), 0o755)
 	os.WriteFile(v.Path("inbox/notes/a.md"), []byte("# a"), 0o644)
@@ -55,7 +63,7 @@ func TestListAndCapture(t *testing.T) {
 	if _, err := os.Stat(v.Path("inbox/paper.PDF")); err != nil {
 		t.Fatal("capture must not remove inbox files")
 	}
-	l, _ := ledger.Load(v.Path(vault.LedgerPath), now)
+	l, _ := ledger.Load(v.Path(project.LedgerPath), now)
 	rec, ok := l.Sources[pdf.SourceID]
 	if !ok || rec.Title != "paper" || rec.ContentKind != "pdf" || rec.CapturedAt != "2026-09-12" || rec.ReviewStatus != "unreviewed" {
 		t.Fatalf("ledger %+v %v", rec, ok)
@@ -63,7 +71,7 @@ func TestListAndCapture(t *testing.T) {
 	if !v.Repo().Tracked(pdf.StoredPath) {
 		t.Fatal("captured bytes are committed")
 	}
-	log, _ := os.ReadFile(v.Path(vault.LogPage))
+	log, _ := os.ReadFile(v.Path(project.LogPage))
 	if !strings.Contains(string(log), "capture paper.PDF, a.md") {
 		t.Fatalf("log:\n%s", log)
 	}
@@ -84,7 +92,7 @@ func TestListAndCapture(t *testing.T) {
 }
 
 func TestCaptureRefusesAFileOverTheSizeCapWithoutReadingIt(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	f, err := os.Create(v.Path("inbox/huge.bin"))
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +114,7 @@ func TestCaptureRefusesAFileOverTheSizeCapWithoutReadingIt(t *testing.T) {
 		t.Fatalf("a file over the cap must be refused and name it: %v", err)
 	}
 
-	l, err := ledger.Load(v.Path(vault.LedgerPath), now)
+	l, err := ledger.Load(v.Path(project.LedgerPath), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +132,7 @@ func TestCaptureRefusesAFileOverTheSizeCapWithoutReadingIt(t *testing.T) {
 }
 
 func TestCaptureRecordsTheProjectItCameThrough(t *testing.T) {
-	kb := newVault(t)
+	kb := newProject(t)
 	os.WriteFile(kb.Path("inbox/paper.md"), []byte("# paper"), 0o644)
 	via := ledger.Via{ID: "p-1", Name: "webapp"}
 	res, err := Capture(kb, []string{"paper.md"}, &via, now)
@@ -132,7 +140,7 @@ func TestCaptureRecordsTheProjectItCameThrough(t *testing.T) {
 		t.Fatalf("result %+v %v", res, err)
 	}
 	got := res.Sources[0]
-	l, err := ledger.Load(kb.Path(vault.LedgerPath), now)
+	l, err := ledger.Load(kb.Path(project.LedgerPath), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +159,7 @@ func TestCaptureRecordsTheProjectItCameThrough(t *testing.T) {
 }
 
 func TestCaptureAcceptsDotsInNamesAndRefusesTraversal(t *testing.T) {
-	v := newVault(t)
+	v := newProject(t)
 	name := "L3.1 - Dynamical Sys Cont..md"
 	os.WriteFile(v.Path("inbox/"+name), []byte("lecture"), 0o644)
 	res, err := Capture(v, []string{name}, nil, now)

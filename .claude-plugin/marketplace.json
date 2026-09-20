@@ -5,15 +5,15 @@
     "url": "https://github.com/nathanaday"
   },
   "metadata": {
-    "description": "claude-atlas: knowledge bases for Claude Code, projects that live in your work, and one view across them.",
-    "version": "3.0.0"
+    "description": "claude-atlas: a wiki and the state of the work, in every project, and one view across them.",
+    "version": "4.0.0"
   },
   "plugins": [
     {
       "name": "claude-atlas",
       "source": "./",
-      "description": "Source-cited Obsidian knowledge bases and in-work projects for Claude Code, backed by the claude-atlas binary.",
-      "version": "3.0.0",
+      "description": "A source-cited Obsidian wiki and the threads of the work, in one folder inside every project, backed by the claude-atlas binary.",
+      "version": "4.0.0",
       "category": "productivity"
     }
   ]

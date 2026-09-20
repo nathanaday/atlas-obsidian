@@ -6,45 +6,27 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/gitx"
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/manage"
 	"github.com/nathanaday/claude-atlas/internal/project"
 	"github.com/nathanaday/claude-atlas/internal/registry"
 	"github.com/nathanaday/claude-atlas/internal/threads"
-	"github.com/nathanaday/claude-atlas/internal/vault"
-	"github.com/nathanaday/claude-atlas/internal/vaults"
 )
 
-var now = time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
-
-// atlas builds an atlas home whose vaults directory holds one knowledge base, kb.
-func atlas(t *testing.T) (home.Home, *home.Config, registry.Entry) {
+// atlas builds an empty atlas home.
+func atlas(t *testing.T) (home.Home, *home.Config) {
 	t.Helper()
 	if !gitx.Available() {
 		t.Skip("git is not installed")
 	}
-	root := t.TempDir()
-	h := home.Home{Root: filepath.Join(root, "home")}
+	h := home.Home{Root: filepath.Join(t.TempDir(), "home")}
 	cfg := h.Default()
-	kbPath := filepath.Join(root, "Vaults", "kb")
-	if _, err := vault.Init(kbPath, vault.Options{Name: "kb"}, now); err != nil {
-		t.Fatal(err)
-	}
-	cfg.AddKnowledge(kbPath)
 	if err := h.Save(cfg); err != nil {
 		t.Fatal(err)
 	}
-	ix, err := registry.Scan(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	kb := ix.ByPath(kbPath)
-	if kb == nil {
-		t.Fatal("the scan did not find kb")
-	}
-	return h, cfg, *kb
+	return h, cfg
 }
 
 func entry(t *testing.T, a Atlas, path string) registry.Entry {
@@ -71,83 +53,72 @@ func TestBindSetsEveryField(t *testing.T) {
 	}
 }
 
-func TestKnowledgeBasesCreateEditAndForget(t *testing.T) {
-	h, cfg, _ := atlas(t)
-	a := Bind(h, cfg, nil)
-	path, err := a.CreateKnowledge(AddKnowledge{Name: "papers", Path: filepath.Join(t.TempDir(), "papers"), Mode: "lyt", Scope: "Papers."})
-	if err != nil {
-		t.Fatal(err)
-	}
-	e := entry(t, a, path)
-	if e.Kind != registry.Knowledge || e.Scope != "Papers." || e.Mode != vault.LYT || e.State == nil {
-		t.Fatalf("knowledge base: %+v", e)
-	}
-	if _, err := a.CreateKnowledge(AddKnowledge{Name: "x", Path: filepath.Join(t.TempDir(), "x"), Mode: "other"}); err == nil {
-		t.Fatal("a bad mode is refused")
-	}
-	moved, err := a.EditKnowledge(e, vaults.Edit{Name: "Papers"})
-	if err != nil || filepath.Base(moved) != "Papers" {
-		t.Fatalf("rename: %q %v", moved, err)
-	}
-	// An adopted vault is registered, and any listed knowledge base can be forgotten.
-	outside := filepath.Join(t.TempDir(), "outside")
-	os.MkdirAll(filepath.Join(outside, "wiki"), 0o755)
-	adopted, err := a.CreateKnowledge(AddKnowledge{Path: outside, Adopt: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg2, _ := h.Load(); len(cfg2.Knowledge) != 3 || !cfg2.HasKnowledge(adopted) || !cfg2.HasKnowledge(moved) {
-		t.Fatalf("registered: %+v", cfg2.Knowledge)
-	}
-	if err := a.ForgetKnowledge(entry(t, a, adopted)); err != nil {
-		t.Fatalf("forget: %v", err)
-	}
-	if ix, err := a.Refresh(); err != nil || len(ix.Knowledge()) != 2 {
-		t.Fatalf("refresh: %v %v", ix, err)
-	}
-	if entries, err := a.Load(); err != nil || len(entries) != 2 {
-		t.Fatalf("load: %v %v", entries, err)
-	}
-}
-
-func TestProjectsInitLinkThreadsAndPhases(t *testing.T) {
-	h, cfg, kb := atlas(t)
+func TestProjectsInitEditStageAndForget(t *testing.T) {
+	h, cfg := atlas(t)
 	a := Bind(h, cfg, nil)
 	work := filepath.Join(t.TempDir(), "webapp")
 	os.MkdirAll(work, 0o755)
-	made, err := a.InitProject(InitProject{Work: work, Description: "The web app.", Knowledge: "kb"})
-	if err != nil || made.Project.Config.Knowledge == nil || made.Project.Config.Knowledge.ID != kb.ID || len(made.Written) != len(project.Folders)+2 || made.Git != vaults.GitCreated {
-		t.Fatalf("init: %+v %v", made, err)
+	made, err := a.InitProject(InitProject{Work: work, Description: "The web app.", Mode: "lyt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if made.Project.Config.Mode != project.LYT || made.Git != project.GitCreated || made.Commit == "" {
+		t.Fatalf("init: %+v", made)
+	}
+	if _, err := a.InitProject(InitProject{Work: t.TempDir(), Mode: "para"}); err == nil {
+		t.Fatal("a bad mode is refused")
 	}
 	e := entry(t, a, work)
-	if e.Kind != registry.Project || e.KnowledgePath() != kb.Path || e.State == nil || e.State.Threads == nil {
+	if e.Description != "The web app." || e.Mode != project.LYT || e.State == nil || e.State.Threads == nil || e.State.Pages == nil {
 		t.Fatalf("project: %+v", e)
 	}
-	if err := a.UnlinkProject(e); err != nil {
-		t.Fatal(err)
-	}
-	if e = entry(t, a, work); e.Knowledge != nil {
-		t.Fatalf("unlinked: %+v", e)
-	}
-	if _, err := a.StageProject(e); err == nil || !strings.Contains(err.Error(), "uses no knowledge base") {
-		t.Fatalf("no knowledge base to stage into: %v", err)
-	}
-	if _, err := a.LinkProject(e, "kb"); err != nil {
-		t.Fatal(err)
-	}
 	desc := "Described."
-	if err := a.EditProject(e, vaults.ProjectEdit{Name: "Web App", Description: &desc}); err != nil {
+	if err := a.EditProject(e, manage.Edit{Name: "Web App", Description: &desc, Mode: project.Generic}); err != nil {
 		t.Fatal(err)
 	}
 	e = entry(t, a, work)
-	if e.Name != "Web App" || e.Description != desc || e.KnowledgePath() != kb.Path {
+	if e.Name != "Web App" || e.Description != desc || e.Mode != project.Generic {
 		t.Fatalf("edited: %+v", e)
 	}
+	// A snapshot of the work goes into the project's own inbox.
 	staged, err := a.StageProject(e)
 	if err != nil || !staged.New || !strings.HasPrefix(staged.To, "inbox/Web App-") {
 		t.Fatalf("stage: %+v %v", staged, err)
 	}
-	// Threads and phases.
+	// Staging files from outside: the plan, then the copy.
+	outside := t.TempDir()
+	os.WriteFile(filepath.Join(outside, "paper.pdf"), []byte("%PDF"), 0o644)
+	plan, err := a.StagePlan(e, []string{outside})
+	if err != nil || len(plan.New) != 1 {
+		t.Fatalf("plan: %+v %v", plan, err)
+	}
+	res, remembered, err := a.Stage(e, plan)
+	if err != nil || len(res.Staged) != 1 || len(remembered) != 1 {
+		t.Fatalf("stage: %+v %v %v", res, remembered, err)
+	}
+	if got := a.Sources(e); len(got) != 1 {
+		t.Fatalf("the project remembers the folder: %v", got)
+	}
+	if err := a.ForgetProject(e); err != nil {
+		t.Fatal(err)
+	}
+	if cfg2, _ := h.Load(); cfg2.HasProject(work) {
+		t.Fatal("forgotten")
+	}
+	if !project.IsProject(work) {
+		t.Fatal("forget keeps the folder")
+	}
+}
+
+func TestThreadsAndPhasesThroughTheActions(t *testing.T) {
+	h, cfg := atlas(t)
+	a := Bind(h, cfg, nil)
+	work := filepath.Join(t.TempDir(), "webapp")
+	os.MkdirAll(work, 0o755)
+	if _, err := a.InitProject(InitProject{Work: work}); err != nil {
+		t.Fatal(err)
+	}
+	e := entry(t, a, work)
 	ph, err := a.AddPhase(e, "Alpha", "First.", nil)
 	if err != nil || ph.Order != 1 {
 		t.Fatalf("phase: %+v %v", ph, err)
@@ -190,13 +161,23 @@ func TestProjectsInitLinkThreadsAndPhases(t *testing.T) {
 	if ph, err := a.RenamePhase(e, "Beta", "Gamma"); err != nil || ph.Title != "Gamma" {
 		t.Fatalf("rename: %+v %v", ph, err)
 	}
-	if err := a.ForgetProject(e); err != nil {
+}
+
+func TestLoadRefreshAndScan(t *testing.T) {
+	h, cfg := atlas(t)
+	a := Bind(h, cfg, nil)
+	work := filepath.Join(t.TempDir(), "webapp")
+	os.MkdirAll(work, 0o755)
+	if _, err := a.InitProject(InitProject{Work: work}); err != nil {
 		t.Fatal(err)
 	}
-	if cfg2, _ := h.Load(); cfg2.HasProject(work) {
-		t.Fatal("forgotten")
+	if entries, err := a.Load(); err != nil || len(entries) != 1 {
+		t.Fatalf("load: %v %v", entries, err)
 	}
-	if !project.IsProject(work) {
-		t.Fatal("forget keeps the folder")
+	if ix, err := a.Refresh(); err != nil || len(ix.Projects()) != 1 {
+		t.Fatalf("refresh: %v %v", ix, err)
+	}
+	if ix, err := a.Scan(); err != nil || len(ix.Projects()) != 1 || ix.Projects()[0].State == nil {
+		t.Fatalf("scan derives state: %v %v", ix, err)
 	}
 }

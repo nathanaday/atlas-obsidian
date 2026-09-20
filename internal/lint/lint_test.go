@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/vault"
+	"github.com/nathanaday/claude-atlas/internal/project"
 )
 
 const front = "---\ntitle: %s\ntype: concept\nstatus: seed\ncreated: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - x\n---\n"
@@ -328,40 +328,45 @@ func TestLedgerErrors(t *testing.T) {
 	}
 }
 
-// A finding in a new vault is the layout's own fault, and the user can do nothing about it.
-func TestNewVaultHasNoFindings(t *testing.T) {
+// A finding in a new project is the layout's own fault, and the user can do nothing about it.
+func TestNewProjectHasNoFindings(t *testing.T) {
 	if !gitx.Available() {
 		t.Skip("git is not installed")
 	}
 	asOf := time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC)
-	for _, mode := range vault.Modes {
-		root := filepath.Join(t.TempDir(), string(mode))
-		if _, err := vault.Init(root, vault.Options{Mode: mode}, asOf); err != nil {
+	for _, mode := range project.Modes {
+		work := filepath.Join(t.TempDir(), string(mode))
+		if err := os.MkdirAll(work, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		r, err := Run(root, Options{AsOf: asOf})
+		res, err := project.Init(work, project.Options{Mode: mode}, asOf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := Run(res.Project.Atlas(), Options{AsOf: asOf})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if r.Summary.IssuesFound != 0 || r.Summary.WantedPages != 0 || r.Summary.Stubs != 0 {
-			t.Errorf("knowledge base in %s mode:\n%s", mode, r.Markdown())
+			t.Errorf("project in %s mode:\n%s", mode, r.Markdown())
 		}
 	}
 }
 
-func TestKindErrors(t *testing.T) {
+func TestLayoutErrors(t *testing.T) {
 	asOf := time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
-	kb := fixture(t, map[string]string{
-		".claude-atlas.json":  `{"schema":"claude-atlas.vault.v3","id":"1","kind":"knowledge","name":"kb","mode":"generic","created":"2026-09-14"}`,
+	folder := fixture(t, map[string]string{
+		"project.json":        `{"schema":"claude-atlas.project.v3","id":"1","name":"webapp","created":"2026-09-14"}`,
 		"wiki/index.md":       mkpage("Index", "# Index\n"),
 		"inbox/paper.md":      "x",
 		"ideas/note.md":       "x",
+		"stubs/A.md":          mkpage("A", "# A\n"),
 		"wiki/tasks/tasks.md": mkpage("Tasks", "# Tasks\n"),
 		"wiki/questions/Q.md": mkpage("Q", "# Q\n"),
 		"kb/x/index.md":       "x",
 		"repos/x/README.md":   "x",
 	})
-	r, err := Run(kb, Options{AsOf: asOf})
+	r, err := Run(folder, Options{AsOf: asOf})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,25 +374,19 @@ func TestKindErrors(t *testing.T) {
 	for _, f := range r.KindErrors {
 		got = append(got, f.Path)
 	}
-	if strings.Join(got, ",") != "kb,repos,wiki/questions,wiki/tasks" {
-		t.Fatalf("kind errors %v", got)
+	if strings.Join(got, ",") != "kb,project.json,repos,stubs,wiki/questions,wiki/tasks" {
+		t.Fatalf("layout errors %v", got)
 	}
-	if r.Summary.CategoryCounts["kind_errors"] != 4 || r.Version != 3 || !strings.Contains(r.Markdown(), "## Kind (4)") {
+	if !strings.Contains(r.KindErrors[1].Message, "claude-atlas upgrade") {
+		t.Fatalf("the 3.x identity file names the command: %+v", r.KindErrors[1])
+	}
+	if r.Summary.CategoryCounts["kind_errors"] != 6 || r.Version != 3 || !strings.Contains(r.Markdown(), "## Kind (6)") {
 		t.Fatalf("summary %+v\n%s", r.Summary, r.Markdown())
 	}
-	if _, ok := r.Summary.CategoryCounts["mount_errors"]; ok {
-		t.Fatal("no mount category")
-	}
-	if _, ok := r.Summary.CategoryCounts["task_errors"]; ok {
-		t.Fatal("no task category")
-	}
-	project := fixture(t, map[string]string{
-		".claude-atlas.json": `{"schema":"claude-atlas.vault.v2","id":"2","kind":"project","name":"p","mode":"generic","created":"2026-09-14"}`,
-		"wiki/index.md":      mkpage("Index", "# Index\n"),
-	})
-	r, _ = Run(project, Options{AsOf: asOf})
-	if len(r.KindErrors) != 1 || r.KindErrors[0].Path != ".claude-atlas.json" || !strings.Contains(r.KindErrors[0].Message, "claude-atlas init") {
-		t.Fatalf("v2 project kind errors %+v", r.KindErrors)
+	for _, gone := range []string{"mount_errors", "task_errors"} {
+		if _, ok := r.Summary.CategoryCounts[gone]; ok {
+			t.Fatalf("no %s category", gone)
+		}
 	}
 	plain := fixture(t, map[string]string{
 		"wiki/index.md":   mkpage("Index", "# Index\n"),
@@ -395,7 +394,30 @@ func TestKindErrors(t *testing.T) {
 	})
 	r, _ = Run(plain, Options{AsOf: asOf})
 	if len(r.KindErrors) != 0 {
-		t.Fatalf("no identity file, no kind checks: %+v", r.KindErrors)
+		t.Fatalf("no identity file, no layout checks: %+v", r.KindErrors)
+	}
+}
+
+// A wiki page's bare link never means one of a thread's documents, which repeat one file
+// name by design.
+func TestALinkPrefersTheWiki(t *testing.T) {
+	root := fixture(t, map[string]string{
+		"wiki/index.md":          mkpage("Index", "# Index\n\n- [[Alpha]]\n"),
+		"wiki/concepts/Alpha.md": mkpage("Alpha", "# Alpha\n\ntext\n"),
+		"threads/Alpha.md":       "---\ntype: thread\n---\n\ncard\n",
+		"threads/stubs/Alpha.md": "---\ntype: stub\n---\n\nstub\n",
+		"threads/specs/Alpha.md": "---\ntype: spec\n---\n\nspec\n",
+	})
+	r, err := Run(root, Options{AsOf: time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.AmbiguousTargets) != 0 || len(r.DeadLinks) != 0 {
+		t.Fatalf("ambiguous %+v dead %+v", r.AmbiguousTargets, r.DeadLinks)
+	}
+	// The thread pages are not wiki pages, so they are neither scanned nor orphans.
+	if r.Summary.PagesScanned != 2 || len(r.Orphans) != 0 {
+		t.Fatalf("scanned %d orphans %+v", r.Summary.PagesScanned, r.Orphans)
 	}
 }
 

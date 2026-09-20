@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/ledger"
+	"github.com/nathanaday/claude-atlas/internal/project"
 	"github.com/nathanaday/claude-atlas/internal/txn"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
 // MaxFileBytes is the largest file capture accepts.
@@ -27,20 +27,52 @@ const MaxFileBytes = txn.MaxWriteSize
 // WarnFileBytes is the size above which capture warns that git history will grow.
 const WarnFileBytes = 50 << 20
 
-// InboxFile describes one file waiting in inbox/. Area is "tasks" for a note under
-// inbox/tasks/, which the task-plant skill handles rather than ingest. CapturedIn names
-// the mounted knowledge base that captured the file, when this vault did not; StoredPath
-// is then relative to that knowledge base's root.
+// The hints ListInbox puts on a file: what it looks like, and so which skill takes it.
+const (
+	// HintSource is a document to ingest into the wiki.
+	HintSource = "source"
+	// HintNote is a short note to open as a thread.
+	HintNote = "note"
+)
+
+// NoteMaxBytes bounds the size of an inbox file that reads as a note and not a source.
+const NoteMaxBytes = 4096
+
+// InboxFile describes one file waiting in inbox/. Hint says what it looks like, source or
+// note, which the ingest and stub skills show the user before they act; it is never a rule
+// that moves a file on its own.
 type InboxFile struct {
 	Path       string `json:"path"`
-	Area       string `json:"area,omitempty"`
 	Size       int64  `json:"size"`
 	Kind       string `json:"kind"`
+	Hint       string `json:"hint"`
 	SHA256     string `json:"sha256"`
 	Captured   bool   `json:"captured"`
-	CapturedIn string `json:"captured_in,omitempty"`
 	SourceID   string `json:"source_id,omitempty"`
 	StoredPath string `json:"stored_path,omitempty"`
+}
+
+// LooksLikeNote reports whether a file reads as a note to open as a thread.
+func LooksLikeNote(f InboxFile) bool { return f.Hint == HintNote }
+
+// hintFor decides what a file looks like: a short text or markdown file with no
+// frontmatter is a note, and everything else is a source. A page with frontmatter comes
+// from a tool, such as the snapshot describe stages, so it is a source.
+func hintFor(path string, kind string, size int64) string {
+	if kind != "markdown" && kind != "text" {
+		return HintSource
+	}
+	if size > NoteMaxBytes {
+		return HintSource
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return HintSource
+	}
+	if _, _, ok, _ := project.SplitFrontmatter(string(data)); ok {
+		return HintSource
+	}
+	return HintNote
 }
 
 // KindOf classifies a file by extension.
@@ -93,16 +125,16 @@ func storedPath(sum, name string) string {
 	if ext == "" || len(ext) > 12 {
 		ext = ".bin"
 	}
-	return vault.CapturedDir + "/" + sum + ext
+	return project.CapturedDir + "/" + sum + ext
 }
 
 // ListInbox walks inbox/ and says which files already have a captured copy.
-func ListInbox(v *vault.Vault, now time.Time) ([]InboxFile, error) {
-	led, err := ledger.Load(v.Path(vault.LedgerPath), now)
+func ListInbox(v *project.Project, now time.Time) ([]InboxFile, error) {
+	led, err := ledger.Load(v.Path(project.LedgerPath), now)
 	if err != nil {
 		return nil, err
 	}
-	root := v.Path(vault.InboxDir)
+	root := v.Path(project.InboxDir)
 	var files []InboxFile
 	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -120,12 +152,13 @@ func ListInbox(v *vault.Vault, now time.Time) ([]InboxFile, error) {
 		if strings.HasPrefix(d.Name(), ".") || !d.Type().IsRegular() {
 			return nil
 		}
-		rel, _ := filepath.Rel(v.Root, p)
+		rel, _ := filepath.Rel(v.Atlas(), p)
 		sum, size, err := hashFile(p)
 		if err != nil {
 			return err
 		}
-		f := InboxFile{Path: filepath.ToSlash(rel), Size: size, Kind: KindOf(d.Name()), SHA256: sum}
+		kind := KindOf(d.Name())
+		f := InboxFile{Path: filepath.ToSlash(rel), Size: size, Kind: kind, Hint: hintFor(p, kind, size), SHA256: sum}
 		if id, rec := led.FindBySHA(sum); id != "" {
 			f.Captured, f.SourceID, f.StoredPath = true, id, rec.Origin.Locator
 		}
@@ -162,27 +195,27 @@ type Result struct {
 }
 
 // resolveInbox turns a user-supplied path into a vault-relative inbox path.
-func resolveInbox(v *vault.Vault, arg string) (string, error) {
+func resolveInbox(v *project.Project, arg string) (string, error) {
 	p := arg
 	if filepath.IsAbs(p) {
-		rel, err := filepath.Rel(v.Root, p)
+		rel, err := filepath.Rel(v.Atlas(), p)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
-			return "", fmt.Errorf("%s is outside the vault; place sources in %s/ first", arg, vault.InboxDir)
+			return "", fmt.Errorf("%s is outside the vault; place sources in %s/ first", arg, project.InboxDir)
 		}
 		p = filepath.ToSlash(rel)
 	}
 	// Clean resolves any ".." segment, so a path that still leaves inbox/ afterwards
 	// is a traversal; a name that merely contains dots, like "Cont..md", is fine.
 	p = path.Clean(p)
-	if !strings.HasPrefix(p, vault.InboxDir+"/") {
-		p = path.Clean(vault.InboxDir + "/" + p)
+	if !strings.HasPrefix(p, project.InboxDir+"/") {
+		p = path.Clean(project.InboxDir + "/" + p)
 	}
-	if !strings.HasPrefix(p, vault.InboxDir+"/") {
-		return "", fmt.Errorf("%s is not a path inside %s/", arg, vault.InboxDir)
+	if !strings.HasPrefix(p, project.InboxDir+"/") {
+		return "", fmt.Errorf("%s is not a path inside %s/", arg, project.InboxDir)
 	}
 	info, err := os.Lstat(v.Path(p))
 	if err != nil {
-		return "", fmt.Errorf("%s: not found in %s/", arg, vault.InboxDir)
+		return "", fmt.Errorf("%s: not found in %s/", arg, project.InboxDir)
 	}
 	if !info.Mode().IsRegular() {
 		return "", fmt.Errorf("%s is not a regular file", p)
@@ -193,7 +226,7 @@ func resolveInbox(v *vault.Vault, arg string) (string, error) {
 // Capture copies the named inbox files into .raw/captured/ and records them in the ledger,
 // as one commit. A file already captured is reported, not copied again. via, when given,
 // names the project the session came through; it is provenance on the record.
-func Capture(v *vault.Vault, paths []string, via *ledger.Via, now time.Time) (*Result, error) {
+func Capture(v *project.Project, paths []string, via *ledger.Via, now time.Time) (*Result, error) {
 	resolve := func(arg string) (string, error) { return resolveInbox(v, arg) }
 	return captureInto(v, v.Path, resolve, via, paths, now)
 }
@@ -202,11 +235,11 @@ func Capture(v *vault.Vault, paths []string, via *ledger.Via, now time.Time) (*R
 // them into target's .raw/captured/, recording each in target's ledger as one commit. A
 // file already captured is reported, not copied again. A file's size is checked, from a
 // stat, before any of its bytes are read.
-func captureInto(target *vault.Vault, srcPath func(rel string) string, resolve func(arg string) (string, error), via *ledger.Via, paths []string, now time.Time) (*Result, error) {
+func captureInto(target *project.Project, srcPath func(rel string) string, resolve func(arg string) (string, error), via *ledger.Via, paths []string, now time.Time) (*Result, error) {
 	if len(paths) == 0 {
-		return nil, fmt.Errorf("name at least one file in %s/", vault.InboxDir)
+		return nil, fmt.Errorf("name at least one file in %s/", project.InboxDir)
 	}
-	led, err := ledger.Load(target.Path(vault.LedgerPath), now)
+	led, err := ledger.Load(target.Path(project.LedgerPath), now)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +279,7 @@ func captureInto(target *vault.Vault, srcPath func(rel string) string, resolve f
 			}
 			req.Writes = append(req.Writes, txn.Write{Path: c.StoredPath, Mode: txn.Create, Content: data})
 			update := ledger.Update{
-				ID: c.SourceID, Title: vault.PageTitle(rel), Origin: &ledger.Origin{Kind: "file", Locator: c.StoredPath},
+				ID: c.SourceID, Title: project.PageTitle(rel), Origin: &ledger.Origin{Kind: "file", Locator: c.StoredPath},
 				ContentSHA256: sum, ContentKind: c.Kind,
 			}
 			if via != nil {

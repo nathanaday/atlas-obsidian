@@ -1,7 +1,6 @@
-// Package registry knows every knowledge base and project the atlas config lists: it
-// reads each one's identity file and resolves each project's knowledge base. Nothing
-// here is stored beyond what Write derives, and Scan rebuilds the whole picture from the
-// folders themselves every time.
+// Package registry knows every project the atlas config lists: it reads each one's
+// identity file. Nothing here is stored beyond what Write derives, and Scan rebuilds the
+// whole picture from the folders themselves every time.
 package registry
 
 import (
@@ -17,65 +16,28 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/links"
 	"github.com/nathanaday/claude-atlas/internal/project"
 	"github.com/nathanaday/claude-atlas/internal/threads"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
-
-// Kind says what an entry is.
-type Kind string
-
-const (
-	Knowledge Kind = "knowledge"
-	Project   Kind = "project"
-)
-
-// Noun is the kind as a person says it.
-func (k Kind) Noun() string {
-	if k == Knowledge {
-		return "knowledge base"
-	}
-	return string(k)
-}
 
 // The reasons an entry the atlas knows cannot be read. An Entry with an Error carries
 // one, so a command decides on the code and not on the sentence.
 const (
-	ReasonV1         = "v1"          // a v1 identity file; adopt rewrites it
-	ReasonV2Project  = "v2-project"  // a v2 project vault; init recreates the project in the work
 	ReasonUnreadable = "unreadable"  // the identity file is not JSON
 	ReasonSchema     = "schema"      // an identity file from a later version
 	ReasonMissing    = "missing"     // a registered path whose folder is gone
 	ReasonNotProject = "not-project" // a registered work folder with no atlas/<name>/project.json
 	ReasonFlat       = "flat"        // a project directly in atlas/; upgrade moves it into atlas/<name>/
-	ReasonNotVault   = "not-vault"   // a registered knowledge base folder with no identity file
+	ReasonV3Split    = "v3-split"    // a 3.x project, or the knowledge base it used; upgrade merges them
 )
 
-// Ref names an entry another entry refers to: a project's knowledge base, or one of a
-// knowledge base's projects. Path is set when the scan found it.
-type Ref struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Path  string `json:"path,omitempty"`
-	Error string `json:"error,omitempty"` // "no knowledge base with id …"
-}
-
-// Entry is one knowledge base or project the atlas knows. Refresh adds the derived State.
+// Entry is one project the atlas knows. Refresh adds the derived State.
 type Entry struct {
 	ID   string `json:"id"`
-	Kind Kind   `json:"kind"`
 	Name string `json:"name"`
-	// Path is a knowledge base's root, or a project's work folder, the parent of atlas/.
-	Path    string `json:"path"`
-	Created string `json:"created,omitempty"`
-	// A knowledge base's fields.
-	Mode  vault.Mode `json:"mode,omitempty"`
-	Scope string     `json:"scope,omitempty"`
-	// Projects lists the projects that use a knowledge base.
-	Projects []Ref `json:"projects,omitempty"`
-	// A project's fields.
-	Description string `json:"description,omitempty"`
-	// Knowledge is the one knowledge base a project uses, resolved against the scan; nil
-	// when the project uses none.
-	Knowledge *Ref `json:"knowledge,omitempty"`
+	// Path is the project's work folder, the parent of atlas/.
+	Path        string       `json:"path"`
+	Created     string       `json:"created,omitempty"`
+	Mode        project.Mode `json:"mode,omitempty"`
+	Description string       `json:"description,omitempty"`
 	// Error is set for an entry the atlas knows but could not read. Such an entry has
 	// Path, Error, and Reason, and nothing else.
 	Error string `json:"error,omitempty"`
@@ -90,29 +52,28 @@ type State struct {
 	// OK is set when the entry could be read in full.
 	OK    bool   `json:"ok"`
 	Error string `json:"error,omitempty"`
-	// A knowledge base's state.
+	// The wiki's state.
 	PendingRecovery bool       `json:"pending_recovery,omitempty"`
 	LastOperation   string     `json:"last_operation,omitempty"`
 	Pages           *int       `json:"pages,omitempty"`
 	Inbox           *int       `json:"inbox,omitempty"`
 	HotTopics       []string   `json:"hot_topics,omitempty"`
 	Unfinished      Unfinished `json:"unfinished"`
-	// Both kinds.
-	LastTouched string `json:"last_touched,omitempty"`
-	DaysIdle    *int   `json:"days_idle"`
-	Heat        string `json:"heat"`
-	// A project's state.
+	LastTouched     string     `json:"last_touched,omitempty"`
+	DaysIdle        *int       `json:"days_idle"`
+	Heat            string     `json:"heat"`
+	// The threads' state.
 	Threads *ThreadSummary `json:"threads,omitempty"`
-	// Described is the page in the project's knowledge base that describes it, when one
+	// Described is the page in the project's wiki that describes its work, when one
 	// does.
 	Described *Description `json:"described,omitempty"`
 	// Git is what git says about the work folder, when it is a repository.
 	Git *links.Link `json:"git,omitempty"`
 }
 
-// Description is the page that describes a project: an entity page in its knowledge
-// base whose `project` property names the project's id or name, and the commit it was
-// written from when the work is a repository. The atlas derives it and never writes it.
+// Description is the page that describes a project's work: an entity page in its own wiki
+// whose `project` property names the project's id or name, and the commit it was written
+// from when the work is a repository. The atlas derives it and never writes it.
 type Description struct {
 	Page   string `json:"page"` // vault-relative path of the page
 	Commit string `json:"commit,omitempty"`
@@ -143,9 +104,9 @@ func (d Description) Summary() string {
 }
 
 // NotDescribed is what every surface says for a project no page describes.
-const NotDescribed = "not described in the knowledge base"
+const NotDescribed = "not described in the wiki"
 
-// Unfinished counts work a knowledge base still owes. nil means unknown.
+// Unfinished counts work a wiki still owes. nil means unknown.
 type Unfinished struct {
 	EmptySections *int `json:"empty_sections"`
 	Stubs         *int `json:"stubs"`
@@ -228,30 +189,13 @@ var ErrNotFound = errors.New("no such vault or project")
 // schema, or not JSON. The file is derived, so a refresh replaces it.
 var ErrStale = errors.New("stale registry")
 
-// Scan reads every knowledge base cfg.Knowledge lists and every project cfg.Projects
-// lists, and resolves each project's knowledge base against the whole set. It searches
-// no folder: a knowledge base or a project the config does not list is not in the atlas.
+// Scan reads atlas/<name>/project.json under every work folder cfg.Projects lists. It
+// searches no folder: a project the config does not list is not in the atlas. A knowledge
+// base left in cfg.Knowledge by 3.x is reported as a problem, because upgrade absorbs it
+// into a project.
 func Scan(cfg *home.Config) (*Index, error) {
 	ix := &Index{}
 	found := map[string]bool{}
-
-	for _, v := range cfg.Knowledge {
-		abs, err := filepath.Abs(v)
-		if err != nil {
-			abs = v
-		}
-		key := realPath(abs)
-		if found[key] {
-			continue
-		}
-		found[key] = true
-		info, err := os.Stat(abs)
-		if err != nil || !info.IsDir() {
-			fail(ix, abs, "not found; work in it again to heal the path, or run claude-atlas remove", ReasonMissing)
-			continue
-		}
-		scanRoot(ix, abs)
-	}
 
 	for _, work := range cfg.Projects {
 		abs, err := filepath.Abs(work)
@@ -266,8 +210,24 @@ func Scan(cfg *home.Config) (*Index, error) {
 		scanProject(ix, abs)
 	}
 
+	for _, v := range cfg.Knowledge {
+		abs, err := filepath.Abs(v)
+		if err != nil {
+			abs = v
+		}
+		key := realPath(abs)
+		if found[key] {
+			continue
+		}
+		found[key] = true
+		if info, err := os.Stat(abs); err != nil || !info.IsDir() {
+			fail(ix, abs, "a knowledge base of 3.x whose folder is gone; run claude-atlas forget "+abs, ReasonMissing)
+			continue
+		}
+		fail(ix, abs, "a knowledge base of 3.x; run claude-atlas upgrade "+abs+" to make it a project, or claude-atlas forget to drop it", ReasonV3Split)
+	}
+
 	sortEntries(ix.Entries)
-	resolve(ix)
 	return ix, nil
 }
 
@@ -279,43 +239,6 @@ func realPath(path string) string {
 		return resolved
 	}
 	return path
-}
-
-// markerFileExists reports whether root carries the identity file, readable or not.
-func markerFileExists(root string) bool {
-	info, err := os.Stat(filepath.Join(root, vault.Marker))
-	return err == nil && info.Mode().IsRegular()
-}
-
-// scanRoot reads the identity file at a listed knowledge base's root and records an
-// Entry: a full one when it is a knowledge base, an Entry{Path, Error} alongside a
-// matching Problem when the atlas could not use it.
-func scanRoot(ix *Index, root string) {
-	cfg, ok := vault.ReadConfig(root)
-	if !ok {
-		if !markerFileExists(root) {
-			fail(ix, root, fmt.Sprintf("no %s; run claude-atlas adopt %s, or claude-atlas remove", vault.Marker, root), ReasonNotVault)
-			return
-		}
-		fail(ix, root, "identity file is not JSON; run claude-atlas adopt", ReasonUnreadable)
-		return
-	}
-	switch cfg.Schema {
-	case vault.Schema, vault.SchemaV2:
-		if cfg.Kind != vault.Kind {
-			if cfg.Kind == "project" {
-				fail(ix, root, "a v2 project vault; run claude-atlas init in the work, then delete this folder", ReasonV2Project)
-			} else {
-				fail(ix, root, fmt.Sprintf("unsupported kind %q", cfg.Kind), ReasonSchema)
-			}
-			return
-		}
-		ix.Entries = append(ix.Entries, knowledgeEntry(root, cfg))
-	case vault.SchemaV1:
-		fail(ix, root, fmt.Sprintf("v1 vault; run claude-atlas adopt %s", root), ReasonV1)
-	default:
-		fail(ix, root, fmt.Sprintf("unsupported schema %q", cfg.Schema), ReasonSchema)
-	}
 }
 
 // scanProject reads atlas/<name>/project.json under a registered work folder.
@@ -341,7 +264,12 @@ func scanProject(ix *Index, work string) {
 		fail(ix, work, "identity file is not JSON", ReasonUnreadable)
 		return
 	}
-	if cfg.Schema != project.Schema {
+	switch cfg.Schema {
+	case project.Schema:
+	case project.SchemaV3:
+		fail(ix, work, "a 3.x project, whose knowledge base sits outside it; run claude-atlas upgrade "+work, ReasonV3Split)
+		return
+	default:
 		fail(ix, work, fmt.Sprintf("unsupported schema %q", cfg.Schema), ReasonSchema)
 		return
 	}
@@ -353,11 +281,11 @@ func scanProject(ix *Index, work string) {
 	if name == "" {
 		name = filepath.Base(work)
 	}
-	e := Entry{ID: cfg.ID, Kind: Project, Name: name, Path: work, Created: cfg.Created, Description: cfg.Description}
-	if cfg.Knowledge != nil && cfg.Knowledge.ID != "" {
-		e.Knowledge = &Ref{ID: cfg.Knowledge.ID, Name: cfg.Knowledge.Name}
+	mode := cfg.Mode
+	if mode == "" {
+		mode = project.Generic
 	}
-	ix.Entries = append(ix.Entries, e)
+	ix.Entries = append(ix.Entries, Entry{ID: cfg.ID, Name: name, Path: work, Created: cfg.Created, Mode: mode, Description: cfg.Description})
 }
 
 // fail records an entry the atlas knows but could not read: the same reason in both a
@@ -367,47 +295,8 @@ func fail(ix *Index, root, reason, code string) {
 	ix.Entries = append(ix.Entries, Entry{Path: root, Error: reason, Reason: code})
 }
 
-// knowledgeEntry turns a valid identity file into an Entry.
-func knowledgeEntry(root string, cfg vault.Config) Entry {
-	name := cfg.Name
-	if name == "" {
-		name = filepath.Base(root)
-	}
-	mode := cfg.Mode
-	if mode == "" {
-		mode = vault.Generic
-	}
-	return Entry{ID: cfg.ID, Kind: Knowledge, Name: name, Path: root, Mode: mode, Created: cfg.Created, Scope: cfg.Scope}
-}
-
-// resolve fills in every project's knowledge base and every knowledge base's projects,
-// now that the whole set of entries is known.
-func resolve(ix *Index) {
-	byID := map[string]*Entry{}
-	for i := range ix.Entries {
-		e := &ix.Entries[i]
-		if e.Error == "" && e.ID != "" {
-			byID[e.ID] = e
-		}
-	}
-	for i := range ix.Entries {
-		e := &ix.Entries[i]
-		if e.Error != "" || e.Kind != Project || e.Knowledge == nil {
-			continue
-		}
-		kb, ok := byID[e.Knowledge.ID]
-		if !ok || kb.Kind != Knowledge {
-			e.Knowledge.Error = "no knowledge base with id " + e.Knowledge.ID + " on this machine"
-			continue
-		}
-		e.Knowledge.Name = kb.Name
-		e.Knowledge.Path = kb.Path
-		kb.Projects = append(kb.Projects, Ref{ID: e.ID, Name: e.Name, Path: e.Path})
-	}
-}
-
-// sortEntries orders valid entries before entries with an Error, knowledge bases before
-// projects, then by lowercased name, then by path.
+// sortEntries orders valid entries before entries with an Error, then by lowercased name,
+// then by path.
 func sortEntries(entries []Entry) {
 	sort.SliceStable(entries, func(i, j int) bool {
 		a, b := entries[i], entries[j]
@@ -416,9 +305,6 @@ func sortEntries(entries []Entry) {
 		}
 		if a.Error != "" {
 			return a.Path < b.Path
-		}
-		if a.Kind != b.Kind {
-			return a.Kind == Knowledge
 		}
 		an, bn := strings.ToLower(a.Name), strings.ToLower(b.Name)
 		if an != bn {
@@ -464,13 +350,12 @@ func (ix *Index) ByPath(path string) *Entry {
 }
 
 // Find matches a name without regard to case, an id or an id prefix of at least 8
-// characters, or a path. Two entries with one name make it return ErrAmbiguous with
-// both. kind narrows the search; "" searches both kinds.
-func (ix *Index) Find(arg string, kind Kind) (*Entry, error) {
+// characters, or a path. Two entries with one name make it return ErrAmbiguous with both.
+func (ix *Index) Find(arg string) (*Entry, error) {
 	if strings.ContainsAny(arg, "/\\") || strings.HasPrefix(arg, "~") {
 		abs, err := filepath.Abs(home.Expand(arg))
 		if err == nil {
-			if e := ix.ByPath(abs); e != nil && e.Error == "" && (kind == "" || e.Kind == kind) {
+			if e := ix.ByPath(abs); e != nil && e.Error == "" {
 				return e, nil
 			}
 		}
@@ -479,7 +364,7 @@ func (ix *Index) Find(arg string, kind Kind) (*Entry, error) {
 	var byName []*Entry
 	for i := range ix.Entries {
 		e := &ix.Entries[i]
-		if e.Error != "" || (kind != "" && e.Kind != kind) {
+		if e.Error != "" {
 			continue
 		}
 		if strings.EqualFold(e.Name, arg) {
@@ -499,7 +384,7 @@ func (ix *Index) Find(arg string, kind Kind) (*Entry, error) {
 	var byID []*Entry
 	for i := range ix.Entries {
 		e := &ix.Entries[i]
-		if e.Error != "" || (kind != "" && e.Kind != kind) {
+		if e.Error != "" {
 			continue
 		}
 		if e.ID == arg || (len(arg) >= 8 && strings.HasPrefix(e.ID, arg)) {
@@ -516,75 +401,46 @@ func (ix *Index) Find(arg string, kind Kind) (*Entry, error) {
 		}
 		return nil, fmt.Errorf("%w: %s is the id of %d entries (%s); use the full id", ErrAmbiguous, arg, len(byID), strings.Join(paths, ", "))
 	}
-	what := "vault or project"
-	if kind != "" {
-		what = kind.Noun()
-	}
-	return nil, fmt.Errorf("%w: no %s named %s", ErrNotFound, what, arg)
+	return nil, fmt.Errorf("%w: no project named %s", ErrNotFound, arg)
 }
 
-// Projects lists the valid project entries.
+// Projects lists the valid entries.
 func (ix *Index) Projects() []Entry {
 	var out []Entry
 	for _, e := range ix.Entries {
-		if e.Error == "" && e.Kind == Project {
+		if e.Error == "" {
 			out = append(out, e)
 		}
 	}
 	return out
 }
 
-// Knowledge lists the valid knowledge base entries.
-func (ix *Index) Knowledge() []Entry {
-	var out []Entry
-	for _, e := range ix.Entries {
-		if e.Error == "" && e.Kind == Knowledge {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
-// ProjectsOf lists the valid projects that use the knowledge base with id.
-func (ix *Index) ProjectsOf(id string) []Entry {
-	var out []Entry
-	for _, e := range ix.Projects() {
-		if e.Knowledge != nil && e.Knowledge.ID == id && e.Knowledge.Error == "" {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
-// Rel is the entry's place in the view: knowledge/<name> for a knowledge base,
-// projects/<knowledge base>/<name> or projects/<name> for a project, problems/<folder>
-// for an entry the atlas could not read.
+// Rel is the entry's place in the view: projects/<name>, or problems/<folder> for an entry
+// the atlas could not read.
 func (e Entry) Rel() string {
 	if e.Error != "" {
 		return "problems/" + filepath.Base(e.Path)
 	}
-	if e.Kind == Knowledge {
-		return "knowledge/" + e.Name
-	}
-	if e.Knowledge != nil && e.Knowledge.Error == "" {
-		return "projects/" + e.Knowledge.Name + "/" + e.Name
-	}
 	return "projects/" + e.Name
 }
 
-// Wiki is a knowledge base's wiki folder.
-func (e Entry) Wiki() string { return filepath.Join(e.Path, vault.WikiDir) }
-
-// KnowledgePath is the root of the knowledge base a project uses, or "".
-func (e Entry) KnowledgePath() string {
-	if e.Knowledge == nil || e.Knowledge.Error != "" {
+// Atlas is the project's own folder, atlas/<name>/, or "" when the scan could not read it.
+func (e Entry) Atlas() string {
+	if e.Error != "" {
 		return ""
 	}
-	return e.Knowledge.Path
+	folder, err := project.Locate(e.Path)
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(e.Path, project.Dir, folder)
 }
 
+// Wiki is the project's wiki folder.
+func (e Entry) Wiki() string { return filepath.Join(e.Atlas(), project.WikiDir) }
+
 // StateSchema is the schema the registry state file declares.
-const StateSchema = "claude-atlas.registry.v3"
+const StateSchema = "claude-atlas.registry.v4"
 
 // registryFile is the on-disk shape of the state file.
 type registryFile struct {

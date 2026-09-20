@@ -14,11 +14,21 @@ import (
 )
 
 // Repo is a git working tree rooted at Dir. Prefix is the path inside it that the caller
-// owns, with a trailing slash ("atlas/"), or "" for the whole tree: every command is
-// scoped to it, and every path a method takes or returns is relative to it.
+// owns, with a trailing slash ("atlas/webapp/"), or "" for the whole tree: every command is
+// scoped to it, and every path a method takes or returns is relative to it. Scope narrows
+// a command further, to the given paths under Prefix, without changing what a path means:
+// the engine owns a few folders of a project and must not see, stage, or commit the rest.
 type Repo struct {
 	Dir    string
 	Prefix string
+	Scope  []string
+}
+
+// Scoped is the same repository narrowed to the given paths under Prefix. A folder ends
+// in a slash. With no paths it is the repository as it was.
+func (r Repo) Scoped(paths ...string) Repo {
+	r.Scope = paths
+	return r
 }
 
 // Available reports whether the git command is on PATH.
@@ -75,12 +85,28 @@ func (r Repo) out(p string) (string, bool) {
 	return strings.CutPrefix(p, r.Prefix)
 }
 
-// pathspec is the argument that scopes a command to Prefix, or "." for the whole tree.
-func (r Repo) pathspec() string {
-	if r.Prefix != "" {
-		return r.Prefix
+// pathspecs are the arguments that scope a command: Scope under Prefix, else Prefix, else
+// "." for the whole tree.
+func (r Repo) pathspecs() []string {
+	switch {
+	case len(r.Scope) > 0:
+		out := make([]string, 0, len(r.Scope))
+		for _, s := range r.Scope {
+			out = append(out, r.Prefix+s)
+		}
+		return out
+	case r.Prefix != "":
+		return []string{r.Prefix}
 	}
-	return "."
+	return []string{"."}
+}
+
+// limit is "--" and the pathspecs, or nothing when the command may cover the whole tree.
+func (r Repo) limit() []string {
+	if r.Prefix == "" && len(r.Scope) == 0 {
+		return nil
+	}
+	return append([]string{"--"}, r.pathspecs()...)
 }
 
 // At is the repository that holds dir: dir itself when it is the top of a working tree or
@@ -203,10 +229,7 @@ type Entry struct {
 
 // Status lists every changed or untracked path. Untracked directories are expanded to files.
 func (r Repo) Status() ([]Entry, error) {
-	args := []string{"status", "--porcelain=v1", "-z", "-uall"}
-	if r.Prefix != "" {
-		args = append(args, "--", r.pathspec())
-	}
+	args := append([]string{"status", "--porcelain=v1", "-z", "-uall"}, r.limit()...)
 	out, err := r.run(args...)
 	if err != nil {
 		return nil, err
@@ -238,10 +261,34 @@ func (r Repo) Dirty() (bool, error) {
 	return len(entries) > 0, err
 }
 
-// AddAll stages every change in the tree, deletions included.
+// AddAll stages every change in the tree, deletions included. A scoped path that names
+// nothing, on disk or in the index, is left out, because git add refuses a pathspec that
+// matches nothing and a project holds folders an operation may never have written.
 func (r Repo) AddAll() error {
-	_, err := r.run("add", "-A", "--", r.pathspec())
+	specs := r.pathspecs()
+	if len(r.Scope) > 0 {
+		specs = r.matching(specs)
+		if len(specs) == 0 {
+			return nil
+		}
+	}
+	_, err := r.run(append([]string{"add", "-A", "--"}, specs...)...)
 	return err
+}
+
+// matching keeps the pathspecs that name something: a path on disk, or one git tracks.
+func (r Repo) matching(specs []string) []string {
+	var out []string
+	for _, spec := range specs {
+		if _, err := os.Stat(filepath.Join(r.Dir, filepath.FromSlash(strings.TrimSuffix(spec, "/")))); err == nil {
+			out = append(out, spec)
+			continue
+		}
+		if found, err := r.run("ls-files", "-z", "--", spec); err == nil && strings.TrimRight(found, "\x00") != "" {
+			out = append(out, spec)
+		}
+	}
+	return out
 }
 
 // Add stages the given paths, deletions included.
@@ -266,10 +313,10 @@ func (r Repo) identityArgs() []string {
 }
 
 // Commit records the index with message and returns the new commit. It falls back to a
-// local identity when the user has none configured, and skips commit hooks. With a
-// prefix, it records the paths staged under it and leaves everything else alone.
+// local identity when the user has none configured, and skips commit hooks. With a prefix
+// or a scope, it records the paths staged under it and leaves everything else alone.
 func (r Repo) Commit(message string) (string, error) {
-	if r.Prefix != "" {
+	if r.Prefix != "" || len(r.Scope) > 0 {
 		return r.commitPrefix(message)
 	}
 	args := append(r.identityArgs(), "commit", "-q", "--no-verify", "-m", message)
@@ -279,7 +326,8 @@ func (r Repo) Commit(message string) (string, error) {
 	return r.Head()
 }
 
-// commitPrefix records the paths staged under the prefix and nothing else.
+// commitPrefix records the paths staged under the prefix, and under Scope when it is set,
+// and nothing else.
 // `git commit -- <prefix>` cannot do that: a pathspec puts git in --only mode, which
 // records the working tree of every tracked file under the prefix, so a page the user
 // changed by hand and never staged would land in the commit. The tree is built instead in
@@ -293,7 +341,7 @@ func (r Repo) commitPrefix(message string) (string, error) {
 		return "", err
 	}
 	if len(paths) == 0 {
-		return "", fmt.Errorf("nothing staged under %s", r.Prefix)
+		return "", fmt.Errorf("nothing staged under %s", strings.Join(r.pathspecs(), ", "))
 	}
 	head := ""
 	if hasHead {
@@ -349,9 +397,9 @@ func (r Repo) commitPrefix(message string) (string, error) {
 // stagedPaths lists the paths staged under the prefix, relative to Dir, with deletions.
 // Renames are not detected, so a rename gives both the old path and the new one.
 func (r Repo) stagedPaths(hasHead bool) ([]string, error) {
-	args := []string{"diff", "--cached", "--name-only", "-z", "--no-renames", "--", r.Prefix}
+	args := append([]string{"diff", "--cached", "--name-only", "-z", "--no-renames"}, r.limit()...)
 	if !hasHead {
-		args = []string{"ls-files", "-z", "--", r.Prefix}
+		args = append([]string{"ls-files", "-z"}, r.limit()...)
 	}
 	out, err := r.run(args...)
 	if err != nil {
@@ -441,6 +489,13 @@ func (r Repo) RestoreFromHead(paths ...string) error {
 	return err
 }
 
+// Move runs git mv, so a file keeps its history in this repository. from and to are
+// relative to Dir, not to Prefix, because a move crosses the prefix.
+func (r Repo) Move(from, to string) error {
+	_, err := r.run("mv", "--", from, to)
+	return err
+}
+
 // Tracked reports whether HEAD contains path.
 func (r Repo) Tracked(path string) bool {
 	_, err := r.run("cat-file", "-e", "HEAD:"+r.in(path))
@@ -466,9 +521,7 @@ func (r Repo) Log(n int) ([]Commit, error) {
 	if n > 0 {
 		args = append(args, fmt.Sprintf("-n%d", n))
 	}
-	if r.Prefix != "" {
-		args = append(args, "--", r.Prefix)
-	}
+	args = append(args, r.limit()...)
 	out, err := r.run(args...)
 	if err != nil {
 		return nil, err
@@ -520,6 +573,83 @@ func trailers(body string) map[string]string {
 		out[strings.TrimSpace(key)] = strings.TrimSpace(value)
 	}
 	return out
+}
+
+// RestoreFrom puts each path back to what rev holds, in the working tree and the index: it
+// writes the file rev has and removes the ones rev does not. It touches no other path, so
+// it works while the rest of the working tree has changes of its own, where git revert
+// refuses. Paths are relative to Prefix. An empty rev removes every path.
+func (r Repo) RestoreFrom(rev string, paths ...string) error {
+	var restore, remove []string
+	for _, p := range paths {
+		full := r.in(p)
+		if rev != "" && r.has(rev+":"+full) {
+			restore = append(restore, full)
+			continue
+		}
+		remove = append(remove, full)
+	}
+	if len(restore) > 0 {
+		if _, err := r.run(append([]string{"checkout", rev, "--"}, restore...)...); err != nil {
+			return err
+		}
+	}
+	if len(remove) > 0 {
+		if _, err := r.run(append([]string{"rm", "-q", "-f", "--ignore-unmatch", "--"}, remove...)...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// has reports whether an object exists, such as "HEAD:wiki/index.md".
+func (r Repo) has(object string) bool {
+	_, err := r.run("cat-file", "-e", object)
+	return err == nil
+}
+
+// Parent is the first parent of rev, or "" when rev is a root commit.
+func (r Repo) Parent(rev string) string {
+	out, err := r.run("rev-parse", "--verify", "-q", rev+"^")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// Staged reports whether anything is staged within the repository's scope. A commit with
+// nothing staged is refused, so a caller that may have written nothing asks first.
+func (r Repo) Staged() (bool, error) {
+	if !r.hasCommit() {
+		files, err := r.LsFiles()
+		return len(files) > 0, err
+	}
+	paths, err := r.stagedPaths(true)
+	return len(paths) > 0, err
+}
+
+// Unchanged reports whether every path is the same in the working tree as it is in rev.
+// Paths are relative to Prefix.
+func (r Repo) Unchanged(rev string, paths ...string) (bool, error) {
+	if len(paths) == 0 {
+		return true, nil
+	}
+	args := []string{"diff", "--quiet", rev, "--"}
+	for _, p := range paths {
+		args = append(args, r.in(p))
+	}
+	cmd := r.cmd(args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err == nil {
+		return true, nil
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("git diff: %s", strings.TrimSpace(stderr.String()))
 }
 
 // RevertNoCommit applies the inverse of sha to the index and tree without committing.
@@ -619,7 +749,7 @@ func (r Repo) excluding(folders []string) []string {
 	if len(folders) == 0 {
 		return nil
 	}
-	args := []string{"--", r.pathspec()}
+	args := append([]string{"--"}, r.pathspecs()...)
 	for _, f := range folders {
 		args = append(args, ":(exclude)"+r.in(strings.TrimSuffix(f, "/")))
 	}
@@ -643,7 +773,7 @@ func (r Repo) Named(name string) ([]string, error) {
 
 // LsFiles lists every tracked path under Prefix, relative to it, in git's order.
 func (r Repo) LsFiles() ([]string, error) {
-	out, err := r.run("ls-files", "-z", "--", r.pathspec())
+	out, err := r.run(append([]string{"ls-files", "-z"}, r.limit()...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -666,11 +796,10 @@ func (r Repo) LogStat(from string, max int, exclude ...string) (string, error) {
 	if max > 0 {
 		args = append(args, fmt.Sprintf("-n%d", max))
 	}
-	switch {
-	case len(exclude) > 0:
+	if len(exclude) > 0 {
 		args = append(args, r.excluding(exclude)...)
-	case r.Prefix != "":
-		args = append(args, "--", r.Prefix)
+	} else {
+		args = append(args, r.limit()...)
 	}
 	return r.run(args...)
 }

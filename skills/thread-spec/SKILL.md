@@ -1,6 +1,6 @@
 ---
 name: thread-spec
-description: "Turn a thread's stub into a spec: read the stub, research the code and the knowledge base, decide what can be decided, ask only what cannot, and file the spec document. Use for spec this, define this thread, brainstorm, think this through, what should this be, flesh out the stub, requirements, design this."
+description: "Turn a thread's stub into a spec: read the stub, research the code and the wiki, decide what can be decided, ask only what cannot, and file the spec document. Use for spec this, define this thread, brainstorm, think this through, what should this be, flesh out the stub, requirements, design this."
 ---
 
 # Write a thread's spec
@@ -16,8 +16,8 @@ most of the work is reading, and the user answers only what reading cannot.
 
 1. Call `threads` with the `id`. Read the stub.
 2. Find the answers yourself: the code the thread touches, its tests, the
-   CLAUDE.md of the work, recent commits, and the knowledge base (the
-   project's page, `wiki/hot.md`, a Grep for the subject). A question the
+   CLAUDE.md of the work, recent commits, and the wiki (the page that
+   describes the work, `wiki/hot.md`, a Grep for the subject). A question the
    code answers is not a question for the user.
 3. Decide what you can decide. Where one option is right, take it and give
    the reason in the spec. The user reads the spec and can disagree there.

@@ -1,6 +1,6 @@
 # Operations
 
-Use this reference whenever a skill will change a knowledge base.
+Use this reference whenever a skill will change a project's wiki.
 
 ## Contract
 
@@ -9,29 +9,28 @@ one `apply`, one git commit. Parallel workers read and draft; only the
 orchestrator plans and applies.
 
 The tools are on the atlas MCP server, named
-`mcp__plugin_claude-atlas_atlas__<tool>`. Every tool acts on the one knowledge
-base in scope: the session's own, or the project's. None takes a vault
-argument.
+`mcp__plugin_claude-atlas_atlas__<tool>`. Every tool acts on this session's
+project and its one wiki. None takes a vault argument.
 
 | Tool | Use |
 |---|---|
-| `status` | the place: a project with its knowledge base, or a knowledge base with its projects; mode, inbox, git state, warnings |
-| `inbox` | files waiting in the knowledge base's `inbox/`, with hashes and capture state; in a project session, also `notes`, the notes that wait to become threads |
-| `capture` | copy inbox files into `.raw/captured/` and the source ledger; a project session records the project as provenance |
+| `status` | the project: its description and mode, the page that describes the work, thread counts, the wiki's pages and git state, the inbox, warnings |
+| `inbox` | everything waiting in `inbox/`, with hashes, capture state, and a hint: source or note |
+| `capture` | copy inbox files into `.raw/captured/` and the source ledger |
 | `route` | where a new page of a type belongs, whether it exists, and a skeleton |
 | `plan` | validate writes and hold them; returns `plan_id`, preview, warnings |
 | `apply` | commit a held plan |
-| `undo` | revert an applied operation |
+| `undo` | take back an applied operation |
 | `history` | recent operations |
 | `lint` | the health check |
-| `mode` | read or prepare a change of filing mode |
 | `stub` | seed a page for every wanted link, or for `titles[]` (each `title` and `type`); `type` sets the default for titles that name none |
-| `stage` | copy files from outside into `inbox/`, or write a project's snapshot there |
-| `threads`, `thread`, `phase` | a project's threads and phases; see [threads.md](threads.md) |
+| `stage` | copy files from outside into `inbox/`, or with `snapshot` write a snapshot of the work there |
+| `project` | the project's own facts: name, description, filing mode |
+| `threads`, `thread`, `phase` | the threads and the phases; see [threads.md](threads.md) |
 
 ## Workflow
 
-1. Call `status`. Stop if no knowledge base is in scope or it needs recovery.
+1. Call `status`. Stop if the session is in no project or it needs recovery.
 2. Read every target page with Read. Draft complete new content; a write
    replaces the whole file.
 3. Call `plan`:
@@ -58,7 +57,7 @@ argument.
    what you can with a new plan, or explain why the warning is acceptable.
 5. Call `apply` with the `plan_id`. Report the operation id and changed paths.
 
-A plan is single-use, and the newest plan for a knowledge base replaces older
+A plan is single-use, and the newest plan replaces older
 ones. If `apply` says the plan is gone, plan again.
 
 ## Kinds and their scope
@@ -72,12 +71,12 @@ The kind bounds what a plan may write. The core rejects anything outside it.
 | `stub` | `wiki/**`, only through the `stub` tool; `plan` refuses this kind |
 | `canvas` | `wiki/canvases/**/*.canvas` and `wiki/canvases/canvases.md` |
 | `base` | `wiki/**/*.base` |
-| `config` | only through the `mode` tool |
 
 Never writable: `wiki/log.md` (the core writes the entry from your summary),
 `wiki/meta/ledgers/source-ledger.json` (use the `sources` field), `ideas/`
-(the user's), `.raw/`, `.git/`, `.vault-meta/`, `.obsidian/`, and
-`.claude-atlas.json`.
+(the user's), `threads/**` (the threads' own half), `.raw/`, `.git/`,
+`.vault-meta/`, `.obsidian/`, and `project.json` (the `project` tool changes
+it).
 
 ## Content rules the core enforces
 

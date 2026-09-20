@@ -1,7 +1,7 @@
-// Package describe holds the facts that tie a project to its knowledge base: the page
-// that describes it, the commit that page was written from, and how far the work has
-// moved since. It reads pages and git and writes nothing; the describe skill writes the
-// page, and capture writes the snapshot it cites.
+// Package describe holds the facts that tie a project's wiki to the work beside it: the
+// page that describes the work, the commit that page was written from, and how far the
+// work has moved since. It reads pages and git and writes nothing; the describe skill
+// writes the page, and capture writes the snapshot it cites.
 package describe
 
 import (
@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/nathanaday/claude-atlas/internal/gitx"
+	"github.com/nathanaday/claude-atlas/internal/project"
 	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
 // EntityType is the entity_type a page describing a project carries.
@@ -32,16 +32,15 @@ func ClaudeMD(work string) string {
 	return ""
 }
 
-// Page finds the page that describes project e in its knowledge base: an entity page
-// with `entity_type: project` whose `project` property is e's id or name. Among several
-// the one nearest HEAD wins. nil when the project uses no knowledge base or no page
-// matches.
+// Page finds the page that describes project e in its own wiki: an entity page with
+// `entity_type: project` whose `project` property is e's id or name. Among several the one
+// nearest HEAD wins. nil when the scan could not read the project or no page matches.
 func Page(e registry.Entry) *registry.Description {
-	kb := e.KnowledgePath()
-	if kb == "" {
+	wiki := e.Wiki()
+	if e.Atlas() == "" {
 		return nil
 	}
-	found := matches(filepath.Join(kb, vault.WikiDir), e)
+	found := matches(wiki, e)
 	if len(found) == 0 {
 		return nil
 	}
@@ -49,7 +48,7 @@ func Page(e registry.Entry) *registry.Description {
 	var skip []string
 	if repo := (gitx.Repo{Dir: e.Path}); repo.IsRepo() {
 		git = &repo
-		skip = KnowledgeDirs(repo)
+		skip = AtlasDirs(repo)
 	}
 	best := -1
 	for i := range found {
@@ -73,11 +72,11 @@ func nearer(a, b registry.Description) bool {
 	return a.Page < b.Page
 }
 
-// KnowledgeDirs lists the folders in the work that hold a knowledge base, by its tracked
-// identity file. A knowledge base inside the work commits into the work's repository, and
-// its files and commits are not the work.
-func KnowledgeDirs(git gitx.Repo) []string {
-	markers, _ := git.Named(vault.Marker)
+// AtlasDirs lists the folders in the work that hold a project's own state, by its tracked
+// identity file. A project commits into the work's repository, and its pages and its
+// commits are not the work.
+func AtlasDirs(git gitx.Repo) []string {
+	markers, _ := git.Named(project.Marker)
 	var dirs []string
 	for _, m := range markers {
 		if dir := path.Dir(m); dir != "." {
@@ -118,21 +117,21 @@ func matches(wiki string, e registry.Entry) []registry.Description {
 		if err != nil || !strings.Contains(string(content), EntityType) {
 			return nil
 		}
-		fields, _, err := vault.Frontmatter(string(content))
+		fields, _, err := project.Frontmatter(string(content))
 		if err != nil || fields == nil {
 			return nil
 		}
-		if vault.StringField(fields, "type") != "entity" || vault.StringField(fields, "entity_type") != EntityType {
+		if project.StringField(fields, "type") != "entity" || project.StringField(fields, "entity_type") != EntityType {
 			return nil
 		}
-		if !names(vault.StringField(fields, "project"), e) {
+		if !names(project.StringField(fields, "project"), e) {
 			return nil
 		}
 		rel, err := filepath.Rel(filepath.Dir(wiki), p)
 		if err != nil {
 			return nil
 		}
-		out = append(out, registry.Description{Page: path.Clean(filepath.ToSlash(rel)), Commit: vault.StringField(fields, "commit")})
+		out = append(out, registry.Description{Page: path.Clean(filepath.ToSlash(rel)), Commit: project.StringField(fields, "commit")})
 		return nil
 	})
 	return out

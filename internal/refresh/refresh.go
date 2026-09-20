@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/links"
-	"github.com/nathanaday/claude-atlas/internal/vault"
+	"github.com/nathanaday/claude-atlas/internal/project"
 )
 
 const (
@@ -73,7 +73,7 @@ func NewestLogDate(vault string) (time.Time, bool) {
 // CreatedDate is the day the vault was created: the identity file's date, or for a
 // claude-obsidian vault the `created:` field its template wrote into wiki/index.md.
 func CreatedDate(root string) (time.Time, bool) {
-	if v, err := vault.Open(root); err == nil && v.Config.Created != "" {
+	if v, err := project.Open(root); err == nil && v.Config.Created != "" {
 		if t, ok := parseDate(v.Config.Created); ok {
 			return t, true
 		}
@@ -83,7 +83,7 @@ func CreatedDate(root string) (time.Time, bool) {
 		if err != nil {
 			continue
 		}
-		front, _, ok, err := vault.SplitFrontmatter(string(data))
+		front, _, ok, err := project.SplitFrontmatter(string(data))
 		if err != nil || !ok {
 			continue
 		}

@@ -24,6 +24,7 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/home"
 	"github.com/nathanaday/claude-atlas/internal/hooks"
 	"github.com/nathanaday/claude-atlas/internal/lint"
+	"github.com/nathanaday/claude-atlas/internal/manage"
 	"github.com/nathanaday/claude-atlas/internal/mcpserver"
 	"github.com/nathanaday/claude-atlas/internal/obsidian"
 	"github.com/nathanaday/claude-atlas/internal/place"
@@ -33,38 +34,38 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/threads"
 	"github.com/nathanaday/claude-atlas/internal/tui"
 	"github.com/nathanaday/claude-atlas/internal/txn"
-	"github.com/nathanaday/claude-atlas/internal/vault"
-	"github.com/nathanaday/claude-atlas/internal/vaults"
 	"github.com/nathanaday/claude-atlas/internal/wizard"
 )
 
 // Version is set at build time with -ldflags "-X .../cli.Version=v1.2.3".
 var Version = "dev"
 
-const usage = `claude-atlas: knowledge bases for Claude Code, and the projects that use them.
+const usage = `claude-atlas: a wiki and the state of the work, in every project.
 
 Usage:
-  claude-atlas                       open the view: every knowledge base and project on one screen
+  claude-atlas                       open the view: every project on one screen
   claude-atlas [--home DIR] [-y] <command> [options]
 
 Getting started:
-  setup                     install the plugin and create your first knowledge base
-  new-knowledge PATH        create a knowledge base: an Obsidian vault with an inbox and a wiki;
-                            a bare name is a folder in the current directory
-  adopt PATH                make an existing Obsidian or claude-obsidian vault a knowledge base
-  init [PATH]               make the current folder (or PATH) a project: an atlas/<name>/ folder inside your work
-                            --name N, --description TEXT, --knowledge KB or --no-knowledge;
+  setup                     install the Claude Code plugin
+  init [PATH]               make the current folder (or PATH) a project: an atlas/<name>/ folder
+                            inside your work, with its wiki and its threads
+                            --name N, --description TEXT, --mode generic|lyt;
                             a folder in no git repository becomes one unless --no-git
+  upgrade [NAME|--all]      bring a project or a knowledge base of an earlier version to this one
+                            --absorb PATH names the knowledge base to take as the wiki
 
 Projects (PROJECT is a name, a path, or nothing for the project you are in):
-  link KB                   set the knowledge base a project uses; --project P names one
-  unlink                    clear it; --project P names one
-  describe PROJECT          stage a snapshot of the project into its knowledge base; the describe skill writes the page
+  list                      every project
+  show NAME                 everything the atlas knows about one
+  edit NAME                 change it: --name N, --description TEXT, --mode generic|lyt
+  describe PROJECT          stage a snapshot of the work; the describe skill writes its page
   forget PROJECT            drop a project from the atlas; its atlas/<name>/ folder stays
+  open-vault [PROJECT]      open the project's folder in Obsidian
+  open-claude NAME          start Claude Code in the work; --thread ID continues a thread
 
-Threads (PROJECT is a name or a path; "." is the project you are in; ID is a thread's id or title):
-  threads [PROJECT]         list open threads by stage; outside a project, every project's
-                            --all adds the closed ones, --stage S, --json
+Threads (ID is a thread's id or title):
+  threads [PROJECT]         list open threads by stage; --all adds the closed ones, --stage S, --json
   thread PROJECT ACTION ... new TEXT... [--title T] [--priority P] [--phase NAME]: a card and a stub
                             show ID [--json]: its state and the path of each document
                             file ID STAGE: file the spec, plan, or receipt, which moves the thread there;
@@ -75,29 +76,21 @@ Threads (PROJECT is a name or a path; "." is the project you are in; ID is a thr
   phase PROJECT ACTION ...  create TITLE [--goal TEXT] [--order N], rename TITLE --to NEW,
                             reorder TITLE --order N, remove TITLE
 
-Knowledge bases (KB is a name or a path; default: the one you are in, or your project's):
-  open-vault [KB]           open a knowledge base in Obsidian
-  ingest KB [PATH...]       stage new files into its inbox, then ingest them
-  edit KB                   change its name or scope: --name N, --scope TEXT
-  remove KB                 drop a knowledge base from the atlas; the folder stays
-  lint [KB]                 run the wiki health check
-  stub KB [TITLE...]        create seed pages for the pages your links name but nobody has written
-  history [KB]              list operations, newest first
-  undo KB OPERATION         revert one operation
-  recover [KB]              restore a knowledge base after an interrupted operation
-  mode [KB] [MODE]          show or set the filing mode: generic or lyt
-  upgrade [NAME|--all]      raise a knowledge base or a project made by an older version to the current layout
-  apply KB PLAN.json        apply a plan file, for scripts
+The wiki (PROJECT is a name, a path, or nothing for the project you are in):
+  ingest PROJECT [PATH...]  stage new files into the inbox, then ingest them
+  lint [PROJECT]            run the wiki health check
+  stub PROJECT [TITLE...]   create seed pages for the pages your links name but nobody has written
+  history [PROJECT]         list operations, newest first
+  undo PROJECT OPERATION    take back one operation
+  recover [PROJECT]         restore the wiki after an interrupted operation
+  apply PROJECT PLAN.json   apply a plan file, for scripts
 
 Across the atlas:
   view                      the interactive screen; the same as no command at all
-  list                      every knowledge base and project
-  show NAME                 everything the atlas knows about one
-  open-claude NAME          start Claude Code in a knowledge base or a project; --thread ID continues a thread
   refresh                   read everything again and rewrite the registry
   config [KEY VALUE]        show the settings, or set one: new-days N
   info                      show every path and version the atlas uses
-  doctor                    check the installation and everything the atlas knows
+  doctor                    check the installation and every project
 
 Plugin:
   mcp                       serve the atlas tools over stdio; Claude Code runs this
@@ -152,7 +145,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 			return 0
 		case !e.home.Exists():
 			fmt.Fprint(stdout, usage)
-			fmt.Fprintf(stdout, "\nNo atlas yet; run `claude-atlas setup`. Afterwards, `claude-atlas` alone opens the view.\n")
+			fmt.Fprintf(stdout, "\nNo atlas yet; run `claude-atlas setup`, then `claude-atlas init` in your work.\n")
 			return 0
 		}
 		rest = []string{"view"}
@@ -163,16 +156,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 	switch rest[0] {
 	case "setup":
 		code, err = e.setup(rest[1:])
-	case "new-knowledge":
-		code, err = e.newKnowledge(rest[1:])
-	case "adopt":
-		code, err = e.adopt(rest[1:])
 	case "init":
 		code, err = e.initProject(rest[1:])
-	case "link":
-		code, err = e.link(rest[1:])
-	case "unlink":
-		code, err = e.unlink(rest[1:])
 	case "describe":
 		code, err = e.describe(rest[1:])
 	case "forget":
@@ -197,8 +182,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.show(rest[1:])
 	case "edit":
 		code, err = e.edit(rest[1:])
-	case "remove":
-		code, err = e.remove(rest[1:])
 	case "refresh":
 		code, err = e.refresh(rest[1:])
 	case "lint":
@@ -211,8 +194,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.undo(rest[1:])
 	case "recover":
 		code, err = e.recover(rest[1:])
-	case "mode":
-		code, err = e.mode(rest[1:])
 	case "upgrade":
 		code, err = e.upgrade(rest[1:])
 	case "config":
@@ -234,7 +215,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		return 2
 	}
 	if err != nil {
-		if errors.Is(err, vaults.ErrCancelled) {
+		if errors.Is(err, manage.ErrCancelled) {
 			fmt.Fprintln(stderr, "cancelled")
 			return 1
 		}
@@ -303,19 +284,18 @@ func ternary[T any](cond bool, a, b T) T {
 	return b
 }
 
-// entry resolves one entry of a kind by name, id, or path. Every command scans afresh:
-// the registry file is derived state, and a stale one must never decide what a command
-// acts on. kind "" takes either kind.
-func (e *env) entry(cfg *home.Config, arg string, kind registry.Kind) (registry.Entry, error) {
+// entry resolves one project by name, id, or path. Every command scans afresh: the
+// registry file is derived state, and a stale one must never decide what a command acts on.
+func (e *env) entry(cfg *home.Config, arg string) (registry.Entry, error) {
 	ix, err := registry.Scan(cfg)
 	if err != nil {
 		return registry.Entry{}, err
 	}
-	return findEntry(ix, arg, kind)
+	return findEntry(ix, arg)
 }
 
-// anyEntry resolves one entry, including one the atlas could not read. Only remove and
-// forget act on those; every other command wants entry.
+// anyEntry resolves one entry, including one the atlas could not read. Only forget acts on
+// those; every other command wants entry.
 func (e *env) anyEntry(cfg *home.Config, arg string) (registry.Entry, error) {
 	ix, err := registry.Scan(cfg)
 	if err != nil {
@@ -326,8 +306,8 @@ func (e *env) anyEntry(cfg *home.Config, arg string) (registry.Entry, error) {
 
 // findEntry is entry over an index the caller already has. An entry the scan could not
 // read carries its own reason, which says more than "no such".
-func findEntry(ix *registry.Index, arg string, kind registry.Kind) (registry.Entry, error) {
-	found, err := ix.Find(arg, kind)
+func findEntry(ix *registry.Index, arg string) (registry.Entry, error) {
+	found, err := ix.Find(arg)
 	if err == nil {
 		return *found, nil
 	}
@@ -337,17 +317,13 @@ func findEntry(ix *registry.Index, arg string, kind registry.Kind) (registry.Ent
 	if bad := badEntry(ix, arg); bad != nil {
 		return registry.Entry{}, fmt.Errorf("%s: %s", home.Display(bad.Path), bad.Error)
 	}
-	what := "knowledge base or project"
-	if kind != "" {
-		what = kind.Noun()
-	}
-	return registry.Entry{}, fmt.Errorf("no %s named %q; see `claude-atlas list`", what, arg)
+	return registry.Entry{}, fmt.Errorf("no project named %q; see `claude-atlas list`", arg)
 }
 
 // findAnyEntry resolves an entry by name, id, or path, and one the atlas could not read
 // by its path or its folder's name.
 func findAnyEntry(ix *registry.Index, arg string) (registry.Entry, error) {
-	found, err := ix.Find(arg, "")
+	found, err := ix.Find(arg)
 	if err == nil {
 		return *found, nil
 	}
@@ -357,7 +333,7 @@ func findAnyEntry(ix *registry.Index, arg string) (registry.Entry, error) {
 	if bad := badEntry(ix, arg); bad != nil {
 		return *bad, nil
 	}
-	return registry.Entry{}, fmt.Errorf("no knowledge base or project named %q; see `claude-atlas list`", arg)
+	return registry.Entry{}, fmt.Errorf("nothing named %q in the atlas; see `claude-atlas list`", arg)
 }
 
 // uncoveredProblems lists the scan's problems that no entry carries, so a command names
@@ -405,17 +381,13 @@ func (e *env) registryEntries(cfg *home.Config) ([]registry.Entry, error) {
 
 // refreshed is what a command says after rewriting the registry.
 func refreshed(entries []registry.Entry) string {
-	kbs, projects := 0, 0
+	n := 0
 	for _, en := range entries {
-		switch {
-		case en.Error != "":
-		case en.Kind == registry.Knowledge:
-			kbs++
-		default:
-			projects++
+		if en.Error == "" {
+			n++
 		}
 	}
-	return fmt.Sprintf("%d knowledge base%s, %d project%s", kbs, plural(kbs), projects, plural(projects))
+	return fmt.Sprintf("%d project%s", n, plural(n))
 }
 
 // entryName is the name to show: an entry the scan could not read has only its folder.
@@ -455,7 +427,7 @@ func (e *env) projectArg(arg string) (*project.Project, *registry.Entry, error) 
 	if cfg, err := e.home.Load(); err == nil {
 		if ix, err := registry.Scan(cfg); err == nil {
 			if work == "" {
-				found, err := ix.Find(arg, registry.Project)
+				found, err := ix.Find(arg)
 				if err != nil {
 					if errors.Is(err, registry.ErrNotFound) {
 						return nil, nil, fmt.Errorf("no project named %q; see `claude-atlas list`", arg)
@@ -479,257 +451,96 @@ func (e *env) projectArg(arg string) (*project.Project, *registry.Entry, error) 
 	return p, entry, nil
 }
 
-// upgradeProjectArg is the work folder of the project upgrade names, or "" when it names
-// a knowledge base: nothing means the nearer of the two at or above the current
-// directory; a path or a name means a project when it is one.
-func (e *env) upgradeProjectArg(arg string) string {
+// upgradeArg is the folder `upgrade` acts on: nothing means the nearest project or
+// knowledge base at or above the current directory; a path is taken as it is; a name goes
+// through the atlas, an entry it could not read included.
+func (e *env) upgradeArg(arg string) (string, error) {
 	if arg == "" {
-		work, root := project.FindAbove(cwd()), vault.FindAbove(cwd())
-		if work != "" && len(work) > len(root) {
-			return work
+		if work := project.FindAbove(cwd()); work != "" {
+			return work, nil
 		}
-		return ""
+		if known := project.KnowledgeAbove(cwd()); known != "" {
+			return known, nil
+		}
+		return "", errors.New("the current directory is not inside a project or a knowledge base; name one or give a path")
 	}
-	if abs, err := filepath.Abs(home.Expand(arg)); err == nil && project.IsProject(abs) {
-		return abs
+	if abs, err := filepath.Abs(home.Expand(arg)); err == nil && (project.IsProject(abs) || project.IsKnowledge(abs)) {
+		return abs, nil
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
-		return ""
+		return "", err
 	}
 	ix, err := registry.Scan(cfg)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	if bad := badEntry(ix, arg); bad != nil && bad.Reason == registry.ReasonFlat {
-		return bad.Path
+	if bad := badEntry(ix, arg); bad != nil {
+		return bad.Path, nil
 	}
-	if found, err := ix.Find(arg, registry.Project); err == nil {
-		return found.Path
+	found, err := ix.Find(arg)
+	if err != nil {
+		return "", err
 	}
-	return ""
+	return found.Path, nil
 }
 
-// openVaultArg resolves a knowledge base for the in-vault commands: a name, a path, or
-// the current directory, which may be inside a knowledge base or inside a project that
-// uses one. It does not need the atlas to be set up when a path is given.
-func (e *env) openVaultArg(arg string) (*vault.Vault, error) {
-	if arg == "" {
-		pl, err := place.Resolve(e.home, "", "", cwd(), false)
+// vaultArg resolves the project a wiki command acts on: a name, a path, or the current
+// directory, from anywhere inside the work. It does not need the atlas to be set up when a
+// path is given.
+func (e *env) vaultArg(arg string) (*project.Project, error) {
+	if arg == "" || arg == "." {
+		work := project.FindAbove(cwd())
+		if work == "" {
+			return nil, fmt.Errorf("%w: the current directory is not inside one; name a project or give a path", project.ErrNotProject)
+		}
+		return project.Open(work)
+	}
+	if strings.ContainsAny(arg, `/\`) || strings.HasPrefix(arg, "~") {
+		abs, err := filepath.Abs(home.Expand(arg))
 		if err != nil {
-			return nil, fmt.Errorf("%w: the current directory is not inside a knowledge base or a project; name one or give a path", vault.ErrNotVault)
+			return nil, err
 		}
-		if pl.Vault == nil {
-			if pl.KnowledgeError != "" {
-				return nil, fmt.Errorf("%s: %s", pl.Project.Name(), pl.KnowledgeError)
-			}
-			return nil, fmt.Errorf("%s uses no knowledge base; link one with `claude-atlas link KB`", pl.Project.Name())
+		work := project.FindAbove(abs)
+		if work == "" {
+			return nil, fmt.Errorf("%w: %s", project.ErrNotProject, home.Display(abs))
 		}
-		return pl.Vault, nil
+		return project.Open(work)
 	}
-	if cfg, err := e.home.Load(); err == nil {
-		if ix, err := registry.Scan(cfg); err == nil {
-			if found, ferr := ix.Find(arg, ""); ferr == nil {
-				if found.Kind == registry.Project {
-					if kb := found.KnowledgePath(); kb != "" {
-						return vault.Open(kb)
-					}
-					return nil, fmt.Errorf("%s uses no knowledge base; link one with `claude-atlas link KB`", found.Name)
-				}
-				return vault.Open(found.Path)
-			} else if errors.Is(ferr, registry.ErrAmbiguous) {
-				return nil, ferr
-			}
-			if bad := badEntry(ix, arg); bad != nil {
-				return vault.Open(bad.Path)
-			}
-		}
+	cfg, err := e.home.Load()
+	if err != nil {
+		return nil, err
 	}
-	return vault.Open(home.Expand(arg))
+	en, err := e.entry(cfg, arg)
+	if err != nil {
+		return nil, err
+	}
+	return project.Open(en.Path)
 }
 
 func (e *env) setup(args []string) (int, error) {
 	fs := newFlags("setup", e.stderr)
-	first := fs.String("first-vault", "", "path of the first knowledge base; a bare name is a folder in the current directory (default notes)")
 	source := fs.String("plugin-source", "", "install the plugin from this marketplace source, e.g. a local checkout")
 	noPlugin := fs.Bool("no-plugin", false, "do not run `claude plugin`")
 	if err := fs.Parse(args); err != nil {
 		return 2, nil
 	}
-	opts := wizard.Options{Version: Version, FirstVault: *first, PluginSource: *source, WithPlugin: !*noPlugin}
+	opts := wizard.Options{Version: Version, PluginSource: *source, WithPlugin: !*noPlugin}
 	return wizard.Run(e.home, e.console, opts)
-}
-
-func (e *env) newKnowledge(args []string) (int, error) {
-	fs := newFlags("new-knowledge", e.stderr)
-	name := fs.String("name", "", "display name (default: the folder's name)")
-	scope := fs.String("scope", "", "one or two sentences: what this knowledge base covers")
-	mode := fs.String("mode", "", "filing mode for new pages: generic (default) or lyt")
-	positional, err := parse(fs, args)
-	if err != nil {
-		return 2, nil
-	}
-	if len(positional) > 1 {
-		return 2, errors.New("usage: claude-atlas new-knowledge PATH [--name N] [--scope TEXT] [--mode generic|lyt]")
-	}
-	opts := vault.Options{Name: *name, Scope: *scope}
-	if *mode != "" {
-		if opts.Mode, err = vault.ParseMode(*mode); err != nil {
-			return 2, err
-		}
-	}
-	arg := first(positional)
-	if arg == "" && !e.console.Interactive() {
-		return 2, errors.New("usage: claude-atlas new-knowledge PATH")
-	}
-	cfg, err := e.home.Load()
-	if err != nil {
-		return 1, err
-	}
-	if arg == "" {
-		arg = e.console.Ask("Knowledge base: a path, or a name for a folder here", "")
-		if strings.TrimSpace(arg) == "" {
-			return 1, vaults.ErrCancelled
-		}
-		if opts.Scope == "" {
-			opts.Scope = e.console.Ask("Scope: one sentence saying what it holds", "")
-		}
-	}
-	path, err := vaults.ResolvePath(arg)
-	if err != nil {
-		return 1, err
-	}
-	res, err := vaults.Create(path, opts, e.console, true)
-	if err != nil {
-		return 1, err
-	}
-	return e.finishVault(cfg, path, res.Host)
-}
-
-// finishVault registers a knowledge base that was just created, refreshes, and reports.
-// host is the repository it commits into when it has none of its own.
-func (e *env) finishVault(cfg *home.Config, path, host string) (int, error) {
-	if _, err := vaults.Register(e.home, cfg, path); err != nil {
-		return 1, err
-	}
-	entries, ix, err := e.refreshAll(cfg)
-	if err != nil {
-		return 1, err
-	}
-	c := e.console
-	c.Say("")
-	c.Step(console.OK, "created", home.Display(path))
-	if host != "" {
-		c.Step(console.OK, "git", "commits into the repository "+home.Display(host))
-	}
-	c.Step(console.OK, "registered", "in "+home.Display(e.home.ConfigPath()))
-	c.Step(console.OK, "refreshed", refreshed(entries))
-	c.Say("")
-	c.Say("  Next:")
-	kb := entryArg(ix, path, registry.Knowledge)
-	use := [2]string{"claude-atlas init --knowledge " + kb, "in your work: a project that uses it"}
-	if work := project.FindAbove(path); work != "" {
-		if p, err := project.Open(work); err == nil && p.Config.Knowledge == nil {
-			use = [2]string{"claude-atlas link " + kb + " --project " + entryArg(ix, work, registry.Project), "make " + p.Name() + " use it"}
-		}
-	}
-	sayCommands(c, [][2]string{
-		{"claude-atlas open-vault " + kb, "open it in Obsidian"},
-		{"claude-atlas open-claude " + entryArg(ix, path, ""), "then /claude-atlas:wiki"},
-		use,
-	})
-	c.Say("")
-	return 0, nil
-}
-
-func (e *env) adopt(args []string) (int, error) {
-	fs := newFlags("adopt", e.stderr)
-	name := fs.String("name", "", "display name (default: the folder's name)")
-	scope := fs.String("scope", "", "what the knowledge base covers")
-	mode := fs.String("mode", "", "filing mode when the vault has none: generic (default) or lyt")
-	positional, err := parse(fs, args)
-	if err != nil {
-		return 2, nil
-	}
-	if len(positional) != 1 {
-		return 2, errors.New("usage: claude-atlas adopt PATH [--name N] [--scope TEXT] [--mode generic|lyt]")
-	}
-	opts := vault.Options{Name: *name, Scope: *scope}
-	if *mode != "" {
-		if opts.Mode, err = vault.ParseMode(*mode); err != nil {
-			return 2, err
-		}
-	}
-	cfg, err := e.home.Load()
-	if err != nil {
-		return 1, err
-	}
-	abs, err := filepath.Abs(home.Expand(positional[0]))
-	if err != nil {
-		return 1, err
-	}
-	res, err := vault.Adopt(abs, opts, time.Now())
-	if err != nil {
-		return 1, err
-	}
-	c := e.console
-	switch {
-	case res.AlreadyAdopted && res.Commit == "":
-		c.Step(console.Skip, "adopt", "already a claude-atlas knowledge base")
-	case res.WasLegacy:
-		c.Step(console.OK, "adopted", "claude-obsidian vault as a knowledge base; "+setupChanges(res.Added))
-	case res.FromV1:
-		c.Step(console.OK, "adopted", "v1 vault as a knowledge base; "+setupChanges(res.Added))
-	case res.FromV2:
-		c.Step(console.OK, "adopted", "v2 vault as a knowledge base; "+setupChanges(res.Added))
-	default:
-		c.Step(console.OK, "adopted", "as a knowledge base; "+setupChanges(res.Added))
-	}
-	switch {
-	case res.GitInitialized:
-		c.Step(console.OK, "git", "initialized; every operation is now one commit")
-	case res.Host != "":
-		c.Step(console.OK, "git", "commits into the repository "+home.Display(res.Host))
-	}
-	if res.Commit != "" {
-		c.Step(console.OK, "committed", res.Commit[:12])
-	}
-	registered, err := vaults.Register(e.home, cfg, abs)
-	if err != nil {
-		return 1, err
-	}
-	entries, _, err := e.refreshAll(cfg)
-	if err != nil {
-		return 1, err
-	}
-	if registered {
-		c.Step(console.OK, "registered", "in "+home.Display(e.home.ConfigPath()))
-	}
-	c.Step(console.OK, "refreshed", refreshed(entries))
-	return 0, nil
-}
-
-// setupChanges says what an adopt or an upgrade did to a vault's files.
-func setupChanges(added []string) string {
-	if len(added) == 0 {
-		return "committed the files already there"
-	}
-	return "added " + strings.Join(added, ", ")
 }
 
 func (e *env) initProject(args []string) (int, error) {
 	fs := newFlags("init", e.stderr)
 	name := fs.String("name", "", "the project's name (default: the folder's name)")
-	description := fs.String("description", "", "one sentence saying what the project is")
-	knowledge := fs.String("knowledge", "", "the knowledge base the project uses, by name or path")
-	noKnowledge := fs.Bool("no-knowledge", false, "use no knowledge base, and ask nothing")
+	description := fs.String("description", "", "what the work is and what its wiki should remember")
+	mode := fs.String("mode", "", "the filing mode for new wiki pages: generic (default) or lyt")
 	noGit := fs.Bool("no-git", false, "leave a folder that is in no git repository without one")
 	positional, err := parse(fs, args)
 	if err != nil {
 		return 2, nil
 	}
-	if len(positional) > 1 || (*knowledge != "" && *noKnowledge) {
-		return 2, errors.New("usage: claude-atlas init [PATH] [--name N] [--description TEXT] [--knowledge KB | --no-knowledge] [--no-git]")
+	if len(positional) > 1 {
+		return 2, errors.New("usage: claude-atlas init [PATH] [--name N] [--description TEXT] [--mode generic|lyt] [--no-git]")
 	}
 	work := cwd()
 	if len(positional) == 1 {
@@ -749,35 +560,16 @@ func (e *env) initProject(args []string) (int, error) {
 	if *name == "" {
 		*name = filepath.Base(work)
 	}
-	if c.Interactive() && !*noKnowledge {
+	if c.Interactive() {
 		if !set["name"] {
 			*name = c.Ask("Name", *name)
 		}
 		if !set["description"] {
-			*description = c.Ask("Description (one sentence, or leave empty)", "")
-		}
-		if *knowledge == "" {
-			ix, err := registry.Scan(cfg)
-			if err != nil {
-				return 1, err
-			}
-			kbs := ix.Knowledge()
-			if len(kbs) > 0 {
-				c.Say("Knowledge bases on this machine:")
-				for i, kb := range kbs {
-					c.Say("  %d. %-20s %s", i+1, kb.Name, kb.Scope)
-				}
-				answer := c.Ask("Use one? (a number, a name, or empty for none)", "")
-				if n, err := strconv.Atoi(strings.TrimSpace(answer)); err == nil && n >= 1 && n <= len(kbs) {
-					*knowledge = kbs[n-1].Name
-				} else if strings.TrimSpace(answer) != "" {
-					*knowledge = strings.TrimSpace(answer)
-				}
-			}
+			*description = c.Ask("Description: what the work is, and what its wiki should remember", "")
 		}
 	}
 	acts := actions.Bind(e.home, cfg, c)
-	made, err := acts.InitProject(actions.InitProject{Work: work, Name: *name, Description: *description, Knowledge: *knowledge, NoGit: *noGit})
+	made, err := acts.InitProject(actions.InitProject{Work: work, Name: *name, Description: *description, Mode: *mode, NoGit: *noGit})
 	if err != nil {
 		return 1, err
 	}
@@ -786,19 +578,17 @@ func (e *env) initProject(args []string) (int, error) {
 	c.Step(console.OK, "project", fmt.Sprintf("%s at %s", p.Name(), home.Display(p.Root)))
 	c.Step(console.OK, "wrote", p.Rel()+"/: "+strings.Join(made.Written, ", "))
 	switch made.Git {
-	case vaults.GitCreated:
-		c.Step(console.OK, "git", "initialized a repository on main; nothing committed")
-	case vaults.GitExisting:
+	case project.GitCreated:
+		c.Step(console.OK, "git", "initialized a repository on main")
+	case project.GitExisting:
 		c.Step(console.Skip, "git", "a repository already")
-	case vaults.GitEnclosed:
+	case project.GitEnclosed:
 		c.Step(console.Skip, "git", "inside another repository, which keeps its history")
-	case vaults.GitSkipped:
-		c.Step(console.Skip, "git", "none; --no-git")
+	case project.GitSkipped:
+		c.Step(console.Skip, "git", "none; --no-git, so no operation can run until the work is a repository")
 	}
-	if p.Config.Knowledge != nil {
-		c.Step(console.OK, "knowledge", p.Config.Knowledge.Name)
-	} else {
-		c.Step(console.Skip, "knowledge", "none; `claude-atlas link KB` sets one")
+	if made.Commit != "" {
+		c.Step(console.OK, "committed", made.Commit[:12])
 	}
 	c.Step(console.OK, "registered", "in "+home.Display(e.home.ConfigPath()))
 	entries, ix, err := e.refreshAll(cfg)
@@ -808,23 +598,32 @@ func (e *env) initProject(args []string) (int, error) {
 	c.Step(console.OK, "refreshed", refreshed(entries))
 	ref, here := ".", work == cwd()
 	if !here {
-		ref = entryArg(ix, p.Root, registry.Project)
+		ref = entryArg(ix, p.Root)
 	}
-	var next [][2]string
-	if p.Config.Knowledge != nil {
-		next = append(next, [2]string{"claude-atlas describe " + entryArg(ix, p.Root, registry.Project), "a page about this project in " + p.Config.Knowledge.Name})
+	next := [][2]string{
+		{"claude-atlas describe " + ref, "a page in its wiki that says what the work is"},
+		{"claude-atlas thread " + ref + ` new "..."`, "open a thread, or drop a note in " + p.Rel() + "/" + project.InboxDir + "/"},
 	}
-	next = append(next, [2]string{"claude-atlas thread " + ref + ` new "..."`, "open a thread, or drop a note in " + p.Rel() + "/" + project.InboxDir + "/"})
 	if here {
-		next = append(next, [2]string{"claude", "Claude Code here sees the project and its threads"})
+		next = append(next, [2]string{"claude", "Claude Code here sees the project, its wiki, and its threads"})
 	} else {
-		next = append(next, [2]string{"claude-atlas open-claude " + entryArg(ix, p.Root, ""), "Claude Code in the project sees it and its threads"})
+		next = append(next, [2]string{"claude-atlas open-claude " + ref, "Claude Code in the project"})
 	}
+	next = append(next, [2]string{"claude-atlas open-vault " + ref, "open " + p.Rel() + "/ in Obsidian"})
 	c.Say("")
 	c.Say("  Next:")
 	sayCommands(c, next)
 	c.Say("")
 	return 0, nil
+}
+
+// namesOf lists paths as the user reads them.
+func namesOf(paths []string) string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, home.Display(p))
+	}
+	return strings.Join(out, ", ")
 }
 
 // sayCommands prints commands with their comments in one column.
@@ -840,10 +639,10 @@ func sayCommands(c *console.Console, lines [][2]string) {
 
 // entryArg is the shortest command argument that names the entry at path: its name
 // when the name finds it, else its path. It comes quoted for a shell when it must be.
-func entryArg(ix *registry.Index, path string, kind registry.Kind) string {
+func entryArg(ix *registry.Index, path string) string {
 	en := ix.ByPath(path)
 	if en != nil && en.Error == "" {
-		if found, err := ix.Find(en.Name, kind); err == nil && found.Path == path {
+		if found, err := ix.Find(en.Name); err == nil && found.Path == path {
 			return shellArg(en.Name)
 		}
 	}
@@ -862,71 +661,6 @@ func shellArg(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-func (e *env) link(args []string) (int, error) {
-	fs := newFlags("link", e.stderr)
-	projectArg := fs.String("project", "", "the project, by name or path (default: the one you are in)")
-	positional, err := parse(fs, args)
-	if err != nil {
-		return 2, nil
-	}
-	if len(positional) != 1 {
-		return 2, errors.New("usage: claude-atlas link KB [--project P]")
-	}
-	cfg, err := e.home.Load()
-	if err != nil {
-		return 1, err
-	}
-	p, _, err := e.projectArg(*projectArg)
-	if err != nil {
-		return 1, err
-	}
-	kb, err := vaults.LinkKnowledge(cfg, p, positional[0])
-	if err != nil {
-		return 1, err
-	}
-	entries, _, err := e.refreshAll(cfg)
-	if err != nil {
-		return 1, err
-	}
-	e.console.Step(console.OK, "linked", fmt.Sprintf("%s uses %s", p.Name(), kb.Name))
-	e.console.Step(console.OK, "refreshed", refreshed(entries))
-	return 0, nil
-}
-
-func (e *env) unlink(args []string) (int, error) {
-	fs := newFlags("unlink", e.stderr)
-	projectArg := fs.String("project", "", "the project, by name or path (default: the one you are in)")
-	positional, err := parse(fs, args)
-	if err != nil {
-		return 2, nil
-	}
-	if len(positional) != 0 {
-		return 2, errors.New("usage: claude-atlas unlink [--project P]")
-	}
-	cfg, err := e.home.Load()
-	if err != nil {
-		return 1, err
-	}
-	p, _, err := e.projectArg(*projectArg)
-	if err != nil {
-		return 1, err
-	}
-	was := ""
-	if p.Config.Knowledge != nil {
-		was = p.Config.Knowledge.Name
-	}
-	if err := vaults.UnlinkKnowledge(p); err != nil {
-		return 1, err
-	}
-	entries, _, err := e.refreshAll(cfg)
-	if err != nil {
-		return 1, err
-	}
-	e.console.Step(console.OK, "unlinked", fmt.Sprintf("%s no longer uses %s", p.Name(), was))
-	e.console.Step(console.OK, "refreshed", refreshed(entries))
-	return 0, nil
-}
-
 func (e *env) forget(args []string) (int, error) {
 	if len(args) != 1 {
 		return 2, errors.New("usage: claude-atlas forget PROJECT")
@@ -939,9 +673,6 @@ func (e *env) forget(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	if (entry.Error == "" && entry.Kind != registry.Project) || (entry.Error != "" && cfg.HasKnowledge(entry.Path)) {
-		return 1, fmt.Errorf("%s is a knowledge base; `claude-atlas remove` forgets one", entryName(entry))
-	}
 	name, where := entryName(entry), home.Display(entry.Path)
 	gone := entry.Reason == registry.ReasonMissing
 	question := fmt.Sprintf("Forget %s? The folder %s and everything in it stay.", name, where)
@@ -953,9 +684,9 @@ func (e *env) forget(args []string) (int, error) {
 		return 1, err
 	}
 	if !ok {
-		return 1, vaults.ErrCancelled
+		return 1, manage.ErrCancelled
 	}
-	if err := vaults.ForgetProject(e.home, cfg, entry.Path); err != nil {
+	if err := manage.Forget(e.home, cfg, entry.Path); err != nil {
 		return 1, err
 	}
 	entries, _, err := e.refreshAll(cfg)
@@ -1005,7 +736,7 @@ func (e *env) describe(args []string) (int, error) {
 	}
 	switch {
 	case snap.New:
-		c.Step(console.OK, "staged", fmt.Sprintf("%s: %s at %s, in %s", strings.TrimPrefix(snap.To, "inbox/"), p.Name(), at, entry.Knowledge.Name))
+		c.Step(console.OK, "staged", fmt.Sprintf("%s: %s at %s, in %s/%s/", strings.TrimPrefix(snap.To, "inbox/"), p.Name(), at, p.Rel(), project.InboxDir))
 	default:
 		c.Say("  %-10s %s already waits or was captured", "unchanged", strings.TrimPrefix(snap.To, "inbox/"))
 	}
@@ -1419,13 +1150,13 @@ func (e *env) openVault(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) > 1 {
-		return 2, errors.New("usage: claude-atlas open-vault [KB | PATH]")
+		return 2, errors.New("usage: claude-atlas open-vault [PROJECT | PATH]")
 	}
-	v, err := e.openVaultArg(first(positional))
+	v, err := e.vaultArg(first(positional))
 	if err != nil {
 		return 1, err
 	}
-	root, label := v.Root, v.Name()
+	root, label := v.Atlas(), v.Name()
 	c := e.console
 	registered, running, err := obsidian.Status(root)
 	if err != nil {
@@ -1453,7 +1184,7 @@ func (e *env) openVault(args []string) (int, error) {
 	if !ok {
 		c.Say("Open it by hand: in Obsidian choose \"Open folder as vault\" and pick %s.", home.Display(root))
 		obsidian.Reveal(root)
-		return 1, vaults.ErrCancelled
+		return 1, manage.ErrCancelled
 	}
 	if err := obsidian.RegisterAndOpen(root); err != nil {
 		if errors.Is(err, obsidian.ErrManualRestart) {
@@ -1471,12 +1202,7 @@ func (e *env) openVault(args []string) (int, error) {
 }
 
 // skillHint is printed before handing the terminal to Claude Code.
-func skillHint(kind registry.Kind) string {
-	if kind == registry.Knowledge {
-		return "skills: " + hooks.KnowledgeSkills
-	}
-	return "skills: " + hooks.ProjectSkills
-}
+func skillHint() string { return "skills: " + hooks.Skills }
 
 // trustNote explains Claude Code's own first-run dialog, whose default answer quits.
 const trustNote = "The first time in a folder, Claude Code asks whether you trust it; choose Yes."
@@ -1495,7 +1221,7 @@ func (e *env) openClaude(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	entry, err := e.entry(cfg, positional[0], "")
+	entry, err := e.entry(cfg, positional[0])
 	if err != nil {
 		return 1, err
 	}
@@ -1504,9 +1230,6 @@ func (e *env) openClaude(args []string) (int, error) {
 	}
 	prompt := ""
 	if *threadID != "" {
-		if entry.Kind != registry.Project {
-			return 1, fmt.Errorf("%s is a knowledge base; threads live in a project", entry.Name)
-		}
 		p, err := project.Open(entry.Path)
 		if err != nil {
 			return 1, err
@@ -1530,7 +1253,7 @@ func (e *env) openClaude(args []string) (int, error) {
 		return 1, err
 	}
 	e.console.Say("  %s", home.Display(cmd.Dir))
-	e.console.Say("  %s", skillHint(entry.Kind))
+	e.console.Say("  %s", skillHint())
 	e.console.Say("  %s", trustNote)
 	e.console.Say("")
 	if err := cmd.Run(); err != nil {
@@ -1552,17 +1275,17 @@ func (e *env) ingest(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) == 0 {
-		return 2, errors.New("usage: claude-atlas ingest KB [PATH ...] [--dry-run] [--no-claude]")
+		return 2, errors.New("usage: claude-atlas ingest [PROJECT] [PATH ...] [--dry-run] [--no-claude]")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
 		return 1, err
 	}
-	v, err := e.openVaultArg(positional[0])
+	v, err := e.vaultArg(positional[0])
 	if err != nil {
 		return 1, err
 	}
-	entry, err := e.entry(cfg, v.Root, registry.Knowledge)
+	entry, err := e.entry(cfg, v.Root)
 	if err != nil {
 		return 1, err
 	}
@@ -1604,13 +1327,13 @@ func (e *env) ingest(args []string) (int, error) {
 			return 1, err
 		}
 		if !ok {
-			return 1, vaults.ErrCancelled
+			return 1, manage.ErrCancelled
 		}
 		res, remembered, err := actions.Bind(e.home, cfg, e.console).Stage(entry, plan)
 		if err != nil {
 			return 1, err
 		}
-		c.Step(console.OK, "staged", fmt.Sprintf("%d file%s in %s", len(res.Staged), plural(len(res.Staged)), home.Display(v.Path("inbox"))))
+		c.Step(console.OK, "staged", fmt.Sprintf("%d file%s in %s", len(res.Staged), plural(len(res.Staged)), home.Display(v.Path(project.InboxDir))))
 		for _, dir := range remembered {
 			c.Step(console.OK, "remembered", home.Display(dir)+"; `claude-atlas ingest "+entry.Name+"` stages what is new there next time")
 		}
@@ -1633,7 +1356,7 @@ func (e *env) list(args []string) (int, error) {
 		return 1, err
 	}
 	if len(entries) == 0 {
-		e.console.Say("nothing yet; create a knowledge base with `claude-atlas new-knowledge NAME`, then `claude-atlas init` in your work")
+		e.console.Say("no projects yet; run `claude-atlas init` in your work")
 		return 0, nil
 	}
 	var good, bad []registry.Entry
@@ -1646,7 +1369,7 @@ func (e *env) list(args []string) (int, error) {
 	}
 	width := nameWidth(good)
 	for _, en := range good {
-		e.console.Say("  %-9s %-5s %-*s  %s", en.Kind, listHeat(en), width, en.Name, home.Display(en.Path))
+		e.console.Say("  %-5s %-*s  %s", listHeat(en), width, en.Name, home.Display(en.Path))
 	}
 	if len(bad) > 0 && len(bad) < len(entries) {
 		e.console.Say("")
@@ -1657,25 +1380,17 @@ func (e *env) list(args []string) (int, error) {
 	return 0, nil
 }
 
-// listKind is the kind column: an entry the scan could not read has none.
-func listKind(en registry.Entry) string {
-	if en.Error != "" {
-		return "?"
-	}
-	return string(en.Kind)
-}
-
 // unreadable is the one word for an entry the atlas knows but could not read.
 func unreadable(en registry.Entry) string {
 	switch en.Reason {
-	case registry.ReasonV1:
-		return "v1"
-	case registry.ReasonV2Project:
-		return "v2"
+	case registry.ReasonV3Split:
+		return "3.x"
 	case registry.ReasonFlat:
 		return "flat"
 	case registry.ReasonMissing:
 		return "missing"
+	case registry.ReasonNotProject:
+		return "none"
 	default:
 		return "bad"
 	}
@@ -1713,7 +1428,7 @@ func (e *env) show(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	entry, err := findEntry(ix, args[0], "")
+	entry, err := findEntry(ix, args[0])
 	if err != nil {
 		return 1, err
 	}
@@ -1732,31 +1447,16 @@ func (e *env) show(args []string) (int, error) {
 		c.Say("  %-16s %s", k, val)
 	}
 	row("Name", entry.Name)
-	row("Kind", entry.Kind.Noun())
 	row("Id", entry.ID)
 	row("Path", home.Display(entry.Path))
+	row("Wiki", home.Display(entry.Wiki()))
 	row("Created", entry.Created)
-	if entry.Kind == registry.Knowledge {
-		row("Mode", string(entry.Mode))
-		row("Scope", entry.Scope)
-		for _, p := range entry.Projects {
-			row("Project", fmt.Sprintf("%-20s %s", p.Name, home.Display(p.Path)))
-		}
+	row("Mode", string(entry.Mode))
+	row("Description", entry.Description)
+	if d := describe.Page(entry); d != nil {
+		row("Page", d.Summary())
 	} else {
-		row("Description", entry.Description)
-		switch {
-		case entry.Knowledge == nil:
-			row("Knowledge", "none")
-		case entry.Knowledge.Error != "":
-			row("Knowledge", entry.Knowledge.Name+"  "+entry.Knowledge.Error)
-		default:
-			row("Knowledge", fmt.Sprintf("%-20s %s", entry.Knowledge.Name, home.Display(entry.Knowledge.Path)))
-			if d := describe.Page(entry); d != nil {
-				row("Page", d.Summary())
-			} else {
-				row("Page", registry.NotDescribed)
-			}
-		}
+		row("Page", registry.NotDescribed)
 	}
 	state := entry.State
 	if state == nil {
@@ -1777,44 +1477,41 @@ func (e *env) show(args []string) (int, error) {
 	if state.DaysIdle != nil {
 		row("Idle", fmt.Sprintf("%d day%s", *state.DaysIdle, plural(*state.DaysIdle)))
 	}
-	if entry.Kind == registry.Knowledge {
-		row("Last operation", state.LastOperation)
-		if state.Pages != nil {
-			row("Pages", fmt.Sprint(*state.Pages))
+	if state.Git != nil {
+		row("Git", refresh.LinkSummary(*state.Git))
+	}
+	row("Last operation", state.LastOperation)
+	if state.Pages != nil {
+		row("Pages", fmt.Sprint(*state.Pages))
+	}
+	if state.Inbox != nil {
+		row("Inbox", fmt.Sprintf("%d waiting", *state.Inbox))
+	}
+	row("Unfinished", state.Unfinished.Text())
+	for i, t := range state.HotTopics {
+		label := "Hot topics"
+		if i > 0 {
+			label = ""
 		}
-		if state.Inbox != nil {
-			row("Inbox", fmt.Sprintf("%d waiting", *state.Inbox))
-		}
-		row("Unfinished", state.Unfinished.Text())
-		for i, t := range state.HotTopics {
-			label := "Hot topics"
-			if i > 0 {
-				label = ""
+		c.Say("  %-16s - %s", label, refresh.PlainText(t))
+	}
+	// The threads are cheap to read and change without a refresh, so they are read now
+	// rather than from the registry.
+	if p, err := project.Open(entry.Path); err == nil {
+		if board, err := threads.Load(p); err == nil {
+			counts := board.Counts(time.Now())
+			counts.Notes = len(threads.Notes(p))
+			row("Threads", threadCounts(counts))
+			var phases []string
+			for _, ph := range board.Phases {
+				name := ph.Title
+				if board.Finished(ph.Title) {
+					name += " (finished)"
+				}
+				phases = append(phases, name)
 			}
-			c.Say("  %-16s - %s", label, refresh.PlainText(t))
-		}
-	} else {
-		if state.Git != nil {
-			row("Git", refresh.LinkSummary(*state.Git))
-		}
-		// The threads are cheap to read and change without a refresh, so they are read
-		// now rather than from the registry.
-		if p, err := project.Open(entry.Path); err == nil {
-			if board, err := threads.Load(p); err == nil {
-				counts := board.Counts(time.Now())
-				counts.Notes = len(threads.Notes(p))
-				row("Threads", threadCounts(counts))
-				var phases []string
-				for _, ph := range board.Phases {
-					name := ph.Title
-					if board.Finished(ph.Title) {
-						name += " (finished)"
-					}
-					phases = append(phases, name)
-				}
-				if len(phases) > 0 {
-					row("Phases", strings.Join(phases, ", "))
-				}
+			if len(phases) > 0 {
+				row("Phases", strings.Join(phases, ", "))
 			}
 		}
 	}
@@ -1842,49 +1539,38 @@ func threadCounts(c threads.Counts) string {
 
 func (e *env) edit(args []string) (int, error) {
 	fs := newFlags("edit", e.stderr)
-	name := fs.String("name", "", "display name")
-	scope := fs.String("scope", "", "what a knowledge base covers; \"\" clears it")
-	description := fs.String("description", "", "what a project is; \"\" clears it")
+	name := fs.String("name", "", "the project's name; it renames atlas/<name>/ too")
+	description := fs.String("description", "", "what the work is and what its wiki should remember; \"\" clears it")
+	mode := fs.String("mode", "", "the filing mode for new wiki pages: generic or lyt")
 	positional, err := parse(fs, args)
 	if err != nil {
 		return 2, nil
 	}
 	set := setFlags(fs)
 	if len(positional) != 1 || len(set) == 0 {
-		return 2, errors.New("usage: claude-atlas edit NAME [--name N] [--scope TEXT] [--description TEXT]")
+		return 2, errors.New("usage: claude-atlas edit NAME [--name N] [--description TEXT] [--mode generic|lyt]")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
 		return 1, err
 	}
-	entry, err := e.entry(cfg, positional[0], "")
+	entry, err := e.entry(cfg, positional[0])
 	if err != nil {
 		return 1, err
 	}
-	acts := actions.Bind(e.home, cfg, e.console)
-	path := entry.Path
-	if entry.Kind == registry.Project {
-		if set["scope"] {
-			return 2, errors.New("a project has a description, not a scope")
+	change := manage.Edit{Name: *name}
+	if set["description"] {
+		change.Description = description
+	}
+	if set["mode"] {
+		m, err := project.ParseMode(*mode)
+		if err != nil {
+			return 2, err
 		}
-		change := vaults.ProjectEdit{Name: *name}
-		if set["description"] {
-			change.Description = description
-		}
-		if err := acts.EditProject(entry, change); err != nil {
-			return 1, err
-		}
-	} else {
-		if set["description"] {
-			return 2, errors.New("a knowledge base has a scope, not a description")
-		}
-		change := vaults.Edit{Name: *name}
-		if set["scope"] {
-			change.Scope = scope
-		}
-		if path, err = acts.EditKnowledge(entry, change); err != nil {
-			return 1, err
-		}
+		change.Mode = m
+	}
+	if err := actions.Bind(e.home, cfg, e.console).EditProject(entry, change); err != nil {
+		return 1, err
 	}
 	entries, _, err := e.refreshAll(cfg)
 	if err != nil {
@@ -1894,53 +1580,10 @@ func (e *env) edit(args []string) (int, error) {
 	if *name != "" {
 		shown = *name
 	}
-	e.console.Step(console.OK, "edited", shown)
-	if path != entry.Path {
-		e.console.Step(console.OK, "moved", home.Display(path))
+	e.console.Step(console.OK, "edited", shown+": "+strings.Join(change.Fields(), ", "))
+	if p, err := project.Open(entry.Path); err == nil {
+		e.console.Step(console.OK, "folder", p.Rel()+"/")
 	}
-	e.console.Step(console.OK, "refreshed", refreshed(entries))
-	return 0, nil
-}
-
-func (e *env) remove(args []string) (int, error) {
-	if len(args) != 1 {
-		return 2, errors.New("usage: claude-atlas remove KB")
-	}
-	cfg, err := e.home.Load()
-	if err != nil {
-		return 1, err
-	}
-	entry, err := e.anyEntry(cfg, args[0])
-	if err != nil {
-		return 1, err
-	}
-	if entry.Error == "" && entry.Kind == registry.Project {
-		return 1, fmt.Errorf("%s is a project; `claude-atlas forget` drops one", entry.Name)
-	}
-	if entry.Error != "" && cfg.HasProject(entry.Path) {
-		return 1, fmt.Errorf("%s is listed as a project; `claude-atlas forget` drops one", home.Display(entry.Path))
-	}
-	name, where := entryName(entry), home.Display(entry.Path)
-	gone := entry.Reason == registry.ReasonMissing
-	question := fmt.Sprintf("Forget %s? The vault at %s stays on disk.", name, where)
-	if gone {
-		question = fmt.Sprintf("Forget %s? Its folder %s is already gone.", name, where)
-	}
-	ok, err := e.console.Confirm(question, false)
-	if err != nil {
-		return 1, err
-	}
-	if !ok {
-		return 1, vaults.ErrCancelled
-	}
-	if err := vaults.Unregister(e.home, cfg, entry.Path); err != nil {
-		return 1, err
-	}
-	entries, _, err := e.refreshAll(cfg)
-	if err != nil {
-		return 1, err
-	}
-	e.console.Step(console.OK, "removed", fmt.Sprintf("%s; %s", name, ternary(gone, "its folder was already gone", "the vault is still at "+where)))
 	e.console.Step(console.OK, "refreshed", refreshed(entries))
 	return 0, nil
 }
@@ -1974,7 +1617,7 @@ func (e *env) refresh(args []string) (int, error) {
 			if en.State.DaysIdle != nil {
 				days = fmt.Sprint(*en.State.DaysIdle)
 			}
-			e.console.Step(console.OK, en.Name, fmt.Sprintf("%s · %s, idle %sd", en.Kind.Noun(), heat, days))
+			e.console.Step(console.OK, en.Name, fmt.Sprintf("%s, idle %sd", heat, days))
 		}
 	}
 	for _, problem := range uncoveredProblems(ix) {
@@ -1993,13 +1636,13 @@ func (e *env) lint(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) > 1 {
-		return 2, errors.New("usage: claude-atlas lint [KB] [--json] [--strict]")
+		return 2, errors.New("usage: claude-atlas lint [PROJECT] [--json] [--strict]")
 	}
-	v, err := e.openVaultArg(first(positional))
+	v, err := e.vaultArg(first(positional))
 	if err != nil {
 		return 1, err
 	}
-	report, err := lint.Run(v.Root, lint.Options{AsOf: time.Now()})
+	report, err := lint.Run(v.Atlas(), lint.Options{AsOf: time.Now()})
 	if err != nil {
 		return 1, err
 	}
@@ -2022,9 +1665,9 @@ func (e *env) history(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) > 1 {
-		return 2, errors.New("usage: claude-atlas history [KB] [-n N]")
+		return 2, errors.New("usage: claude-atlas history [PROJECT] [-n N]")
 	}
-	v, err := e.openVaultArg(first(positional))
+	v, err := e.vaultArg(first(positional))
 	if err != nil {
 		return 1, err
 	}
@@ -2050,9 +1693,9 @@ func (e *env) stub(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) < 1 {
-		return 2, errors.New("usage: claude-atlas stub KB [TITLE...] [--type T]")
+		return 2, errors.New("usage: claude-atlas stub [PROJECT] [TITLE...] [--type T]")
 	}
-	v, err := e.openVaultArg(positional[0])
+	v, err := e.vaultArg(positional[0])
 	if err != nil {
 		return 1, err
 	}
@@ -2082,120 +1725,116 @@ func (e *env) stub(args []string) (int, error) {
 
 func (e *env) upgrade(args []string) (int, error) {
 	fs := newFlags("upgrade", e.stderr)
-	all := fs.Bool("all", false, "every knowledge base and project the atlas knows")
+	all := fs.Bool("all", false, "every project and every knowledge base the atlas knows")
+	absorb := fs.String("absorb", "", "the folder of the knowledge base to take as this project's wiki")
 	positional, err := parse(fs, args)
 	if err != nil {
 		return 2, nil
 	}
-	if len(positional) > 1 || (*all && len(positional) > 0) {
-		return 2, errors.New("usage: claude-atlas upgrade [NAME] or claude-atlas upgrade --all")
+	if len(positional) > 1 || (*all && (len(positional) > 0 || *absorb != "")) {
+		return 2, errors.New("usage: claude-atlas upgrade [NAME] [--absorb PATH], or claude-atlas upgrade --all")
 	}
-	var roots, works []string
+	cfg, err := e.home.Load()
+	if err != nil {
+		return 1, err
+	}
+	var targets []string
 	if *all {
-		cfg, err := e.home.Load()
-		if err != nil {
-			return 1, err
-		}
-		ix, err := registry.Scan(cfg)
-		if err != nil {
-			return 1, err
-		}
-		for _, en := range ix.Entries {
-			switch {
-			case en.Reason == registry.ReasonFlat, en.Error == "" && en.Kind == registry.Project:
-				works = append(works, en.Path)
-			case en.Error == "" && en.Kind != registry.Knowledge:
-			default:
-				roots = append(roots, en.Path)
-			}
-		}
-	} else if work := e.upgradeProjectArg(first(positional)); work != "" {
-		works = []string{work}
+		targets = manage.UpgradeTargets(cfg)
 	} else {
-		v, err := e.openVaultArg(first(positional))
+		target, err := e.upgradeArg(first(positional))
 		if err != nil {
 			return 1, err
 		}
-		roots = []string{v.Root}
+		targets = []string{target}
 	}
-	for _, work := range works {
-		moved, err := project.Upgrade(work)
+	c := e.console
+	now := time.Now()
+	var plans []*manage.Upgrade
+	for _, target := range targets {
+		up, err := manage.PlanUpgrade(cfg, target, now)
 		if err != nil {
-			return 1, err
-		}
-		p, err := project.Open(work)
-		if err != nil {
-			return 1, err
-		}
-		var did []string
-		if moved {
-			did = append(did, "moved "+project.Dir+"/ into "+p.Rel()+"/")
-		}
-		if threads.Legacy(p) {
-			n, left, err := threads.Migrate(p, time.Now())
-			if err != nil {
-				return 1, err
-			}
-			did = append(did, fmt.Sprintf("turned %d task%s into thread%s", n, plural(n), plural(n)))
-			for _, pr := range left {
-				e.console.Step(console.Fail, pr.Path, pr.Reason+"; it stays where it is")
-			}
-		}
-		snippet, _ := os.ReadFile(p.Path(project.Snippet))
-		if err := p.EnsureFolders(); err != nil {
-			return 1, err
-		}
-		if err := p.WriteSnippet(); err != nil {
-			return 1, err
-		}
-		if now, _ := os.ReadFile(p.Path(project.Snippet)); string(now) != string(snippet) {
-			did = append(did, "wrote "+project.Snippet)
-		}
-		if _, err := threads.Sync(p, time.Now()); err != nil {
-			return 1, err
-		}
-		if len(did) == 0 {
-			e.console.Step(console.Skip, home.Display(work), "current")
-			continue
-		}
-		e.console.Step(console.OK, home.Display(work), strings.Join(did, "; "))
-	}
-	restyled := false
-	for _, root := range roots {
-		res, err := vault.Upgrade(root, time.Now())
-		if err != nil {
-			if *all && (errors.Is(err, vault.ErrV1) || errors.Is(err, vault.ErrProjectVault) || errors.Is(err, vault.ErrNotVault)) {
-				e.console.Step(console.Skip, home.Display(root), err.Error())
+			if *all {
+				c.Step(console.Skip, home.Display(target), err.Error())
 				continue
 			}
 			return 1, err
 		}
-		if len(res.Added) == 0 && !res.Schema {
-			e.console.Step(console.Skip, home.Display(root), "current")
-			continue
+		plans = append(plans, up)
+	}
+	// A knowledge base every one of whose projects is also a target is absorbed by them, so
+	// the refusal it plans is not the user's to act on.
+	targeted := map[string]bool{}
+	for _, up := range plans {
+		targeted[up.Path] = true
+	}
+	absorbed := func(up *manage.Upgrade) bool {
+		if len(up.Users) == 0 {
+			return false
 		}
-		what := setupChanges(res.Added)
-		if res.Schema {
-			what = "raised to " + vault.Schema + "; " + what
-		}
-		e.console.Step(console.OK, home.Display(root), what)
-		for _, rel := range res.Added {
-			if strings.HasPrefix(rel, ".obsidian/snippets/") {
-				restyled = true
+		for _, user := range up.Users {
+			if abs, err := filepath.Abs(home.Expand(user)); err != nil || !targeted[abs] {
+				return false
 			}
 		}
+		return true
 	}
-	if restyled {
-		e.console.Say("  The folder colors come from .obsidian/snippets/claude-atlas.css, enabled in each vault's appearance settings; reload Obsidian (Cmd+R) to see them.")
+	todo := 0
+	for _, up := range plans {
+		switch {
+		case absorbed(up):
+			c.Step(console.Skip, up.Name, "absorbed by "+namesOf(up.Users))
+		case up.Refuse != "":
+			c.Step(console.Fail, up.Name, up.Refuse)
+		case len(up.Did) == 0:
+			c.Step(console.Skip, up.Name, "current")
+		default:
+			c.Step(console.OK, up.Name, home.Display(up.Path))
+			for _, one := range up.Did {
+				c.Say("      %s", one)
+			}
+			todo++
+		}
 	}
+	if todo == 0 {
+		return 0, nil
+	}
+	c.Say("")
+	c.Say("  The wiki and the threads move inside your work, with git mv where one repository holds both.")
+	ok, err := c.Confirm(fmt.Sprintf("Upgrade %d folder%s?", todo, plural(todo)), true)
+	if err != nil {
+		return 1, err
+	}
+	if !ok {
+		return 1, manage.ErrCancelled
+	}
+	c.Say("")
+	for _, up := range plans {
+		if up.Refuse != "" || len(up.Did) == 0 {
+			continue
+		}
+		if err := manage.RunUpgrade(e.home, cfg, up, *absorb, now); err != nil {
+			return 1, fmt.Errorf("%s: %w", up.Name, err)
+		}
+		c.Step(console.OK, up.Name, strings.Join(up.Did, "; "))
+		for _, pr := range up.Problems {
+			c.Step(console.Fail, pr.Path, pr.Reason+"; it stays where it is")
+		}
+	}
+	entries, _, err := e.refreshAll(cfg)
+	if err != nil {
+		return 1, err
+	}
+	c.Step(console.OK, "refreshed", refreshed(entries))
+	c.Say("  The folder colors come from .obsidian/snippets/claude-atlas.css in each project's folder; reload Obsidian (Cmd+R) to see them.")
 	return 0, nil
 }
 
 func (e *env) undo(args []string) (int, error) {
 	if len(args) != 2 {
-		return 2, errors.New("usage: claude-atlas undo KB OPERATION")
+		return 2, errors.New("usage: claude-atlas undo PROJECT OPERATION")
 	}
-	v, err := e.openVaultArg(args[0])
+	v, err := e.vaultArg(args[0])
 	if err != nil {
 		return 1, err
 	}
@@ -2208,7 +1847,7 @@ func (e *env) undo(args []string) (int, error) {
 		return 1, err
 	}
 	if !ok {
-		return 1, vaults.ErrCancelled
+		return 1, manage.ErrCancelled
 	}
 	res, err := txn.UndoOperation(v, args[1], time.Now())
 	if err != nil {
@@ -2223,9 +1862,9 @@ func (e *env) undo(args []string) (int, error) {
 
 func (e *env) recover(args []string) (int, error) {
 	if len(args) > 1 {
-		return 2, errors.New("usage: claude-atlas recover [KB]")
+		return 2, errors.New("usage: claude-atlas recover [PROJECT]")
 	}
-	v, err := e.openVaultArg(first(args))
+	v, err := e.vaultArg(first(args))
 	if err != nil {
 		return 1, err
 	}
@@ -2238,49 +1877,6 @@ func (e *env) recover(args []string) (int, error) {
 		return 0, nil
 	}
 	e.console.Step(console.OK, "recovered", fmt.Sprintf("%s; restored %s", res.OperationID, strings.Join(res.Restored, ", ")))
-	return 0, nil
-}
-
-func (e *env) mode(args []string) (int, error) {
-	if len(args) > 2 {
-		return 2, errors.New("usage: claude-atlas mode [KB] [generic|lyt]")
-	}
-	var vaultArg, modeArg string
-	switch len(args) {
-	case 1:
-		if _, err := vault.ParseMode(args[0]); err == nil {
-			modeArg = args[0]
-		} else {
-			vaultArg = args[0]
-		}
-	case 2:
-		vaultArg, modeArg = args[0], args[1]
-	}
-	v, err := e.openVaultArg(vaultArg)
-	if err != nil {
-		return 1, err
-	}
-	if modeArg == "" {
-		e.console.Say("%s", v.Config.Mode)
-		return 0, nil
-	}
-	m, err := vault.ParseMode(modeArg)
-	if err != nil {
-		return 2, err
-	}
-	if m == v.Config.Mode {
-		e.console.Step(console.Skip, "mode", "already "+string(m))
-		return 0, nil
-	}
-	plan, err := txn.Prepare(v, txn.ConfigRequest(v, m), time.Now())
-	if err != nil {
-		return 1, err
-	}
-	res, err := txn.Apply(v, plan, time.Now())
-	if err != nil {
-		return 1, err
-	}
-	e.console.Step(console.OK, "mode", fmt.Sprintf("%s → %s (%s)", v.Config.Mode, m, res.OperationID))
 	return 0, nil
 }
 
@@ -2308,9 +1904,9 @@ type planFile struct {
 
 func (e *env) apply(args []string) (int, error) {
 	if len(args) != 2 {
-		return 2, errors.New("usage: claude-atlas apply KB PLAN.json")
+		return 2, errors.New("usage: claude-atlas apply PROJECT PLAN.json")
 	}
-	v, err := e.openVaultArg(args[0])
+	v, err := e.vaultArg(args[0])
 	if err != nil {
 		return 1, err
 	}
@@ -2358,7 +1954,7 @@ func (e *env) apply(args []string) (int, error) {
 		return 1, err
 	}
 	if !ok {
-		return 1, vaults.ErrCancelled
+		return 1, manage.ErrCancelled
 	}
 	res, err := txn.Apply(v, plan, time.Now())
 	if err != nil {
@@ -2510,7 +2106,7 @@ func (e *env) doctor(args []string) (int, error) {
 		line("git", "on PATH")
 	} else {
 		ok = false
-		line("git", "missing; knowledge base operations need it")
+		line("git", "missing; every wiki operation needs it")
 	}
 	if claudecode.CLI() == "" {
 		line("Claude Code", "`claude` is not on PATH")
@@ -2538,12 +2134,9 @@ func (e *env) doctor(args []string) (int, error) {
 		if status != "ok" {
 			ok = false
 		}
-		c.Say("    %-7s %-10s %-*s  %s", status, listKind(en), width, entryName(en), home.Display(en.Path))
-	}
-	for _, en := range ix.Projects() {
-		if en.Knowledge != nil && en.Knowledge.Error != "" {
-			ok = false
-			c.Step(console.Fail, en.Name+" · knowledge", en.Knowledge.Error+"; run `claude-atlas link KB --project "+en.Name+"`")
+		c.Say("    %-7s %-*s  %s", status, width, entryName(en), home.Display(en.Path))
+		if en.Error != "" {
+			c.Say("            %s", en.Error)
 		}
 	}
 	for _, p := range uncoveredProblems(ix) {
@@ -2561,20 +2154,14 @@ func entryStatus(en registry.Entry) string {
 	if en.Error != "" {
 		return unreadable(en)
 	}
-	if en.Kind == registry.Project {
-		if _, err := project.Open(en.Path); err != nil {
-			return "bad"
-		}
-		return "ok"
-	}
-	v, err := vault.Open(en.Path)
+	p, err := project.Open(en.Path)
 	if err != nil {
 		return "bad"
 	}
-	if pending, _ := txn.Pending(v); pending != nil {
+	if pending, _ := txn.Pending(p); pending != nil {
 		return "recover"
 	}
-	if !v.Repo().IsRepo() {
+	if !p.Repo().IsRepo() {
 		return "no git"
 	}
 	return "ok"

@@ -18,7 +18,7 @@ import (
 	"unicode"
 
 	"github.com/nathanaday/claude-atlas/internal/ledger"
-	"github.com/nathanaday/claude-atlas/internal/vault"
+	"github.com/nathanaday/claude-atlas/internal/project"
 )
 
 const ReportVersion = 3
@@ -182,28 +182,36 @@ var orphanExcluded = map[string]bool{
 
 // folderIndexes are the index pages the layout names after their folder, so that no two
 // pages share the basename index.
-var folderIndexes = map[string]bool{vault.CanvasIndex: true}
+var folderIndexes = map[string]bool{project.CanvasIndex: true}
 
 // duplicateExempt reports whether a basename repeats by design: _index pages do.
 func duplicateExempt(rel string) bool {
 	return strings.ToLower(strings.TrimSuffix(path.Base(rel), path.Ext(rel))) == "_index"
 }
 
-// kindErrors checks the vault against its kind: the identity file names a knowledge
-// base, and the v2 folders a knowledge base does not have are gone. A tree without a
+// layoutErrors checks the folder against the current layout: the identity file is a
+// project's, and the folders earlier versions left behind are gone. A folder without a
 // readable identity file is not checked.
-func kindErrors(root string) []PathFinding {
-	cfg, ok := vault.ReadConfig(root)
-	if !ok || (cfg.Schema != vault.Schema && cfg.Schema != vault.SchemaV2) {
+func layoutErrors(root string) []PathFinding {
+	cfg, ok := project.ReadMarker(root)
+	if !ok {
 		return nil
 	}
 	var out []PathFinding
-	if cfg.Kind != vault.Kind {
-		out = append(out, PathFinding{Path: vault.Marker, Message: fmt.Sprintf("kind is %q; a v3 vault is a knowledge base, and a v2 project vault is recreated with `claude-atlas init`", cfg.Kind)})
+	if cfg.Schema == project.SchemaV3 {
+		out = append(out, PathFinding{Path: project.Marker, Message: "a 3.x project, whose knowledge base sits outside it; run `claude-atlas upgrade` to absorb it"})
 	}
-	for _, rel := range []string{"wiki/tasks", "wiki/questions", "wiki/sessions", "kb", "repos"} {
+	// The stage folders sat beside threads/ until 4.0.0, and a knowledge base held the
+	// typed folders of v2.
+	moved := []string{"stubs", "specs", "plans", "receipts", "phases"}
+	for _, rel := range moved {
+		if info, err := os.Lstat(filepath.Join(root, rel)); err == nil && info.IsDir() {
+			out = append(out, PathFinding{Path: rel, Message: "a thread folder of 3.x; the stage folders sit under threads/ now, so run `claude-atlas upgrade`"})
+		}
+	}
+	for _, rel := range []string{"tasks", "wiki/tasks", "wiki/questions", "wiki/sessions", "kb", "repos"} {
 		if info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(rel))); err == nil && info.IsDir() {
-			out = append(out, PathFinding{Path: rel, Message: "a v2 project folder; threads live in a project's atlas/<name>/ folder now, and knowledge pages move under wiki/"})
+			out = append(out, PathFinding{Path: rel, Message: "a folder of an earlier version; run `claude-atlas upgrade`, then move what is left under wiki/ or threads/"})
 		}
 	}
 	return out
@@ -386,7 +394,7 @@ func Run(root string, opts Options) (*Report, error) {
 	for _, pg := range pages {
 		emptyStub := stubs[pg.path] && strings.TrimSpace(pg.text) == ""
 		if pg.frontErr == nil && !emptyStub {
-			if missing := vault.MissingFrontmatter(pg.fields); len(missing) > 0 {
+			if missing := project.MissingFrontmatter(pg.fields); len(missing) > 0 {
 				report.MissingFrontmatter = append(report.MissingFrontmatter, FrontmatterFinding{Path: pg.path, HasFrontmatter: pg.hasFront, MissingFields: missing})
 			}
 		}
@@ -396,7 +404,7 @@ func Run(root string, opts Options) (*Report, error) {
 	}
 
 	report.LedgerErrors = ledgerErrors(root, opts.Overlay, present, asOf)
-	report.KindErrors = kindErrors(root)
+	report.KindErrors = layoutErrors(root)
 
 	sortFindings(report)
 	report.Summary = Summary{PagesScanned: len(pages), LinksScanned: links, WantedPages: len(report.WantedPages), Stubs: len(report.Stubs), CategoryCounts: map[string]int{
@@ -472,13 +480,13 @@ func pathLess(a, b string) bool {
 func parsePage(rel, text string) *page {
 	text = strings.TrimPrefix(text, "\xef\xbb\xbf")
 	pg := &page{path: rel, text: text, headings: map[string]bool{}, blocks: map[string]bool{}}
-	fields, body, err := vault.Frontmatter(text)
+	fields, body, err := project.Frontmatter(text)
 	pg.body, pg.frontErr = body, err
 	pg.hasFront = strings.HasPrefix(text, "---")
 	if fields != nil {
 		pg.fields = fields
-		pg.aliases = vault.StringList(fields, "aliases")
-		pg.isMOC = vault.StringField(fields, "type") == "moc"
+		pg.aliases = project.StringList(fields, "aliases")
+		pg.isMOC = project.StringField(fields, "type") == "moc"
 	} else {
 		pg.fields = map[string]any{}
 	}
@@ -741,7 +749,7 @@ func (r *tier) find(queries []string, raw string) []target {
 		var cands []target
 		cands = append(cands, r.byBasename[key]...)
 		cands = append(cands, r.byAlias[key]...)
-		return dedupe(cands)
+		return dedupe(preferWiki(cands))
 	}
 	suffix := strings.ToLower(path.Clean(raw))
 	var cands []target
@@ -754,7 +762,23 @@ func (r *tier) find(queries []string, raw string) []target {
 			cands = append(cands, t)
 		}
 	}
-	return dedupe(cands)
+	return dedupe(preferWiki(cands))
+}
+
+// preferWiki keeps the candidates under wiki/ when there are any. A name in a wiki page
+// means a wiki page, and a thread's documents repeat one file name by design, so without
+// this every link to a thread's title would read as ambiguous.
+func preferWiki(cands []target) []target {
+	var wiki []target
+	for _, c := range cands {
+		if strings.HasPrefix(c.path, project.WikiDir+"/") {
+			wiki = append(wiki, c)
+		}
+	}
+	if len(wiki) > 0 {
+		return wiki
+	}
+	return cands
 }
 
 func fragmentError(l link, t target) string {
@@ -778,14 +802,14 @@ func fragmentError(l link, t target) string {
 // wikilink from an ordinary page whose name is already a valid file name.
 func wantedTitle(l link, pg *page) (string, bool) {
 	title := strings.TrimSpace(l.filePart)
-	if l.syntax != "wikilink" || pg.isIndex || title == "" || strings.Contains(title, "/") || vault.SanitizeTitle(title) != title {
+	if l.syntax != "wikilink" || pg.isIndex || title == "" || strings.Contains(title, "/") || project.SanitizeTitle(title) != title {
 		return "", false
 	}
 	switch strings.ToLower(path.Ext(title)) {
 	case ".md", ".canvas", ".base":
 		return "", false
 	}
-	if pg.path == vault.LogPage || strings.HasPrefix(strings.ToLower(pg.path), "wiki/folds/") {
+	if pg.path == project.LogPage || strings.HasPrefix(strings.ToLower(pg.path), "wiki/folds/") {
 		return "", false
 	}
 	return title, true
@@ -924,7 +948,7 @@ func stubOf(pg *page, incoming map[string]bool) (Stub, bool) {
 	empty := strings.TrimSpace(pg.text) == ""
 	switch {
 	case empty && len(from) > 0:
-	case !empty && vault.StringField(pg.fields, "status") == "seed" && bodyEmpty(pg):
+	case !empty && project.StringField(pg.fields, "status") == "seed" && bodyEmpty(pg):
 	default:
 		return Stub{}, false
 	}
@@ -984,17 +1008,17 @@ func emptySections(pg *page) []SectionFinding {
 }
 
 func ledgerErrors(root string, overlay map[string][]byte, present map[string]bool, asOf time.Time) []PathFinding {
-	data, ok := overlay[vault.LedgerPath]
+	data, ok := overlay[project.LedgerPath]
 	if !ok {
 		var err error
-		data, err = os.ReadFile(filepath.Join(root, filepath.FromSlash(vault.LedgerPath)))
+		data, err = os.ReadFile(filepath.Join(root, filepath.FromSlash(project.LedgerPath)))
 		if err != nil {
 			return nil
 		}
 	}
 	l, err := ledger.Parse(data)
 	if err != nil {
-		return []PathFinding{{Path: vault.LedgerPath, Message: err.Error()}}
+		return []PathFinding{{Path: project.LedgerPath, Message: err.Error()}}
 	}
 	var out []PathFinding
 	ids := make([]string, 0, len(l.Sources))
@@ -1006,12 +1030,12 @@ func ledgerErrors(root string, overlay map[string][]byte, present map[string]boo
 		s := l.Sources[id]
 		if s.Origin.Kind == "file" && s.ReviewStatus == "active" {
 			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(s.Origin.Locator))); err != nil {
-				out = append(out, PathFinding{Path: vault.LedgerPath, Message: fmt.Sprintf("%s: captured file is missing: %s", id, s.Origin.Locator)})
+				out = append(out, PathFinding{Path: project.LedgerPath, Message: fmt.Sprintf("%s: captured file is missing: %s", id, s.Origin.Locator)})
 			}
 		}
 		for _, p := range s.Pages {
 			if !present[p] {
-				out = append(out, PathFinding{Path: vault.LedgerPath, Message: fmt.Sprintf("%s: linked page does not exist: %s", id, p)})
+				out = append(out, PathFinding{Path: project.LedgerPath, Message: fmt.Sprintf("%s: linked page does not exist: %s", id, p)})
 			}
 		}
 	}

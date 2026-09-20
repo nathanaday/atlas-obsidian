@@ -11,7 +11,7 @@ tags:
 
 # Wiki Index
 
-Every page in this knowledge base is listed here. Completed operations keep it current.
+Every page in this project's wiki is listed here. Completed operations keep it current.
 
 ## Sources
 

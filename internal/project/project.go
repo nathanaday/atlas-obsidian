@@ -1,14 +1,16 @@
-// Package project knows what a v3 project is: a folder atlas/<name>/ inside the user's
-// work, holding an identity file, threads with their stage documents, phases, and an
-// inbox for notes. The folder takes the project's name so that Obsidian, which names a
-// vault after its folder, tells one project from another. A project is files. It has no
-// git of its own and no engine; the threads package writes its pages, and this package
-// writes only the identity file, the folder's name, and the Obsidian snippet that colors
-// the pages.
+// Package project knows what a claude-atlas project is: a folder atlas/<name>/ inside the
+// user's work that holds everything the atlas knows about it. Two halves live there. The
+// wiki, under wiki/ with its raw store and its source ledger, is the knowledge base: only
+// an operation writes it, and every operation is one commit. The threads, under threads/,
+// are the state of the work: the threads package writes their cards and the model writes
+// their prose. The folder takes the project's name so that Obsidian, which names a vault
+// after its folder, tells one project from another.
 package project
 
 import (
-	"embed"
+	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,9 +19,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nathanaday/claude-atlas/internal/gitx"
 	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/claude-atlas/internal/ledger"
 	"github.com/nathanaday/claude-atlas/internal/links"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
 const (
@@ -28,88 +31,122 @@ const (
 	// Marker is the identity file inside the project's folder. It is visible because the
 	// folder is the user's and the file says what the folder is.
 	Marker = "project.json"
-	Schema = "claude-atlas.project.v3"
+	Schema = "claude-atlas.project.v4"
+	// SchemaV3 is the identity file 3.x wrote, when a project named a separate knowledge
+	// base. Open refuses it; upgrade absorbs the knowledge base and raises the schema.
+	SchemaV3 = "claude-atlas.project.v3"
+	// KnowledgeMarker is the identity file of a 3.x knowledge base, the separate vault v4
+	// absorbs into a project.
+	KnowledgeMarker = ".claude-atlas.json"
+	// LegacyMarker is claude-obsidian's identity file; adopt converts such a vault.
+	LegacyMarker = ".claude-obsidian.json"
+	// EnvProject names the project explicitly for the MCP server and the hooks. The
+	// launcher sets it.
+	EnvProject = "CLAUDE_ATLAS_PROJECT"
 
+	// The wiki, and the engine's own paths.
+	WikiDir      = "wiki"
+	LogPage      = "wiki/log.md"
+	HotPage      = "wiki/hot.md"
+	IndexPage    = "wiki/index.md"
+	OverviewPage = "wiki/overview.md"
+	LedgerPath   = ledger.VaultPath
+	RawDir       = ".raw"
+	CapturedDir  = ".raw/captured"
+	MetaDir      = ".vault-meta"
+	// A folder's index page takes the folder's name, so no page shares the basename of
+	// wiki/index.md.
+	CanvasIndex = "wiki/canvases/canvases.md"
+
+	// The threads: the cards and the board at the top, one folder per stage under it.
 	ThreadsDir   = "threads"
-	ArchiveDir   = "threads/archive"
 	ThreadsIndex = "threads/threads.md"
-	StubsDir     = "stubs"
-	SpecsDir     = "specs"
-	PlansDir     = "plans"
-	ReceiptsDir  = "receipts"
-	PhasesDir    = "phases"
-	InboxDir     = "inbox"
+	ArchiveDir   = "threads/archive"
+	StubsDir     = "threads/stubs"
+	SpecsDir     = "threads/specs"
+	PlansDir     = "threads/plans"
+	ReceiptsDir  = "threads/receipts"
+	PhasesDir    = "threads/phases"
+
+	// What the user drops in, and what nothing reads.
+	InboxDir = "inbox"
+	IdeasDir = "ideas"
 
 	// LegacyTasksDir held the task pages of 2.x; threads.Migrate turns them into threads.
 	LegacyTasksDir = "tasks"
 )
 
 // Folders are the folders every project holds, relative to its folder.
-var Folders = []string{ThreadsDir, ArchiveDir, StubsDir, SpecsDir, PlansDir, ReceiptsDir, PhasesDir, InboxDir}
+var Folders = []string{WikiDir, ThreadsDir, ArchiveDir, StubsDir, SpecsDir, PlansDir, ReceiptsDir, PhasesDir, InboxDir, IdeasDir}
 
-//go:embed templates
-var templates embed.FS
+// StageDirs are the folders a thread's documents sit in, in stage order.
+var StageDirs = []string{StubsDir, SpecsDir, PlansDir, ReceiptsDir}
 
-// Snippet is the CSS that gives each stage its callout color and icon when the project
-// folder is open in Obsidian; Appearance enables it.
+// EngineScope are the paths inside the project's folder that the engine owns. Every git
+// command an operation runs is scoped to them, so an apply, the manual commit before it,
+// and an undo never see the user's code or a thread document. The inbox is among them
+// because an ingest removes the sources it has filed.
+var EngineScope = []string{WikiDir + "/", RawDir + "/", InboxDir + "/", Marker}
+
+// Mode is the filing methodology for new wiki pages.
+type Mode string
+
 const (
-	Snippet    = ".obsidian/snippets/claude-atlas.css"
-	Appearance = ".obsidian/appearance.json"
+	Generic Mode = "generic"
+	LYT     Mode = "lyt"
 )
 
-func template(rel string) []byte {
-	data, err := templates.ReadFile("templates/" + strings.TrimPrefix(rel, ".obsidian/"))
-	if err != nil {
-		panic(err)
-	}
-	return data
-}
+var Modes = []Mode{Generic, LYT}
 
-// WriteSnippet writes the current CSS snippet over the one there. It enables the snippet
-// only when Obsidian has no appearance file yet, so a user who turned it off keeps it off.
-func (p *Project) WriteSnippet() error {
-	if err := os.MkdirAll(filepath.Dir(p.Path(Snippet)), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(p.Path(Snippet), template(Snippet), 0o644); err != nil {
-		return err
-	}
-	// Obsidian rewrites its workspace files on every click; the work's repository
-	// should track the snippet and not those.
-	ignore := p.Path(".obsidian/.gitignore")
-	if _, err := os.Stat(ignore); errors.Is(err, os.ErrNotExist) {
-		if err := os.WriteFile(ignore, []byte("workspace*.json\n"), 0o644); err != nil {
-			return err
+// ParseMode validates a mode name.
+func ParseMode(s string) (Mode, error) {
+	for _, m := range Modes {
+		if string(m) == s {
+			return m, nil
 		}
 	}
-	if _, err := os.Stat(p.Path(Appearance)); errors.Is(err, os.ErrNotExist) {
-		return os.WriteFile(p.Path(Appearance), template(Appearance), 0o644)
-	}
-	return nil
+	return "", fmt.Errorf("mode must be generic or lyt, not %q", s)
 }
 
-// Knowledge names the one knowledge base a project uses. The id is the reference; the
-// name is for people and for messages when the id is not found on this machine.
-type Knowledge struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-// Config is the content of the identity file: the facts that travel with the project.
-// It never holds a path.
+// Config is the content of the identity file: the facts that travel with the project. It
+// never holds a path; paths are facts about one machine and live in the atlas config.
 type Config struct {
-	Schema      string     `json:"schema"`
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Description string     `json:"description,omitempty"`
-	Created     string     `json:"created"`
-	Knowledge   *Knowledge `json:"knowledge,omitempty"`
+	Schema string `json:"schema"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	// Description says what the work is and what its wiki should remember. The ingest and
+	// query skills read it to judge what belongs.
+	Description string `json:"description,omitempty"`
+	Mode        Mode   `json:"mode"`
+	Created     string `json:"created"`
 }
 
 // Encode renders the identity file.
 func (c Config) Encode() []byte {
 	data, _ := json.MarshalIndent(c, "", "  ")
 	return append(data, '\n')
+}
+
+// NewID mints a random UUID (version 4).
+func NewID() string {
+	var b [16]byte
+	rand.Read(b[:])
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// NewOperationID mints `<kind>-<yyyymmdd>-<hhmmss>-<4 hex>`.
+func NewOperationID(kind string, now time.Time) string {
+	var b [2]byte
+	rand.Read(b[:])
+	return fmt.Sprintf("%s-%s-%s", kind, now.UTC().Format("20060102-150405"), hex.EncodeToString(b[:]))
+}
+
+// CommitMessage is the subject and trailer format every core commit uses.
+func CommitMessage(kind, summary, operationID string) string {
+	summary = strings.TrimSpace(strings.ReplaceAll(summary, "\n", " "))
+	return fmt.Sprintf("%s: %s\n\natlas-operation: %s\n", kind, summary, operationID)
 }
 
 // Project is an opened project. Root is the work folder; Folder is the name of the
@@ -123,7 +160,8 @@ type Project struct {
 // Name is the project's name from its identity file.
 func (p *Project) Name() string { return p.Config.Name }
 
-// Atlas is the project's folder, atlas/<name>/.
+// Atlas is the project's folder, atlas/<name>/. It is the folder the user opens in
+// Obsidian and the root every relative path in this package is measured from.
 func (p *Project) Atlas() string { return filepath.Join(p.Root, Dir, p.Folder) }
 
 // Rel is the project's folder relative to the work folder, with slashes.
@@ -132,16 +170,103 @@ func (p *Project) Rel() string { return Dir + "/" + p.Folder }
 // Path joins a path relative to the project's folder onto it.
 func (p *Project) Path(rel string) string { return filepath.Join(p.Atlas(), filepath.FromSlash(rel)) }
 
-// FolderName is the name of the folder a project with this name sits in: the name
-// cleaned so Obsidian can name a vault after it. It is empty when nothing usable is left.
-func FolderName(name string) string { return links.CleanName(strings.TrimSpace(name)) }
+// Repo is the git repository of the project's folder: the working tree that holds the work,
+// scoped to the folder, or a repository at the folder when the work is in none. Setup
+// writes through it, because setup writes the whole folder.
+func (p *Project) Repo() gitx.Repo { return gitx.At(p.Atlas()) }
+
+// Engine is the repository an operation writes through: the project's folder narrowed to
+// the paths the engine owns.
+func (p *Project) Engine() gitx.Repo { return p.Repo().Scoped(EngineScope...) }
+
+// Work is the repository of the work itself, which holds the code as well as the project's
+// folder. Only what reports on the work reads it.
+func (p *Project) Work() gitx.Repo { return gitx.At(p.Root) }
+
+// Host is the top of the working tree that holds the project's folder, or "" when the
+// folder is its own repository or in none.
+func Host(atlas string) string {
+	if repo := gitx.At(atlas); repo.Prefix != "" {
+		return repo.Dir
+	}
+	return ""
+}
+
+// HostFor is the top of the working tree a project's folder at path would commit into, or
+// "" when it would get a repository of its own. path need not exist. It refuses a path the
+// working tree ignores, because no commit could record it.
+func HostFor(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	dir := abs
+	for {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", nil
+		}
+		dir = parent
+	}
+	repo := gitx.At(dir)
+	if repo.Prefix == "" && !repo.IsRepo() {
+		return "", nil
+	}
+	rest, err := filepath.Rel(dir, abs)
+	if err != nil {
+		return "", err
+	}
+	if rest == "." {
+		if repo.Prefix == "" {
+			return "", nil
+		}
+		rest = ""
+	} else {
+		rest = filepath.ToSlash(rest) + "/"
+	}
+	if repo.Ignored(rest) {
+		return "", fmt.Errorf("%s is ignored by the git repository %s; a project's wiki needs its history", abs, repo.Dir)
+	}
+	return repo.Dir, nil
+}
+
+// joinRepo readies the repository a new project's folder at abs commits into: the working
+// tree that holds it, or a new one at abs when there is none. It refuses a folder the
+// holding tree ignores, because no commit could record it. It reports whether it ran
+// git init.
+func joinRepo(abs string) (gitx.Repo, bool, error) {
+	repo := gitx.At(abs)
+	if repo.Prefix != "" {
+		if repo.Ignored("") {
+			return repo, false, fmt.Errorf("%s is ignored by the git repository %s; a project's wiki needs its history", abs, repo.Dir)
+		}
+		return repo, false, nil
+	}
+	if repo.IsRepo() {
+		return repo, false, nil
+	}
+	if err := repo.Init(); err != nil {
+		return repo, false, err
+	}
+	return repo, true, nil
+}
 
 var (
 	ErrNotProject = errors.New("not a claude-atlas project")
 	// ErrFlat means the project sits directly in atlas/, as 2.2.0 and earlier made it;
-	// Upgrade moves it into atlas/<name>/.
+	// upgrade moves it into atlas/<name>/.
 	ErrFlat = errors.New("the project sits directly in atlas/")
+	// ErrSplit means the project is a 3.x one, which names a separate knowledge base;
+	// upgrade absorbs that knowledge base into the project.
+	ErrSplit = errors.New("a 3.x project, with its knowledge base outside it")
 )
+
+// FolderName is the name of the folder a project with this name sits in: the name cleaned
+// so Obsidian can name a vault after it. It is empty when nothing usable is left.
+func FolderName(name string) string { return links.CleanName(strings.TrimSpace(name)) }
 
 // Locate returns the name of the project's folder under work/atlas/: the one child that
 // holds the identity file. It refuses a project in the flat layout and an atlas/ folder
@@ -180,20 +305,54 @@ func isFile(path string) bool {
 }
 
 // IsProject reports whether work holds a project's identity file under atlas/, in any
-// layout; Open says whether it can be used.
+// layout and of any schema; Open says whether it can be used.
 func IsProject(work string) bool {
 	_, err := Locate(work)
 	return !errors.Is(err, ErrNotProject)
 }
 
-// ReadConfig parses the identity file without validating it. ok is false when there is
-// none, the layout is not the current one, or it is not JSON.
+// IsKnowledge reports whether dir carries the identity file of a 3.x knowledge base or of
+// a claude-obsidian vault. Such a folder is not a project; upgrade and adopt absorb it.
+func IsKnowledge(dir string) bool {
+	return isFile(filepath.Join(dir, KnowledgeMarker)) || isFile(filepath.Join(dir, LegacyMarker))
+}
+
+// KnowledgeAbove returns the nearest folder at or above start that carries a knowledge
+// base's identity file, or "".
+func KnowledgeAbove(start string) string {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return ""
+	}
+	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
+		dir = filepath.Dir(dir)
+	}
+	for {
+		if IsKnowledge(dir) {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+// ReadConfig parses the identity file without validating it, given the work folder. ok is
+// false when there is none, the layout is not the current one, or it is not JSON.
 func ReadConfig(work string) (Config, bool) {
 	folder, err := Locate(work)
 	if err != nil {
 		return Config{}, false
 	}
-	cfg, err := readConfig(filepath.Join(work, Dir, folder, Marker))
+	return ReadMarker(filepath.Join(work, Dir, folder))
+}
+
+// ReadMarker parses the identity file inside a project's own folder without validating it.
+// Lint and upgrade read a folder this way; everything else opens the project.
+func ReadMarker(atlas string) (Config, bool) {
+	cfg, err := readConfig(filepath.Join(atlas, Marker))
 	return cfg, err == nil
 }
 
@@ -224,7 +383,11 @@ func Open(work string) (*Project, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Schema != Schema {
+	switch cfg.Schema {
+	case Schema:
+	case SchemaV3:
+		return nil, fmt.Errorf("%w: %s; run claude-atlas upgrade %s to absorb it into the project", ErrSplit, marker, home.Display(abs))
+	default:
 		return nil, fmt.Errorf("%s: unsupported schema %q", marker, cfg.Schema)
 	}
 	if cfg.ID == "" {
@@ -233,8 +396,11 @@ func Open(work string) (*Project, error) {
 	if strings.TrimSpace(cfg.Name) == "" {
 		cfg.Name = folder
 	}
-	if cfg.Knowledge != nil && cfg.Knowledge.ID == "" {
-		cfg.Knowledge = nil
+	if cfg.Mode == "" {
+		cfg.Mode = Generic
+	}
+	if _, err := ParseMode(string(cfg.Mode)); err != nil {
+		return nil, fmt.Errorf("%s: %w", marker, err)
 	}
 	return &Project{Root: abs, Folder: folder, Config: cfg}, nil
 }
@@ -261,15 +427,23 @@ func FindAbove(start string) string {
 	}
 }
 
-// Options say what to make. The name is the folder's by default.
-type Options struct {
-	Name        string
-	Description string
-	Knowledge   *Knowledge
+// Resolve picks a project: the explicit path, then the environment, then the nearest
+// project at or above start. It fails closed when none applies.
+func Resolve(explicit, envValue, start string) (*Project, error) {
+	switch {
+	case explicit != "":
+		return Open(explicit)
+	case envValue != "":
+		return Open(envValue)
+	}
+	if work := FindAbove(start); work != "" {
+		return Open(work)
+	}
+	return nil, fmt.Errorf("%w: none at or above %s; pass a project path or set %s", ErrNotProject, start, EnvProject)
 }
 
 // CheckNew says why a project cannot be made at work: the folder is not there, it is a
-// project already, it sits inside another project, or it sits inside a knowledge base.
+// project already, it sits inside another project, or it is a 3.x knowledge base.
 // An atlas/ folder that holds something else is fine; Init refuses only a taken
 // atlas/<name>/.
 func CheckNew(work string) error {
@@ -290,69 +464,24 @@ func CheckNew(work string) error {
 	if outer := FindAbove(filepath.Dir(abs)); outer != "" {
 		return fmt.Errorf("%s is inside the project %s; a project does not go inside another", abs, outer)
 	}
-	if outer := vault.FindAbove(abs); outer != "" {
-		return fmt.Errorf("%s is inside the knowledge base %s; a project does not go inside one", abs, outer)
+	if IsKnowledge(abs) {
+		return fmt.Errorf("%s is a knowledge base of an earlier version; run claude-atlas upgrade %s to make it a project", abs, home.Display(abs))
 	}
 	return nil
 }
 
-// Init makes the folder at work a project: atlas/<name>/ with the identity file, the
-// folders, and the Obsidian snippet. It writes nothing outside that folder and never
-// touches git. It returns the project and the paths it wrote, relative to the folder.
-func Init(work string, opts Options, now time.Time) (*Project, []string, error) {
-	abs, err := filepath.Abs(work)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := CheckNew(abs); err != nil {
-		return nil, nil, err
-	}
-	name := strings.TrimSpace(opts.Name)
-	if name == "" {
-		name = filepath.Base(abs)
-	}
-	folder := FolderName(name)
-	if folder == "" {
-		return nil, nil, fmt.Errorf("%q leaves no usable folder name", name)
-	}
-	if entries, err := os.ReadDir(filepath.Join(abs, Dir, folder)); err == nil && len(entries) > 0 {
-		return nil, nil, fmt.Errorf("%s/%s/ holds something that is not a project; move it aside or choose another name", Dir, folder)
-	}
-	cfg := Config{Schema: Schema, ID: vault.NewID(), Name: name, Description: strings.TrimSpace(opts.Description), Created: now.Format("2006-01-02")}
-	if opts.Knowledge != nil && opts.Knowledge.ID != "" {
-		cfg.Knowledge = &Knowledge{ID: opts.Knowledge.ID, Name: opts.Knowledge.Name}
-	}
-	p := &Project{Root: abs, Folder: folder, Config: cfg}
-	var written []string
-	for _, dir := range Folders {
-		if err := os.MkdirAll(p.Path(dir), 0o755); err != nil {
-			return nil, nil, err
-		}
-		written = append(written, dir+"/")
-	}
-	if err := os.WriteFile(p.Path(Marker), cfg.Encode(), 0o644); err != nil {
-		return nil, nil, err
-	}
-	written = append(written, Marker)
-	if err := p.WriteSnippet(); err != nil {
-		return nil, nil, err
-	}
-	written = append(written, Snippet)
-	return p, written, nil
-}
-
-// Save rewrites the identity file. It is how link, unlink, and edit change a project. A
-// new name moves the project's folder to match, and a taken folder refuses the save.
+// Save rewrites the identity file. It is how edit changes a project. A new name moves the
+// project's folder to match, and a taken folder refuses the save.
 func (p *Project) Save() error {
 	if strings.TrimSpace(p.Config.Name) == "" {
 		return errors.New("name must not be blank")
 	}
+	if _, err := ParseMode(string(p.Config.Mode)); err != nil {
+		return err
+	}
 	p.Config.Schema = Schema
 	p.Config.Name = strings.TrimSpace(p.Config.Name)
 	p.Config.Description = strings.TrimSpace(p.Config.Description)
-	if p.Config.Knowledge != nil && p.Config.Knowledge.ID == "" {
-		p.Config.Knowledge = nil
-	}
 	from := p.Folder
 	if err := p.moveFolder(FolderName(p.Config.Name)); err != nil {
 		return err
@@ -394,61 +523,57 @@ func (p *Project) moveFolder(folder string) error {
 	return nil
 }
 
-// Upgrade moves a project in the flat layout, atlas/project.json, into atlas/<name>/,
-// with everything else atlas/ held. It reports whether it moved anything; a project in
-// the current layout is left as it is.
-func Upgrade(work string) (bool, error) {
-	abs, err := filepath.Abs(work)
-	if err != nil {
-		return false, err
-	}
-	if _, err := Locate(abs); !errors.Is(err, ErrFlat) {
-		return false, err
-	}
-	atlas := filepath.Join(abs, Dir)
-	cfg, err := readConfig(filepath.Join(atlas, Marker))
-	if err != nil {
-		return false, err
-	}
-	name := strings.TrimSpace(cfg.Name)
-	if name == "" {
-		name = filepath.Base(abs)
-	}
-	folder := FolderName(name)
-	if folder == "" {
-		return false, fmt.Errorf("%q leaves no usable folder name; set a name in %s first", name, filepath.Join(atlas, Marker))
-	}
-	// atlas/ moves aside whole and comes back as atlas/<name>/, so a project whose name
-	// matches one of its own folders (stubs, inbox) moves as cleanly as any other.
-	aside := filepath.Join(abs, "."+Dir+"-upgrade")
-	if _, err := os.Lstat(aside); err == nil {
-		return false, fmt.Errorf("%s exists; move it aside and run upgrade again", aside)
-	}
-	if err := os.Rename(atlas, aside); err != nil {
-		return false, err
-	}
-	if err := os.Mkdir(atlas, 0o755); err != nil {
-		os.Rename(aside, atlas)
-		return false, err
-	}
-	if err := os.Rename(aside, filepath.Join(atlas, folder)); err != nil {
-		os.Remove(atlas)
-		os.Rename(aside, atlas)
-		return false, err
-	}
-	return true, nil
-}
-
-// EnsureFolders creates the folders a project should hold but may lack, as after a
-// clone that did not carry empty folders, and the snippet when there is none.
+// EnsureFolders creates the folders a project should hold but may lack, as after a clone
+// that did not carry empty ones.
 func (p *Project) EnsureFolders() error {
 	for _, dir := range Folders {
 		if err := os.MkdirAll(p.Path(dir), 0o755); err != nil {
 			return err
 		}
 	}
-	if _, err := os.Stat(p.Path(Snippet)); errors.Is(err, os.ErrNotExist) {
-		return p.WriteSnippet()
-	}
 	return nil
+}
+
+// Under reports whether path sits at or inside root. It resolves symlinks first, because a
+// repository reports its own top with every link resolved and a caller's path may not be.
+func Under(root, path string) bool {
+	resolve := func(p string) string {
+		if out, err := filepath.EvalSymlinks(p); err == nil {
+			return out
+		}
+		return p
+	}
+	rel, err := filepath.Rel(resolve(root), resolve(path))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// Same reports whether two paths name one folder.
+func Same(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ai, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	bi, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(ai, bi)
+}
+
+// writeFile writes data at a path relative to root, making the folders it needs.
+func writeFile(root, rel string, data []byte) error {
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// equalFile reports whether the file at root/rel already holds data.
+func equalFile(root, rel string, data []byte) bool {
+	existing, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	return err == nil && bytes.Equal(existing, data)
 }

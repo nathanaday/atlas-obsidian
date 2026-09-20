@@ -6,8 +6,8 @@ created: 2026-09-19
 ---
 
 > [!plan] Consolidate the project and the knowledge base into one entity
-> [Stub](<../stubs/Consolidate the project and the knowledge base into one entity.md>) → [Spec](<../specs/Consolidate the project and the knowledge base into one entity.md>) → **Plan** → Receipt
-> `thr-20260919-26da` · [Thread](<../Consolidate the project and the knowledge base into one entity.md>) · filed 2026-09-19
+> [Stub](<../stubs/Consolidate the project and the knowledge base into one entity.md>) → [Spec](<../specs/Consolidate the project and the knowledge base into one entity.md>) → **Plan** → [Receipt](<../receipts/Consolidate the project and the knowledge base into one entity.md>)
+> `thr-20260919-26da` · [Thread](<../archive/Consolidate the project and the knowledge base into one entity.md>) · filed 2026-09-19
 
 Eleven steps, in the order of `docs/v4-design.md`. Each one builds and its package's tests pass before the next starts.
 
@@ -72,3 +72,69 @@ no skill describes a tool that does not exist yet.
   failure found before release.
 
 ## Progress
+
+### 2026-09-19 — the entity, the engine, and the atlas
+
+Steps 1 to 5 landed together, because nothing compiles between deleting
+`internal/vault` and retargeting the engine. `internal/vault` merged into
+`internal/project`, which now owns the identity file (v4: no `kind`, no
+`knowledge`, `scope` folded into `description`), the layout of both halves, the
+merged template with one CSS snippet, and the engine's git scope.
+`internal/vaults` became `internal/manage`. `registry`, `refresh`, and `place`
+lost their second kind.
+
+Two changes the design did not foresee:
+
+- `gitx.Repo` gained `Scope`, a list of pathspecs under `Prefix`, and `AddAll`
+  leaves out a scoped path that names nothing, because a project holds folders
+  an operation may never write. `inbox/` had to join `EngineScope`: an ingest
+  removes the sources it has filed.
+- `undo` cannot use git's revert, which needs a clean working tree the user's
+  code rarely has. It now reads the paths the operation changed, refuses when
+  one of them changed since (`gitx.Unchanged`), and restores each from the
+  commit's parent (`gitx.RestoreFrom`). This is a better undo than the old one:
+  exact, and impossible to widen by accident.
+
+The `config` operation kind went with the `mode` tool. `project.UpdateConfig`
+is the one writer of `project.json`, and `txn.allowed` refuses that path for
+every kind.
+
+### 2026-09-19 — the surfaces
+
+Seventeen tools: `vault` folded into `project`, `mode` into `project` as well,
+and `route` keeps the read half. The hooks have one session-start form and a
+guard that refuses the cards, the board, `project.json`, and a new file in a
+stage folder, while a stage document's prose stays open to Edit. The CLI lost
+`new-knowledge`, `adopt`, `link`, `unlink`, `remove`, and `mode`. The view is
+one list of projects with a Problems tab while there is one.
+
+`lint` runs over the project's folder and reads only `wiki/` as pages; a bare
+name resolves to a wiki page first (`preferWiki`), because a thread's documents
+repeat one file name by design.
+
+### 2026-09-20 — the migration, and this repository
+
+`claude-atlas upgrade` covers the four cases, with one test each. Three details
+the design did not have:
+
+- `git mv` needs both paths relative to the repository's own top with symlinks
+  resolved, or the move silently falls back to a copy. On macOS `/var` and
+  `/private/var` made every test copy instead of move.
+- An empty folder `init` made is in the way of `git mv`; the move removes it
+  first and refuses a destination that holds anything.
+- A knowledge base absorbed from inside the work leaves only the atlas's own
+  files behind, so `CleanAbsorbed` removes the folder and says so; a folder that
+  still holds anything of the user's is named and left alone.
+
+`make test` passes. Then the end to end, twice on a clone and once here: the
+upgrade absorbed `atlas_kb` into `atlas/claude-atlas/`, moved the stage folders
+under `threads/`, and committed the whole move as one `setup` commit, with
+`git log --follow` still tracing a moved wiki page back through the knowledge
+base's own history. With the code dirty and a thread document dirty, an `apply`
+committed the wiki page alone and an `undo` took it back alone; both edits
+survived. The session-start hook, the board, and `lint` all read the upgraded
+project.
+
+Left for the user: the plugin is still 3.0.0 in Claude Code, so this session's
+MCP server refuses the v4 layout. Commit, then
+`claude plugin marketplace update` and `claude plugin update`.

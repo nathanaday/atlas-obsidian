@@ -18,10 +18,11 @@ func newProject(t *testing.T) *project.Project {
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	p, _, err := project.Init(work, project.Options{}, now)
+	pRes, err := project.Init(work, project.Options{}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
+	p := pRes.Project
 	return p
 }
 
@@ -56,13 +57,13 @@ func start(t *testing.T, p *project.Project, title, text string) *Thread {
 func ptr(s string) *string { return &s }
 
 func TestPaths(t *testing.T) {
-	if !IsCard("threads/A.md") || !IsCard("threads/archive/A.md") || IsCard(project.ThreadsIndex) || IsCard("threads/deep/er/A.md") || IsCard("stubs/A.md") {
+	if !IsCard("threads/A.md") || !IsCard("threads/archive/A.md") || IsCard(project.ThreadsIndex) || IsCard("threads/deep/er/A.md") || IsCard("threads/stubs/A.md") {
 		t.Fatal("IsCard")
 	}
-	if DocStage("stubs/A.md") != Stub || DocStage("receipts/A.md") != Receipt || DocStage("stubs/deep/A.md") != "" || DocStage("plans/a.txt") != "" || DocStage("threads/A.md") != "" {
+	if DocStage("threads/stubs/A.md") != Stub || DocStage("threads/receipts/A.md") != Receipt || DocStage("threads/stubs/deep/A.md") != "" || DocStage("threads/plans/a.txt") != "" || DocStage("threads/A.md") != "" {
 		t.Fatal("DocStage")
 	}
-	if !Owned(project.ThreadsIndex) || !Owned("threads/archive/A.md") || Owned("specs/A.md") || Owned("phases/A.md") {
+	if !Owned(project.ThreadsIndex) || !Owned("threads/archive/A.md") || Owned("threads/specs/A.md") || Owned("threads/phases/A.md") {
 		t.Fatal("Owned")
 	}
 }
@@ -73,14 +74,14 @@ func TestStartWritesACardAndAStub(t *testing.T) {
 	if th.Title != "Login breaks on Safari" || th.Stage != Stub || th.Path != "threads/Login breaks on Safari.md" || th.Priority != "normal" || len(th.Docs) != 1 {
 		t.Fatalf("%+v", th)
 	}
-	stub := read(t, p, "stubs/Login breaks on Safari.md")
-	for _, want := range []string{"type: stub", "thread: " + th.ID, "> [!stub] Login breaks on Safari", "**Stub** → Spec → Plan → Receipt", "[Thread](<../threads/Login breaks on Safari.md>)", "The cookie is dropped."} {
+	stub := read(t, p, "threads/stubs/Login breaks on Safari.md")
+	for _, want := range []string{"type: stub", "thread: " + th.ID, "> [!stub] Login breaks on Safari", "**Stub** → Spec → Plan → Receipt", "[Thread](<../Login breaks on Safari.md>)", "The cookie is dropped."} {
 		if !strings.Contains(stub, want) {
 			t.Fatalf("stub lacks %q:\n%s", want, stub)
 		}
 	}
 	card := read(t, p, th.Path)
-	for _, want := range []string{"stage: stub", "> [!thread] Login breaks on Safari", "[Stub](<../stubs/Login breaks on Safari.md>)", "> - Spec · none", "![[stubs/Login breaks on Safari]]"} {
+	for _, want := range []string{"stage: stub", "> [!thread] Login breaks on Safari", "[Stub](<stubs/Login breaks on Safari.md>)", "> - Spec · none", "![[threads/stubs/Login breaks on Safari]]"} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card lacks %q:\n%s", want, card)
 		}
@@ -97,7 +98,7 @@ func TestStartWritesACardAndAStub(t *testing.T) {
 	}
 	// The same title twice takes another file name for every page.
 	again := start(t, p, "Login breaks on Safari", "again")
-	if again.Path != "threads/Login breaks on Safari (2).md" || again.Docs[0].Path != "stubs/Login breaks on Safari (2).md" {
+	if again.Path != "threads/Login breaks on Safari (2).md" || again.Docs[0].Path != "threads/stubs/Login breaks on Safari (2).md" {
 		t.Fatalf("%+v", again)
 	}
 }
@@ -115,7 +116,7 @@ func TestStartFromANote(t *testing.T) {
 	if !strings.Contains(read(t, p, th.Docs[0].Path), "It is read on every key.") {
 		t.Fatal("the stub lacks the note's text")
 	}
-	if _, err := Start(p, New{From: "stubs/x.md"}, now); err == nil {
+	if _, err := Start(p, New{From: "threads/stubs/x.md"}, now); err == nil {
 		t.Fatal("a note outside inbox/ was accepted")
 	}
 }
@@ -137,7 +138,7 @@ func TestTheStageIsTheFurthestDocument(t *testing.T) {
 		t.Fatalf("a second spec was filed: %v", err)
 	}
 	// Every document's callout names its siblings.
-	if stub := read(t, p, "stubs/Fix it.md"); !strings.Contains(stub, "**Stub** → [Spec](<../specs/Fix it.md>) → [Plan](<../plans/Fix it.md>) → Receipt") {
+	if stub := read(t, p, "threads/stubs/Fix it.md"); !strings.Contains(stub, "**Stub** → [Spec](<../specs/Fix it.md>) → [Plan](<../plans/Fix it.md>) → Receipt") {
 		t.Fatal(stub)
 	}
 	for _, bad := range []Filing{{Stage: "done"}, {Stage: Receipt, Text: "x"}, {Stage: Receipt, Outcome: Completed}, {Stage: Spec, Outcome: Killed}} {
@@ -146,7 +147,7 @@ func TestTheStageIsTheFurthestDocument(t *testing.T) {
 		}
 	}
 	// Deleting a document by hand moves the thread back; nothing else holds the stage.
-	os.Remove(p.Path("plans/Fix it.md"))
+	os.Remove(p.Path("threads/plans/Fix it.md"))
 	board, err := Sync(p, now)
 	if err != nil || board.Find(th.ID).Stage != Spec || !strings.Contains(read(t, p, th.Path), "stage: spec") {
 		t.Fatalf("%+v %v", board.Find(th.ID), err)
@@ -161,15 +162,15 @@ func TestAReceiptClosesAndReopenOpens(t *testing.T) {
 	if err != nil || !th.Closed() || th.Outcome != Killed || th.Path != "threads/archive/Fix it.md" || th.Blocked != "" {
 		t.Fatalf("%+v %v", th, err)
 	}
-	receipt := read(t, p, "receipts/Fix it.md")
-	if !strings.Contains(receipt, "> [!killed] Fix it · killed") || !strings.Contains(receipt, "outcome: killed") || !strings.Contains(receipt, "[Thread](<../threads/archive/Fix it.md>)") {
+	receipt := read(t, p, "threads/receipts/Fix it.md")
+	if !strings.Contains(receipt, "> [!killed] Fix it · killed") || !strings.Contains(receipt, "outcome: killed") || !strings.Contains(receipt, "[Thread](<../archive/Fix it.md>)") {
 		t.Fatal(receipt)
 	}
 	// The stub's callout follows the card into the archive.
-	if !strings.Contains(read(t, p, "stubs/Fix it.md"), "[Thread](<../threads/archive/Fix it.md>)") {
+	if !strings.Contains(read(t, p, "threads/stubs/Fix it.md"), "[Thread](<../archive/Fix it.md>)") {
 		t.Fatal("the stub still links the open card")
 	}
-	if card := read(t, p, th.Path); !strings.Contains(card, "**Killed**") || !strings.Contains(card, "[Receipt](<../../receipts/Fix it.md>)") {
+	if card := read(t, p, th.Path); !strings.Contains(card, "**Killed**") || !strings.Contains(card, "[Receipt](<../receipts/Fix it.md>)") {
 		t.Fatal(card)
 	}
 	if index := read(t, p, project.ThreadsIndex); !strings.Contains(index, "> [!receipt] Closed · 1") || !strings.Contains(index, "No open threads") {
@@ -209,11 +210,11 @@ func TestSetKeepsHandEditsAndRenames(t *testing.T) {
 	if card := read(t, p, th.Path); !strings.Contains(card, "owner: nathan") || !strings.Contains(card, "> **Blocked:** waits on the vendor") {
 		t.Fatal(card)
 	}
-	spec := read(t, p, "specs/Fix the login.md")
+	spec := read(t, p, "threads/specs/Fix the login.md")
 	if !strings.Contains(spec, `title: "Fix the login"`) || !strings.Contains(spec, "> [!spec] Fix the login") || !strings.Contains(spec, "It works.") {
 		t.Fatal(spec)
 	}
-	if _, err := os.Stat(p.Path("stubs/Fix it.md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(p.Path("threads/stubs/Fix it.md")); !os.IsNotExist(err) {
 		t.Fatal("the old stub stayed")
 	}
 	for _, bad := range []Changes{{Priority: ptr("urgent")}, {Phase: ptr("Nope")}, {Title: ptr(" ")}} {
@@ -264,7 +265,7 @@ func TestTouch(t *testing.T) {
 	if board.Find(th.ID).Updated != "2026-09-15" {
 		t.Fatalf("%+v", board.Find(th.ID))
 	}
-	if err := Touch(p, "phases/x.md", later); err != nil {
+	if err := Touch(p, "threads/phases/x.md", later); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -272,10 +273,10 @@ func TestTouch(t *testing.T) {
 func TestLoadReportsProblems(t *testing.T) {
 	p := newProject(t)
 	th := start(t, p, "Fix it", "Do it.")
-	write(t, p, "specs/Orphan.md", "---\ntype: spec\nthread: thr-20200101-0000\ncreated: 2026-09-13\n---\n")
-	write(t, p, "specs/Bare.md", "No frontmatter.\n")
-	write(t, p, "stubs/Second.md", "---\ntype: stub\nthread: "+th.ID+"\ncreated: 2026-09-13\n---\n")
-	write(t, p, "receipts/Bad.md", "---\ntype: receipt\nthread: "+th.ID+"\noutcome: finished\ncreated: 2026-09-13\n---\n")
+	write(t, p, "threads/specs/Orphan.md", "---\ntype: spec\nthread: thr-20200101-0000\ncreated: 2026-09-13\n---\n")
+	write(t, p, "threads/specs/Bare.md", "No frontmatter.\n")
+	write(t, p, "threads/stubs/Second.md", "---\ntype: stub\nthread: "+th.ID+"\ncreated: 2026-09-13\n---\n")
+	write(t, p, "threads/receipts/Bad.md", "---\ntype: receipt\nthread: "+th.ID+"\noutcome: finished\ncreated: 2026-09-13\n---\n")
 	write(t, p, "threads/Empty.md", "---\ntype: thread\nthread_id: thr-20260913-aaaa\ntitle: \"Empty\"\ncreated: 2026-09-13\nupdated: 2026-09-13\n---\n")
 	board, err := Load(p)
 	if err != nil {
@@ -286,8 +287,8 @@ func TestLoadReportsProblems(t *testing.T) {
 		reasons[pr.Path] = pr.Reason
 	}
 	for rel, want := range map[string]string{
-		"specs/Orphan.md": "no thread has the id", "specs/Bare.md": "no frontmatter", "stubs/Second.md": "already has a stub",
-		"receipts/Bad.md": "outcome must be", "threads/Empty.md": "no documents",
+		"threads/specs/Orphan.md": "no thread has the id", "threads/specs/Bare.md": "no frontmatter", "threads/stubs/Second.md": "already has a stub",
+		"threads/receipts/Bad.md": "outcome must be", "threads/Empty.md": "no documents",
 	} {
 		if !strings.Contains(reasons[rel], want) {
 			t.Fatalf("%s: %q lacks %q", rel, reasons[rel], want)
@@ -339,7 +340,7 @@ func TestPhases(t *testing.T) {
 	if _, err := CreatePhase(p, "Alpha", "Ship it.", nil, now); err != nil {
 		t.Fatal(err)
 	}
-	if page := read(t, p, "phases/Alpha.md"); !strings.Contains(page, "> [!phase] Alpha") || !strings.Contains(page, "Ship it.") {
+	if page := read(t, p, "threads/phases/Alpha.md"); !strings.Contains(page, "> [!phase] Alpha") || !strings.Contains(page, "Ship it.") {
 		t.Fatal(page)
 	}
 	th, err := Start(p, New{Title: "Fix it", Phase: "alpha"}, now)
@@ -353,7 +354,7 @@ func TestPhases(t *testing.T) {
 		t.Fatal(err)
 	}
 	board, _ := Load(p)
-	if board.Find(th.ID).Phase != "Beta" || !strings.Contains(read(t, p, "phases/Beta.md"), "> [!phase] Beta") || len(board.Problems) != 0 {
+	if board.Find(th.ID).Phase != "Beta" || !strings.Contains(read(t, p, "threads/phases/Beta.md"), "> [!phase] Beta") || len(board.Problems) != 0 {
 		t.Fatalf("%+v", board)
 	}
 	if board.Finished("Beta") {
@@ -400,10 +401,10 @@ func TestMigrate(t *testing.T) {
 			t.Fatalf("%s: %+v", id, th)
 		}
 	}
-	if plan := read(t, p, "plans/T active.md"); !strings.Contains(plan, "1. Step.") || !strings.Contains(plan, "## Progress\n\n- 2026-09-02 · started") {
+	if plan := read(t, p, "threads/plans/T active.md"); !strings.Contains(plan, "1. Step.") || !strings.Contains(plan, "## Progress\n\n- 2026-09-02 · started") {
 		t.Fatal(plan)
 	}
-	if !strings.Contains(read(t, p, "receipts/T done.md"), "Shipped.") {
+	if !strings.Contains(read(t, p, "threads/receipts/T done.md"), "Shipped.") {
 		t.Fatal("the receipt lacks the outcome")
 	}
 }

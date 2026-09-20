@@ -6,8 +6,8 @@ created: 2026-09-17
 ---
 
 > [!plan] Replace tasks with threads
-> [Stub](<../stubs/Replace tasks with threads.md>) → [Spec](<../specs/Replace tasks with threads.md>) → **Plan** → Receipt
-> `thr-20260917-5ac2` · [Thread](<../Replace tasks with threads.md>) · filed 2026-09-17
+> [Stub](<../stubs/Replace tasks with threads.md>) → [Spec](<../specs/Replace tasks with threads.md>) → **Plan** → [Receipt](<../receipts/Replace tasks with threads.md>)
+> `thr-20260917-5ac2` · [Thread](<../archive/Replace tasks with threads.md>) · filed 2026-09-17
 
 Approach: a new package `internal/threads` replaces `internal/tasks`. `Load` derives each stage from the documents; every write ends in `Sync`, which regenerates the cards, the first callout of each document, and the board. The consumers (mcpserver, cli, hooks, registry, refresh, tui, actions) move over in one change. The skills and the docs follow.
 

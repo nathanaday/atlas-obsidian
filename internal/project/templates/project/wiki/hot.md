@@ -13,7 +13,7 @@ tags:
 
 ## Last Updated
 
-Knowledge base initialized. No knowledge operations have completed yet.
+The wiki was created. No operation has completed yet.
 
 ## Key Recent Facts
 
@@ -21,8 +21,8 @@ Knowledge base initialized. No knowledge operations have completed yet.
 
 ## Recent Changes
 
-- Created the knowledge base.
+- Created the wiki.
 
 ## Active Threads
 
-- Drop a source in inbox/ and ingest it, or describe a project that uses this knowledge base.
+- Drop a source in inbox/ and ingest it, or describe this project's work with the describe skill.

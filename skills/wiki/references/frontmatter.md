@@ -1,6 +1,6 @@
 # Frontmatter conventions
 
-Preserve an existing knowledge base's valid property vocabulary. For a new page, use flat
+Preserve an existing wiki's valid property vocabulary. For a new page, use flat
 YAML properties, block lists, and explicit evidence fields where they apply. The
 core refuses a wiki page whose frontmatter lacks `title`, `type`, `status`,
 `created`, `updated`, or `tags`.
@@ -28,10 +28,10 @@ sources:
 Types: `source`, `entity`, `concept`, `comparison`, `overview`, `meta`,
 `fold`, and in lyt mode `note` and `moc`. The `route` tool returns a skeleton
 with the right properties for a type. A project's thread and `phase` pages
-live outside the knowledge base; their properties are in [threads.md](threads.md).
+live in the project's other half; their properties are in [threads.md](threads.md).
 
 Statuses commonly progress `seed`, `developing`, `evergreen`; anything can be
-`contested`, `deprecated`, or `archived`. Keep the values a knowledge base
+`contested`, `deprecated`, or `archived`. Keep the values a wiki
 already uses.
 
 ## Source page properties

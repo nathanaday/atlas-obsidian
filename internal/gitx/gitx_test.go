@@ -457,3 +457,66 @@ func TestAtScopesToTheFolderInsideARepository(t *testing.T) {
 		t.Fatalf("a folder that is not there: %+v", r)
 	}
 }
+
+func TestScopeNarrowsAPrefixToTheFoldersTheCallerOwns(t *testing.T) {
+	host := repo(t)
+	write(t, host, "src/main.go", "package main")
+	host.AddAll()
+	if _, err := host.Commit("feat: the work"); err != nil {
+		t.Fatal(err)
+	}
+	// The engine owns two paths inside the project's folder and nothing else.
+	atlas := filepath.Join(host.Dir, "atlas", "webapp")
+	os.MkdirAll(atlas, 0o755)
+	engine := At(atlas).Scoped("wiki/", "project.json")
+	if engine.Prefix != "atlas/webapp/" {
+		t.Fatalf("prefix %q", engine.Prefix)
+	}
+	write(t, host, "atlas/webapp/wiki/index.md", "# Index")
+	write(t, host, "atlas/webapp/project.json", "{}")
+	write(t, host, "atlas/webapp/threads/a.md", "a thread document")
+	write(t, host, "src/other.go", "package main")
+
+	entries, err := engine.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen []string
+	for _, e := range entries {
+		seen = append(seen, e.Path)
+	}
+	sort.Strings(seen)
+	if strings.Join(seen, " ") != "project.json wiki/index.md" {
+		t.Fatalf("a scoped status sees only the engine's paths: %v", seen)
+	}
+	if err := engine.AddAll(); err != nil {
+		t.Fatal(err)
+	}
+	sha, err := engine.Commit("ingest: one page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := engine.ChangedPaths(sha)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(changed)
+	if strings.Join(changed, " ") != "project.json wiki/index.md" {
+		t.Fatalf("the commit records only the engine's paths: %v", changed)
+	}
+	// The thread document and the code are untouched and still uncommitted.
+	if dirty, _ := engine.Dirty(); dirty {
+		t.Fatal("the engine's scope is clean after its commit")
+	}
+	if dirty, _ := host.Dirty(); !dirty {
+		t.Fatal("the work still has its own uncommitted changes")
+	}
+	files, err := engine.LsFiles()
+	if err != nil || strings.Join(files, " ") != "project.json wiki/index.md" {
+		t.Fatalf("ls-files %v %v", files, err)
+	}
+	commits, err := engine.Log(0)
+	if err != nil || len(commits) != 1 || commits[0].Subject != "ingest: one page" {
+		t.Fatalf("the scoped log holds the engine's commits only: %v %v", commits, err)
+	}
+}

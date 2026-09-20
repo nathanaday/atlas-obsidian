@@ -47,7 +47,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 }
 
-func TestConfigV3FieldsAndOlderConfigsUpgrade(t *testing.T) {
+func TestConfigFieldsAndOlderConfigsUpgrade(t *testing.T) {
 	h := Home{Root: t.TempDir()}
 	cfg := h.Default()
 	cfg.Schema = ConfigSchemaV1
@@ -56,7 +56,7 @@ func TestConfigV3FieldsAndOlderConfigsUpgrade(t *testing.T) {
 	}
 	loaded, err := h.Load()
 	if err != nil || loaded.Schema != ConfigSchema {
-		t.Fatalf("v1 config loads as v3: %+v %v", loaded, err)
+		t.Fatalf("a v1 config loads as the current one: %+v %v", loaded, err)
 	}
 	if !loaded.AddKnowledge("~/Elsewhere/side") || loaded.AddKnowledge("~/Elsewhere/side") {
 		t.Fatal("AddKnowledge dedupes")
@@ -72,7 +72,7 @@ func TestConfigV3FieldsAndOlderConfigsUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(again.Knowledge) != 1 || again.Knowledge[0] != Expand("~/Elsewhere/side") || len(again.Projects) != 1 || again.Projects[0] != Expand("~/Code/webapp") {
-		t.Fatalf("v3 fields %+v", again)
+		t.Fatalf("the config's lists %+v", again)
 	}
 	if !again.HasProject("~/Code/webapp") || again.HasProject("~/Code/other") {
 		t.Fatal("HasProject")
@@ -84,7 +84,7 @@ func TestConfigV3FieldsAndOlderConfigsUpgrade(t *testing.T) {
 		t.Fatalf("project removal %+v", again)
 	}
 	data, _ := os.ReadFile(h.ConfigPath())
-	if !strings.Contains(string(data), `"schema": "claude-atlas.config.v3"`) {
+	if !strings.Contains(string(data), `"schema": "`+ConfigSchema+`"`) {
 		t.Fatalf("saved schema:\n%s", data)
 	}
 }

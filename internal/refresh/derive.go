@@ -16,78 +16,22 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/registry"
 	"github.com/nathanaday/claude-atlas/internal/threads"
 	"github.com/nathanaday/claude-atlas/internal/txn"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
-// Derive observes one entry and returns what refresh records for it.
+// Derive observes one entry and returns what refresh records for it: the wiki's counts and
+// the threads' counts of one project.
 func Derive(e registry.Entry, today time.Time, generatedAt string, newDays int) *registry.State {
 	if e.Error != "" {
 		return &registry.State{GeneratedAt: generatedAt, Error: e.Error}
 	}
-	if e.Kind == registry.Project {
-		return deriveProject(e, today, generatedAt, newDays)
-	}
-	return deriveKnowledge(e, today, generatedAt, newDays)
-}
-
-func deriveKnowledge(e registry.Entry, today time.Time, generatedAt string, newDays int) *registry.State {
 	state := &registry.State{GeneratedAt: generatedAt, HotTopics: []string{}}
-	root := e.Path
-
-	var touched time.Time
-	touchedFound := false
-	if op, ok := NewestLogDate(root); ok {
-		state.LastOperation = op.Format("2006-01-02")
-		touched, touchedFound = op, true
-	}
-	if mt, ok := NewestWikiMtime(root); ok && (!touchedFound || mt.After(touched)) {
-		touched, touchedFound = mt, true
-	}
-	setHeat(state, e.Created, touched, touchedFound, today, newDays)
-	state.HotTopics = HotTopics(root)
-	if state.HotTopics == nil {
-		state.HotTopics = []string{}
-	}
-
-	report, err := lint.Run(root, lint.Options{AsOf: today})
-	if err != nil {
-		state.Error = err.Error()
-		return state
-	}
-	state.Pages = ptr(report.Summary.PagesScanned)
-	state.Unfinished.EmptySections = ptr(report.Summary.CategoryCounts["empty_sections"])
-	state.Unfinished.Stubs = ptr(report.Summary.Stubs)
-	state.Unfinished.WantedPages = ptr(report.Summary.WantedPages)
-	state.Unfinished.DeadLinks = ptr(report.Summary.CategoryCounts["dead_links"])
-
-	v, err := vault.Open(e.Path)
-	if err != nil {
-		state.Error = err.Error()
-		return state
-	}
-	if files, err := capture.ListInbox(v, today); err == nil {
-		waiting := 0
-		for _, f := range files {
-			if !f.Captured {
-				waiting++
-			}
-		}
-		state.Inbox = ptr(waiting)
-	}
-	if pending, _ := txn.Pending(v); pending != nil {
-		state.PendingRecovery = true
-	}
-	state.OK = true
-	return state
-}
-
-func deriveProject(e registry.Entry, today time.Time, generatedAt string, newDays int) *registry.State {
-	state := &registry.State{GeneratedAt: generatedAt}
 	p, err := project.Open(e.Path)
 	if err != nil {
 		state.Error = err.Error()
 		return state
 	}
+	atlas := p.Atlas()
+
 	var touched time.Time
 	touchedFound := false
 	if fact := links.Inspect(links.Repo, e.Path); fact.OK {
@@ -95,6 +39,15 @@ func deriveProject(e registry.Entry, today time.Time, generatedAt string, newDay
 		if t, ok := fact.Touched(); ok {
 			touched, touchedFound = t, true
 		}
+	}
+	if op, ok := NewestLogDate(atlas); ok {
+		state.LastOperation = op.Format("2006-01-02")
+		if !touchedFound || op.After(touched) {
+			touched, touchedFound = op, true
+		}
+	}
+	if mt, ok := NewestWikiMtime(atlas); ok && (!touchedFound || mt.After(touched)) {
+		touched, touchedFound = mt, true
 	}
 	state.Threads = threadSummaryFor(p, today)
 	if state.Threads != nil {
@@ -105,7 +58,35 @@ func deriveProject(e registry.Entry, today time.Time, generatedAt string, newDay
 		}
 	}
 	setHeat(state, e.Created, touched, touchedFound, today, newDays)
+	state.HotTopics = HotTopics(atlas)
+	if state.HotTopics == nil {
+		state.HotTopics = []string{}
+	}
 	state.Described = describe.Page(e)
+
+	report, err := lint.Run(atlas, lint.Options{AsOf: today})
+	if err != nil {
+		state.Error = err.Error()
+		return state
+	}
+	state.Pages = ptr(report.Summary.PagesScanned)
+	state.Unfinished.EmptySections = ptr(report.Summary.CategoryCounts["empty_sections"])
+	state.Unfinished.Stubs = ptr(report.Summary.Stubs)
+	state.Unfinished.WantedPages = ptr(report.Summary.WantedPages)
+	state.Unfinished.DeadLinks = ptr(report.Summary.CategoryCounts["dead_links"])
+
+	if files, err := capture.ListInbox(p, today); err == nil {
+		waiting := 0
+		for _, f := range files {
+			if !f.Captured {
+				waiting++
+			}
+		}
+		state.Inbox = ptr(waiting)
+	}
+	if pending, _ := txn.Pending(p); pending != nil {
+		state.PendingRecovery = true
+	}
 	state.OK = true
 	return state
 }
@@ -203,16 +184,11 @@ func Signals(e registry.Entry, today time.Time) []string {
 	if state.PendingRecovery {
 		notes = append(notes, "an operation was interrupted; run `claude-atlas recover "+e.Path+"`")
 	}
-	if e.Kind == registry.Project {
-		if e.Knowledge != nil && e.Knowledge.Error != "" {
-			notes = append(notes, fmt.Sprintf("knowledge base %s: %s", e.Knowledge.Name, e.Knowledge.Error))
-		}
-		if e.Knowledge != nil && e.Knowledge.Error == "" && state.Described == nil {
-			notes = append(notes, registry.NotDescribed+"; the describe skill writes the page")
-		}
-		if d := state.Described; d != nil && d.Behind > describe.BehindThreshold {
-			notes = append(notes, fmt.Sprintf("its page in the knowledge base is %d commits behind; the describe skill brings it up to date", d.Behind))
-		}
+	if state.Described == nil {
+		notes = append(notes, registry.NotDescribed+"; the describe skill writes the page")
+	}
+	if d := state.Described; d != nil && d.Behind > describe.BehindThreshold {
+		notes = append(notes, fmt.Sprintf("the page that describes the work is %d commits behind; the describe skill brings it up to date", d.Behind))
 	}
 	if state.Threads != nil {
 		var blocked, stale []string

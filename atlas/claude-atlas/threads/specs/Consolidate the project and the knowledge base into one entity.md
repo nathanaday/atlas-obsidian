@@ -6,8 +6,8 @@ created: 2026-09-19
 ---
 
 > [!spec] Consolidate the project and the knowledge base into one entity
-> [Stub](<../stubs/Consolidate the project and the knowledge base into one entity.md>) → **Spec** → [Plan](<../plans/Consolidate the project and the knowledge base into one entity.md>) → Receipt
-> `thr-20260919-26da` · [Thread](<../Consolidate the project and the knowledge base into one entity.md>) · filed 2026-09-19
+> [Stub](<../stubs/Consolidate the project and the knowledge base into one entity.md>) → **Spec** → [Plan](<../plans/Consolidate the project and the knowledge base into one entity.md>) → [Receipt](<../receipts/Consolidate the project and the knowledge base into one entity.md>)
+> `thr-20260919-26da` · [Thread](<../archive/Consolidate the project and the knowledge base into one entity.md>) · filed 2026-09-19
 
 The design is `docs/v4-design.md`; it is the spec of record for this thread. The four decisions the user took on 2026-09-19: the entity is called a project, its wiki commits into the work's repository, one inbox, and the migration command ships with the change.
 

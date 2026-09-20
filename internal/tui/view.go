@@ -1,6 +1,6 @@
-// Package tui is the atlas view: every knowledge base and project on one screen, as
-// two tabs, with the keys that open one in Obsidian or start Claude Code in it. It
-// lists and launches; creating and changing things is the CLI's and the session's job.
+// Package tui is the atlas view: every project on one screen, with the keys that open one
+// in Obsidian or start Claude Code in it. It lists and launches; creating and changing
+// things is the CLI's and the session's job.
 package tui
 
 import (
@@ -42,10 +42,9 @@ func entryName(e registry.Entry) string {
 	return e.Name
 }
 
-// Opener connects the view to Obsidian and Claude Code without the screen doing the
-// work itself. Obsidian opens a knowledge base at path. Claude runs a Claude Code
-// session in a knowledge base or a project's work folder at path, holding the terminal
-// until the session ends; the CLI decides how to launch in each.
+// Opener connects the view to Obsidian and Claude Code without the screen doing the work
+// itself. Obsidian opens the project's folder at path. Claude runs a Claude Code session in
+// the work folder at path, holding the terminal until the session ends.
 type Opener struct {
 	Obsidian func(path string) error
 	Claude   func(path string) error
@@ -85,24 +84,21 @@ func (launch) SetStderr(io.Writer) {}
 type tab int
 
 const (
-	tabKnowledge tab = iota
-	tabProjects
+	tabProjects tab = iota
 	tabProblems
 )
 
-var tabNames = map[tab]string{tabKnowledge: "Knowledge", tabProjects: "Projects", tabProblems: "Problems"}
+var tabNames = map[tab]string{tabProjects: "Projects", tabProblems: "Problems"}
 
-// captions say what each tab holds, for a user who is new to the two kinds.
+// captions say what each tab holds.
 var captions = map[tab]string{
-	tabKnowledge: "A knowledge base is the wiki you open and work from. Projects use it; sources enter through its inbox.",
-	tabProjects:  "A project is an atlas/<name>/ folder inside your work: its threads and phases, and the one knowledge base it uses.",
-	tabProblems:  "Entries the atlas found but could not read.",
+	tabProjects: "A project is an atlas/<name>/ folder inside your work: its wiki, and its threads in their phases. Open it in Obsidian to read both.",
+	tabProblems: "Folders the atlas knows but could not read.",
 }
 
 // empties is what a tab says when it lists nothing.
 var empties = map[tab]string{
-	tabKnowledge: "no knowledge bases yet; run `claude-atlas new-knowledge NAME`",
-	tabProjects:  "no projects yet; run `claude-atlas init` in a work folder",
+	tabProjects: "no projects yet; run `claude-atlas init` in a work folder",
 }
 
 // boardOf is the index of the board behind a tab.
@@ -116,7 +112,7 @@ type view struct {
 	opener  Opener
 	acts    actions.Atlas
 	tab     tab
-	boards  [3]board // knowledge, projects, problems
+	boards  [2]board // projects, problems
 	changed bool
 	// stub is the one-line prompt for a new thread, open while not nil, and the project
 	// the thread opens in.
@@ -134,8 +130,7 @@ type view struct {
 
 func newView(items []Item, opener Opener, acts actions.Atlas) view {
 	v := view{items: items, opener: opener, acts: acts, width: 100, height: 40}
-	v.boards = [3]board{
-		newBoard(boardKnowledge, items, v.width),
+	v.boards = [2]board{
 		newBoard(boardProjects, items, v.width),
 		newBoard(boardProblems, items, v.width),
 	}
@@ -160,7 +155,7 @@ func (v *view) current() *Item { return v.board().current() }
 
 // tabs lists the tabs the bar shows: Problems only while there is one.
 func (v view) tabs() []tab {
-	out := []tab{tabKnowledge, tabProjects}
+	out := []tab{tabProjects}
 	if len(v.boards[boardOf(tabProblems)].items) > 0 {
 		out = append(out, tabProblems)
 	}
@@ -214,7 +209,7 @@ func (v *view) rebuild(path string) {
 		}
 	}
 	if v.tab == tabProblems && len(v.boards[boardOf(tabProblems)].items) == 0 {
-		v.tab = tabKnowledge
+		v.tab = tabProjects
 	}
 	for i := range v.boards {
 		v.boards[i].layout()
@@ -372,16 +367,12 @@ func (v view) refresh() (tea.Model, tea.Cmd) {
 		return v, nil
 	}
 	v.changed = true
-	v.busy = "reading every knowledge base and project…"
+	v.busy = "reading every project…"
 	return v, v.refreshCmd()
 }
 
 // openStub opens the one-line prompt that opens a thread in a project.
 func (v view) openStub(item *Item) (tea.Model, tea.Cmd) {
-	if item.Entry.Kind != registry.Project {
-		v.errMsg = "a knowledge base has no threads; open one in a project"
-		return v, nil
-	}
 	if v.acts.StartThread == nil {
 		v.errMsg = "opening a thread is not available here"
 		return v, nil
@@ -415,7 +406,7 @@ func (v view) updateStub(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		v.changed = true
 		v.status = fmt.Sprintf("opened %s in %s (%s)", t.Title, entryName(item.Entry), t.ID)
 		if cmd := v.refreshCmd(); cmd != nil {
-			v.busy = "reading every knowledge base and project…"
+			v.busy = "reading every project…"
 			return v, cmd
 		}
 		return v, nil
@@ -436,12 +427,8 @@ func (v view) claude(item *Item) (tea.Model, tea.Cmd) {
 	return v, tea.Exec(launch{run: func() error { return run(path) }}, func(err error) tea.Msg { return claudeDoneMsg{name: name, err: err} })
 }
 
-// open starts opening a knowledge base in Obsidian in the background.
+// open starts opening the project's folder in Obsidian in the background.
 func (v view) open(item *Item) (tea.Model, tea.Cmd) {
-	if item.Entry.Kind != registry.Knowledge {
-		v.errMsg = "a project is not an Obsidian vault; open its knowledge base"
-		return v, nil
-	}
 	if v.opener.Obsidian == nil {
 		v.errMsg = "opening in Obsidian is not available here"
 		return v, nil
@@ -484,10 +471,7 @@ func (v view) wrapped(style lipgloss.Style, text string) string {
 
 // tabColor is the color a tab's box is filled with while it is the active one.
 func tabColor(t tab) lipgloss.Color {
-	switch t {
-	case tabKnowledge:
-		return knowledgeColor
-	case tabProblems:
+	if t == tabProblems {
 		return lipgloss.Color("9")
 	}
 	return projectColor
@@ -596,13 +580,10 @@ func enterHint(bd *board, it *Item) string {
 
 // entryKeys lists the launch keys for one entry.
 func entryKeys(e registry.Entry) string {
-	switch {
-	case e.Error != "":
+	if e.Error != "" {
 		return "R refresh"
-	case e.Kind == registry.Knowledge:
-		return "o Obsidian · c Claude"
 	}
-	return "c Claude · n new thread"
+	return "o Obsidian · c Claude · n new thread"
 }
 
 // boardHints lists the keys for the entry under the cursor.

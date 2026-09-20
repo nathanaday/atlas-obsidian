@@ -3,7 +3,6 @@ package wizard
 
 import (
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/claudecode"
@@ -12,14 +11,11 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/home"
 	"github.com/nathanaday/claude-atlas/internal/refresh"
 	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/vault"
-	"github.com/nathanaday/claude-atlas/internal/vaults"
 )
 
 // Options come from setup's flags.
 type Options struct {
 	Version      string
-	FirstVault   string // a name, a folder in the current directory, or a path
 	PluginSource string // marketplace source override, e.g. a local checkout
 	WithPlugin   bool
 }
@@ -54,22 +50,6 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	firstPath := ""
-	if len(ix.Knowledge()) == 0 {
-		arg := opts.FirstVault
-		if arg == "" {
-			arg = c.Ask("Your first knowledge base: a path, or a name for a folder here", "notes")
-		}
-		path, err := vaults.ResolvePath(arg)
-		if err != nil {
-			return 1, err
-		}
-		if err := vaults.CheckNewPath(path); err != nil {
-			return 1, err
-		}
-		firstPath = path
-	}
-
 	c.Say("")
 	c.Say("claude-atlas setup")
 	c.Say("")
@@ -84,21 +64,17 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	default:
 		plan(c, "plugin", "install", fmt.Sprintf("%s from %s via `claude plugin`", cfg.Plugin.ID, cfg.Plugin.Source))
 	}
-	if firstPath != "" {
-		plan(c, "knowledge base", "create", home.Display(firstPath))
-	} else {
-		needAdopting := 0
-		for _, e := range ix.Entries {
-			if e.Reason == registry.ReasonV1 {
-				needAdopting++
-			}
+	waiting := 0
+	for _, e := range ix.Entries {
+		if e.Reason == registry.ReasonV3Split || e.Reason == registry.ReasonFlat {
+			waiting++
 		}
-		note := fmt.Sprintf("%d listed", len(ix.Knowledge()))
-		if needAdopting > 0 {
-			note += fmt.Sprintf(", %d need adopting", needAdopting)
-		}
-		plan(c, "knowledge", "keep", note)
 	}
+	note := fmt.Sprintf("%d listed", len(ix.Projects()))
+	if waiting > 0 {
+		note += fmt.Sprintf(", %d waiting for `claude-atlas upgrade`", waiting)
+	}
+	plan(c, "projects", "keep", note)
 	c.Say("")
 	ok, err := c.Confirm("Proceed?", true)
 	if err != nil {
@@ -134,15 +110,6 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 		c.Step(console.Skip, "plugin", "not installed; Claude Code will not have the atlas tools until it is")
 	}
 
-	if firstPath != "" {
-		if _, err := vaults.Create(firstPath, vault.Options{Name: filepath.Base(firstPath)}, c, false); err != nil {
-			return 1, err
-		}
-		if _, err := vaults.Register(h, cfg, firstPath); err != nil {
-			return 1, err
-		}
-		c.Step(console.OK, "knowledge base", home.Display(firstPath))
-	}
 	entries, _, err := refresh.Registry(h, cfg, h.StateDir(), time.Now())
 	if err != nil {
 		return 1, err
@@ -150,7 +117,7 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	read := 0
 	for _, e := range entries {
 		if e.Error != "" {
-			c.Step(console.Fail, string(e.Kind), home.Display(e.Path)+": "+e.Error)
+			c.Step(console.Fail, "project", home.Display(e.Path)+": "+e.Error)
 			continue
 		}
 		read++
@@ -160,16 +127,10 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	c.Say("")
 	c.Say("Setup complete.")
 	c.Say("")
-	if firstPath != "" {
-		c.Say("  Knowledge base  %s", home.Display(firstPath))
-	}
-	c.Say("")
-	c.Say("Open a knowledge base in Obsidian with `claude-atlas open-vault NAME`.")
-	c.Say("")
 	c.Say("Next:")
-	c.Say("  cd <your work> && claude-atlas init   make a folder or repository a project")
-	c.Say("  claude-atlas new-knowledge PATH       create another knowledge base")
-	c.Say("  claude-atlas open-claude NAME         start Claude Code in a knowledge base or project")
+	c.Say("  cd <your work> && claude-atlas init   make a folder or a repository a project")
+	c.Say("  claude-atlas open-vault NAME          open a project in Obsidian")
+	c.Say("  claude-atlas open-claude NAME         start Claude Code in a project")
 	c.Say("  claude-atlas refresh                  read everything again")
 	if installed == nil {
 		c.Say("")

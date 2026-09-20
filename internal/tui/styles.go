@@ -4,52 +4,32 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/nathanaday/claude-atlas/internal/registry"
 )
 
 // muted replaces gray for secondary text; gray is unreadable on dark terminals.
 const muted = lipgloss.Color("#FFC600")
 
-// The kind colors. A project's name is blue and a knowledge base's name is green,
-// everywhere a name appears.
-const (
-	projectColor   = lipgloss.Color("12")
-	knowledgeColor = lipgloss.Color("2")
-)
+// projectColor is the color a project's name wears, everywhere a name appears.
+const projectColor = lipgloss.Color("12")
 
 var (
-	title       = lipgloss.NewStyle().Bold(true)
-	label       = lipgloss.NewStyle().Foreground(muted).Width(11)
-	dim         = lipgloss.NewStyle().Foreground(muted)
-	errSt       = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	selSt       = lipgloss.NewStyle().Foreground(projectColor).Bold(true)
-	okSt        = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	boxSt       = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(muted).Padding(0, 1)
-	projectSt   = lipgloss.NewStyle().Foreground(projectColor).Bold(true)
-	knowledgeSt = lipgloss.NewStyle().Foreground(knowledgeColor).Bold(true)
+	title     = lipgloss.NewStyle().Bold(true)
+	label     = lipgloss.NewStyle().Foreground(muted).Width(11)
+	dim       = lipgloss.NewStyle().Foreground(muted)
+	errSt     = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	selSt     = lipgloss.NewStyle().Foreground(projectColor).Bold(true)
+	okSt      = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	boxSt     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(muted).Padding(0, 1)
+	projectSt = lipgloss.NewStyle().Foreground(projectColor).Bold(true)
 	// captionSt is the sentence under the tab bar: a quiet gray aside, not a second row
 	// of keys.
 	captionSt = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true)
 )
 
-// kindColor is the color an entry's kind wears.
-func kindColor(k registry.Kind) lipgloss.Color {
-	if k == registry.Knowledge {
-		return knowledgeColor
-	}
-	return projectColor
-}
-
-// kindStyle renders an entry's name in its kind's color.
-func kindStyle(k registry.Kind) lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(kindColor(k)).Bold(true)
-}
-
-// boxStyle is an entry's box; the border takes the kind's color when selected.
-func boxStyle(k registry.Kind, selected bool) lipgloss.Style {
+// boxStyle is an entry's box; the border takes the project color when selected.
+func boxStyle(selected bool) lipgloss.Style {
 	if selected {
-		return boxSt.BorderForeground(kindColor(k))
+		return boxSt.BorderForeground(projectColor)
 	}
 	return boxSt
 }

@@ -13,13 +13,9 @@ import (
 type boardKind int
 
 const (
-	boardKnowledge boardKind = iota
-	boardProjects
+	boardProjects boardKind = iota
 	boardProblems
 )
-
-// noKnowledge is the group projects without a knowledge base sit under.
-const noKnowledge = "no knowledge base"
 
 // boardRow is one entry on a board and the lines it spans, the expanded block included.
 type boardRow struct {
@@ -48,37 +44,14 @@ func newBoard(kind boardKind, items []Item, width int) board {
 
 // belongs says whether an entry sits on this board.
 func (b board) belongs(e registry.Entry) bool {
-	switch b.kind {
-	case boardProblems:
+	if b.kind == boardProblems {
 		return e.Error != ""
-	case boardKnowledge:
-		return e.Error == "" && e.Kind == registry.Knowledge
 	}
-	return e.Error == "" && e.Kind == registry.Project
+	return e.Error == ""
 }
 
-// group is the header an entry sits under: on the Projects board, its knowledge base's
-// name, or noKnowledge. The other boards have no groups.
-func (b board) group(e registry.Entry) string {
-	if b.kind != boardProjects || e.Error != "" {
-		return ""
-	}
-	if e.Knowledge == nil || e.Knowledge.Error != "" {
-		return noKnowledge
-	}
-	return e.Knowledge.Name
-}
-
-// less orders a board: the groups by name, projects without a knowledge base last, and
-// names within a group.
+// less orders a board by name.
 func (b board) less(x, y registry.Entry) bool {
-	gx, gy := b.group(x), b.group(y)
-	if gx != gy {
-		if gx == noKnowledge || gy == noKnowledge {
-			return gy == noKnowledge
-		}
-		return strings.ToLower(gx) < strings.ToLower(gy)
-	}
 	return strings.ToLower(entryName(x)) < strings.ToLower(entryName(y))
 }
 
@@ -171,23 +144,11 @@ func (b *board) collapseAll() bool {
 // borders not counted.
 func boxWidth(width int) int { return min(72, max(26, width-8)) }
 
-// layout renders the boxes into lines and records the span of each entry. A group's
-// header belongs to the first entry under it, so scrolling back to that entry brings
-// the header with it.
+// layout renders the boxes into lines and records the span of each entry.
 func (b *board) layout() {
 	b.lines, b.rows = nil, nil
-	last := ""
 	for i, it := range b.items {
-		start := len(b.lines)
-		if g := b.group(it.Entry); g != "" && g != last {
-			header := knowledgeSt.Render(g)
-			if g == noKnowledge {
-				header = dim.Render(g)
-			}
-			b.lines = append(b.lines, header)
-		}
-		last = b.group(it.Entry)
-		b.render(it, i == b.cursor, start)
+		b.render(it, i == b.cursor, len(b.lines))
 	}
 	if len(b.lines) > 0 {
 		end := dim.Render("(end)")
@@ -199,12 +160,11 @@ func (b *board) layout() {
 }
 
 // render writes one entry: its box, and the detail block under it when expanded. Only
-// the entry under the cursor keeps its colors. start is where the entry's row begins, at
-// its group header when it has one.
+// the entry under the cursor keeps its colors. start is where the entry's row begins.
 func (b *board) render(it *Item, selected bool, start int) {
 	e := it.Entry
 	width := boxWidth(b.width)
-	box := boxStyle(e.Kind, selected).Width(width).Render(strings.Join(boxLines(e, width-2), "\n"))
+	box := boxStyle(selected).Width(width).Render(strings.Join(boxLines(e, width-2), "\n"))
 	// The view indents every line by two, so a line stops two short of the screen. One
 	// that reached the edge would wrap and push the frame past the last row.
 	narrow := lipgloss.NewStyle().MaxWidth(max(10, b.width-2))

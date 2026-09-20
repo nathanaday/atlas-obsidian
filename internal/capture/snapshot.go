@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/describe"
+	"github.com/nathanaday/claude-atlas/internal/project"
 	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
 // ProjectStage is what staging a project's snapshot did.
@@ -26,15 +26,12 @@ type ProjectStage struct {
 	Described *registry.Description `json:"described,omitempty"`
 }
 
-// StageProject writes a snapshot of project e into the inbox of its knowledge base v,
-// with the log since the commit the page describing it was written from. The snapshot
-// is a source like any file; nothing is remembered for a later stage with no paths.
-func StageProject(v *vault.Vault, e registry.Entry, now time.Time) (*ProjectStage, error) {
-	if e.Kind != registry.Project {
-		return nil, fmt.Errorf("%s is not a project", e.Name)
-	}
-	if e.KnowledgePath() != v.Root {
-		return nil, fmt.Errorf("%s does not use the knowledge base %s", e.Name, v.Name())
+// StageProject writes a snapshot of the work of project e into its own inbox, with the log
+// since the commit the page describing it was written from. The snapshot is a source like
+// any file; nothing is remembered for a later stage with no paths.
+func StageProject(v *project.Project, e registry.Entry, now time.Time) (*ProjectStage, error) {
+	if e.Path != v.Root {
+		return nil, fmt.Errorf("%s is not the project at %s", e.Name, v.Root)
 	}
 	described := describe.Page(e)
 	since := ""

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
 // cardFront renders a new card's frontmatter; Sync writes the body.
@@ -112,7 +111,7 @@ var ownLead = regexp.MustCompile(`^> \[!(stub|spec|plan|receipt|killed|phase)\]`
 // replaceLead puts lead in the place of the callout that opens a page's body, or before
 // the body when none opens it. Everything else stays as it is.
 func replaceLead(content, lead string) string {
-	front, body, ok, err := vault.SplitFrontmatter(content)
+	front, body, ok, err := project.SplitFrontmatter(content)
 	if err != nil {
 		return content
 	}
@@ -187,7 +186,7 @@ func Sync(p *project.Project, now time.Time) (*Board, error) {
 			return nil, err
 		}
 		content := setField(setField(string(data), "stage", t.Stage), "outcome", fmt.Sprintf("%q", t.Outcome))
-		front, _, _, _ := vault.SplitFrontmatter(content)
+		front, _, _, _ := project.SplitFrontmatter(content)
 		if err := writeIfChanged(p.Path(t.Path), "---\n"+front+"---\n\n"+cardBody(t)); err != nil {
 			return nil, err
 		}

@@ -1,4 +1,4 @@
-// Package obsidian reads and extends the desktop app's vault registry and opens vaults.
+// Package obsidian reads and extends the desktop app's vault registry and opens manage.
 //
 // Obsidian only opens vaults it already knows. It keeps that list in obsidian.json,
 // reads it once at launch, and rewrites it whenever its state changes. So a folder

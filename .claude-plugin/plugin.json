@@ -1,7 +1,7 @@
 {
   "name": "claude-atlas",
-  "version": "3.0.0",
-  "description": "Source-cited Obsidian knowledge bases for Claude Code, and projects that live in your work: an inbox to ingest from, one reviewed operation per change, git history in every knowledge base, and threads in an atlas/ folder beside your code: each line of work moves from stub to spec to plan to receipt, one visible document per stage. Skills for ingesting, querying, linting, describing projects, threads, canvases, and Bases. Pairs with the claude-atlas binary, which serves the tools.",
+  "version": "4.0.0",
+  "description": "A project in Claude Code is one folder in your work that holds both halves of what it knows: a source-cited Obsidian wiki, with an inbox to ingest from and one reviewed operation per change, and its threads, where each line of work moves from stub to spec to plan to receipt, one visible document per stage. Skills for ingesting, querying, linting, describing the work, threads, canvases, and Bases. Pairs with the claude-atlas binary, which serves the tools.",
   "author": {
     "name": "nathanaday",
     "url": "https://github.com/nathanaday"

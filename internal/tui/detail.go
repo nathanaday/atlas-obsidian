@@ -113,7 +113,7 @@ func currentPhase(s *registry.State) string {
 	return s.Threads.Phases[0]
 }
 
-// inboxText is a knowledge base's waiting sources; "" before a refresh counted them.
+// inboxText is the sources waiting in the inbox; "" before a refresh counted them.
 func inboxText(s *registry.State) string {
 	if s == nil || s.Inbox == nil {
 		return ""
@@ -133,65 +133,41 @@ func clip(s string, width int) string {
 	return string(r[:width-1]) + "…"
 }
 
-// boxLines is the lines of an entry's box: the heat mark and the name, then the facts.
-// A problem shows its folder and its error.
+// boxLines is the lines of an entry's box: the heat mark and the name with its path, the
+// description, then the facts of its wiki and its threads. A problem shows its folder and
+// its error.
 func boxLines(e registry.Entry, width int) []string {
 	if e.Error != "" {
 		return []string{errSt.Render("✗ ") + filepath.Base(e.Path), errSt.Render(clip(e.Error, width))}
 	}
-	name := kindStyle(e.Kind).Render(entryName(e))
 	s := e.State
-	if e.Kind == registry.Knowledge {
-		facts := []string{pagesText(s) + " pages"}
-		if t := inboxText(s); t != "" {
-			facts = append(facts, t)
-		}
-		facts = append(facts, touchedText(s))
-		lines := []string{heatMark(s) + " " + name}
-		if e.Scope != "" {
-			lines = append(lines, dim.Render(clip(e.Scope, width)))
-		}
-		lines = append(lines, dim.Render(strings.Join(facts, " · ")), projectsText(e))
-		return lines
-	}
+	name := projectSt.Render(entryName(e))
 	lines := []string{heatMark(s) + " " + name + "  " + dim.Render(clip(home.Display(e.Path), max(8, width-lipgloss.Width(entryName(e))-4)))}
 	if e.Description != "" {
 		lines = append(lines, dim.Render(clip(e.Description, width)))
 	}
-	facts := []string{touchedText(s)}
+	facts := []string{pagesText(s) + " pages"}
 	if t := threadCountText(s); t != "" {
 		facts = append(facts, t)
 	}
 	if p := currentPhase(s); p != "" {
 		facts = append(facts, "phase: "+p)
 	}
+	if t := inboxText(s); t != "" {
+		facts = append(facts, t)
+	}
+	facts = append(facts, touchedText(s))
 	return append(lines, dim.Render(strings.Join(facts, " · ")))
-}
-
-// projectsText names the projects that use a knowledge base.
-func projectsText(e registry.Entry) string {
-	if len(e.Projects) == 0 {
-		return dim.Render("used by no project yet")
-	}
-	names := make([]string, len(e.Projects))
-	for i, r := range e.Projects {
-		names[i] = r.Name
-	}
-	return projectSt.Render(fmt.Sprintf("%d project%s", len(names), plural(len(names)))) + dim.Render(": "+strings.Join(names, ", "))
 }
 
 // problemFix says what puts an entry the scan could not read right.
 func problemFix(e registry.Entry) string {
 	path := home.Display(e.Path)
 	switch e.Reason {
-	case registry.ReasonV1:
-		return "run claude-atlas adopt " + path
-	case registry.ReasonV2Project:
-		return "run claude-atlas init in the work, then delete this folder"
+	case registry.ReasonV3Split:
+		return "run claude-atlas upgrade " + path
 	case registry.ReasonMissing:
 		return strings.TrimPrefix(e.Error, "not found; ")
-	case registry.ReasonNotVault:
-		return "run claude-atlas adopt " + path + ", or claude-atlas remove " + path
 	case registry.ReasonFlat:
 		return "run claude-atlas upgrade " + path
 	case registry.ReasonNotProject:
@@ -217,70 +193,55 @@ func detailLines(e registry.Entry) []string {
 	row("Path", home.Display(e.Path))
 	row("Created", e.Created)
 	s := e.State
-	if e.Kind == registry.Knowledge {
-		row("Mode", string(e.Mode))
-		row("Scope", e.Scope)
-		if s == nil {
-			out = append(out, dim.Render("never refreshed; press R"))
-			return out
-		}
-		row("Last operation", s.LastOperation)
-		row("Last touched", s.LastTouched)
-		row("Unfinished", s.Unfinished.Text())
-		for i, t := range s.HotTopics {
-			k := "Hot topics"
-			if i > 0 {
-				k = ""
-			}
-			out = append(out, label.Width(detailWidth).Render(k)+"- "+refresh.PlainText(t))
-		}
+	row("Mode", string(e.Mode))
+	row("Description", e.Description)
+	if s == nil {
+		out = append(out, dim.Render("never refreshed; press R"))
+		return out
+	}
+	if g := s.Git; g != nil {
+		row("Git", refresh.LinkSummary(*g))
+	}
+	if d := s.Described; d != nil {
+		row("Described", d.Summary())
 	} else {
-		switch {
-		case e.Knowledge == nil:
-			row("Knowledge", "none")
-		case e.Knowledge.Error != "":
-			row("Knowledge", errSt.Render(e.Knowledge.Name+"  "+e.Knowledge.Error))
-		default:
-			row("Knowledge", knowledgeSt.Render(e.Knowledge.Name))
+		row("Described", dim.Render(registry.NotDescribed))
+	}
+	row("Wiki", fmt.Sprintf("%s pages · %s", pagesText(s), dash(s.Unfinished.Text())))
+	row("Last operation", s.LastOperation)
+	row("Last touched", s.LastTouched)
+	for i, t := range s.HotTopics {
+		k := "Hot topics"
+		if i > 0 {
+			k = ""
 		}
-		if s == nil {
-			out = append(out, dim.Render("never refreshed; press R"))
-			return out
+		out = append(out, label.Width(detailWidth).Render(k)+"- "+refresh.PlainText(t))
+	}
+	if s.Threads != nil {
+		row("Threads", threadSummaryText(s.Threads))
+		if len(s.Threads.Phases) > 0 {
+			row("Phases", strings.Join(s.Threads.Phases, " → "))
 		}
-		if g := s.Git; g != nil {
-			row("Git", refresh.LinkSummary(*g))
-		}
-		if d := s.Described; d != nil {
-			row("Described", d.Summary())
-		} else if e.Knowledge != nil && e.Knowledge.Error == "" {
-			row("Described", dim.Render(registry.NotDescribed))
-		}
-		if s.Threads != nil {
-			row("Threads", threadSummaryText(s.Threads))
-			if len(s.Threads.Phases) > 0 {
-				row("Phases", strings.Join(s.Threads.Phases, " → "))
+		for i, t := range s.Threads.Open {
+			if i == maxDetailThreads {
+				out = append(out, label.Width(detailWidth).Render("")+dim.Render(fmt.Sprintf("… and %d more", len(s.Threads.Open)-i)))
+				break
 			}
-			for i, t := range s.Threads.Open {
-				if i == maxDetailThreads {
-					out = append(out, label.Width(detailWidth).Render("")+dim.Render(fmt.Sprintf("… and %d more", len(s.Threads.Open)-i)))
-					break
-				}
-				k := ""
-				if i == 0 {
-					k = "Open"
-				}
-				line := fmt.Sprintf("[%s] %s", t.Stage, t.Title)
-				if t.Phase != "" {
-					line += dim.Render(" · " + t.Phase)
-				}
-				if t.Blocked != "" {
-					line += errSt.Render(" · blocked")
-				}
-				if t.Stale {
-					line += errSt.Render(" · stale")
-				}
-				out = append(out, label.Width(detailWidth).Render(k)+line)
+			k := ""
+			if i == 0 {
+				k = "Open"
 			}
+			line := fmt.Sprintf("[%s] %s", t.Stage, t.Title)
+			if t.Phase != "" {
+				line += dim.Render(" · " + t.Phase)
+			}
+			if t.Blocked != "" {
+				line += errSt.Render(" · blocked")
+			}
+			if t.Stale {
+				line += errSt.Render(" · stale")
+			}
+			out = append(out, label.Width(detailWidth).Render(k)+line)
 		}
 	}
 	for _, note := range refresh.Signals(e, now()) {

@@ -12,107 +12,40 @@ import (
 )
 
 func TestAtlasReadsWithoutWritingAndRefreshWrites(t *testing.T) {
-	bare := home.Home{Root: filepath.Join(t.TempDir(), "home")}
-	if msg := connectIn(t, bare, t.TempDir()).call("atlas", map[string]any{}, nil); !strings.Contains(msg, "no atlas") {
-		t.Fatalf("without an atlas the tool says so: %q", msg)
-	}
-	a := newAtlas(t, false)
-	c := a.inProject(t)
+	a := newAtlas(t)
+	c := a.session(t)
 	var out AtlasOut
-	if msg := c.call("atlas", map[string]any{}, &out); msg != "" {
+	if msg := c.call("atlas", nil, &out); msg != "" {
 		t.Fatal(msg)
 	}
-	if len(out.Knowledge) != 1 || len(out.Projects) != 1 || out.Settings.NewDays != home.DefaultNewDays {
-		t.Fatalf("atlas: %+v", out)
+	if len(out.Projects) != 1 || out.Projects[0].Name != "webapp" || out.Projects[0].State == nil {
+		t.Fatalf("atlas %+v", out)
 	}
-	if out.Projects[0].Knowledge == nil || out.Projects[0].Knowledge.Path != a.kb.Root || len(out.Knowledge[0].Projects) != 1 {
-		t.Fatalf("the project resolves to its knowledge base and back: %+v", out)
-	}
-	for _, e := range append(out.Knowledge, out.Projects...) {
-		if e.State == nil {
-			t.Fatalf("every entry carries its state: %+v", e)
-		}
+	if len(out.Problems) != 0 || out.Settings.NewDays != home.DefaultNewDays {
+		t.Fatalf("problems %+v settings %+v", out.Problems, out.Settings)
 	}
 	if _, err := os.Stat(registry.File(a.h.StateDir())); !os.IsNotExist(err) {
-		t.Fatalf("a plain read writes no registry: %v", err)
+		t.Fatalf("a read writes no registry: %v", err)
 	}
-	if msg := c.call("atlas", map[string]any{"refresh": true}, &out); msg != "" {
-		t.Fatal(msg)
+	if msg := c.call("atlas", map[string]any{"refresh": true}, &out); msg != "" || len(out.Projects) != 1 {
+		t.Fatalf("refresh %q %+v", msg, out)
 	}
 	if _, err := os.Stat(registry.File(a.h.StateDir())); err != nil {
 		t.Fatalf("refresh writes the registry: %v", err)
 	}
-}
-
-func TestVaultCreateAdoptEditForget(t *testing.T) {
-	a := newAtlas(t, false)
-	c := connectIn(t, a.h, t.TempDir())
-	var out VaultToolOut
-	papers := filepath.Join(t.TempDir(), "papers")
-	for _, path := range []string{"", "papers", "./papers"} {
-		if msg := c.call("vault", map[string]any{"action": "create", "name": "papers", "path": path}, nil); !strings.Contains(msg, "absolute or ~ path") {
-			t.Fatalf("create with path %q needs an absolute path: %q", path, msg)
-		}
-	}
-	if msg := c.call("vault", map[string]any{"action": "create", "name": "papers", "path": papers, "scope": "Papers."}, &out); msg != "" {
-		t.Fatal(msg)
-	}
-	if out.Vault == nil || out.Vault.Kind != registry.Knowledge || out.Vault.Path != papers || out.Vault.Scope != "Papers." {
-		t.Fatalf("create: %+v", out.Vault)
-	}
-	if msg := c.call("vault", map[string]any{"action": "create", "name": "papers", "path": papers}, nil); !strings.Contains(msg, "already exists") {
-		t.Fatalf("taken path: %q", msg)
-	}
-	if msg := c.call("vault", map[string]any{"action": "create"}, nil); !strings.Contains(msg, "needs name") {
-		t.Fatalf("no name: %q", msg)
-	}
-	if msg := c.call("vault", map[string]any{"action": "grow", "name": "x"}, nil); !strings.Contains(msg, "action must be") {
-		t.Fatalf("unknown action: %q", msg)
-	}
-	// Adopt an Obsidian folder; it lands in the config.
-	outside := filepath.Join(t.TempDir(), "notes")
-	os.MkdirAll(filepath.Join(outside, ".obsidian"), 0o755)
-	out = VaultToolOut{}
-	if msg := c.call("vault", map[string]any{"action": "adopt", "path": outside, "scope": "Notes."}, &out); msg != "" {
-		t.Fatal(msg)
-	}
-	if out.Vault == nil || out.Vault.Name != "notes" || out.Vault.Scope != "Notes." {
-		t.Fatalf("adopt: %+v", out.Vault)
-	}
-	cfg, _ := a.h.Load()
-	if !cfg.HasKnowledge(outside) || !cfg.HasKnowledge(papers) {
-		t.Fatalf("created and adopted knowledge bases are listed: %+v", cfg.Knowledge)
-	}
-	// Edit renames the folder and the scope.
-	scope := "Everything."
-	out = VaultToolOut{}
-	if msg := c.call("vault", map[string]any{"action": "edit", "target": "notes", "name": "Notebook", "scope": scope}, &out); msg != "" {
-		t.Fatal(msg)
-	}
-	if out.Vault.Name != "Notebook" || out.Vault.Scope != scope || filepath.Base(out.Vault.Path) != "Notebook" {
-		t.Fatalf("edit: %+v", out.Vault)
-	}
-	if msg := c.call("vault", map[string]any{"action": "edit", "target": "Notebook"}, nil); !strings.Contains(msg, "needs name or scope") {
-		t.Fatalf("empty edit: %q", msg)
-	}
-	// Forget drops it from the config; the folder stays.
-	out = VaultToolOut{}
-	if msg := c.call("vault", map[string]any{"action": "forget", "target": "Notebook"}, &out); msg != "" || out.Forgotten == "" {
-		t.Fatalf("forget: %q %+v", msg, out)
-	}
-	if _, err := os.Stat(out.Forgotten); err != nil {
-		t.Fatal("the folder stays")
-	}
-	if msg := c.call("vault", map[string]any{"action": "forget", "target": "papers"}, nil); msg != "" {
-		t.Fatalf("forget papers: %q", msg)
-	}
-	if cfg, _ := a.h.Load(); len(cfg.Knowledge) != 1 {
-		t.Fatalf("only the fixture's knowledge base is left: %+v", cfg.Knowledge)
+	// A folder the atlas cannot read is a problem, not an entry.
+	broken := filepath.Join(t.TempDir(), "broken")
+	os.MkdirAll(filepath.Join(broken, project.Dir, "broken"), 0o755)
+	os.WriteFile(filepath.Join(broken, project.Dir, "broken", project.Marker), []byte("{nope"), 0o644)
+	a.cfg.AddProject(broken)
+	a.h.Save(a.cfg)
+	if msg := c.call("atlas", nil, &out); msg != "" || len(out.Projects) != 1 || len(out.Problems) != 1 {
+		t.Fatalf("a problem %q %+v", msg, out)
 	}
 }
 
 func TestProjectInitFromAPlainFolder(t *testing.T) {
-	a := newAtlas(t, false)
+	a := newAtlas(t)
 	work := filepath.Join(t.TempDir(), "thesis")
 	os.MkdirAll(work, 0o755)
 	// The session sits in the folder, with no place yet; init makes it a project.
@@ -121,21 +54,24 @@ func TestProjectInitFromAPlainFolder(t *testing.T) {
 		t.Fatalf("no place before init: %q", msg)
 	}
 	var out ProjectToolOut
-	if msg := c.call("project", map[string]any{"action": "init", "description": "My thesis.", "knowledge": "kb"}, &out); msg != "" {
+	if msg := c.call("project", map[string]any{"action": "init", "description": "My thesis.", "mode": "lyt"}, &out); msg != "" {
 		t.Fatal(msg)
 	}
-	if out.Project == nil || out.Project.Name != "thesis" || out.Project.Path != work || out.Project.Description != "My thesis." || out.Project.Knowledge == nil || out.Project.Knowledge.Path != a.kb.Root || len(out.Written) == 0 {
+	if out.Project == nil || out.Project.Name != "thesis" || out.Project.Path != work || out.Project.Description != "My thesis." || out.Project.Mode != project.LYT {
 		t.Fatalf("init: %+v", out)
 	}
+	if len(out.Written) == 0 || out.Git != string(project.GitCreated) || out.Commit == "" {
+		t.Fatalf("init wrote and committed: %+v", out)
+	}
 	if !project.IsProject(work) {
-		t.Fatal("atlas/project.json is there")
+		t.Fatal("atlas/<name>/project.json is there")
 	}
 	cfg, _ := a.h.Load()
 	if !cfg.HasProject(work) {
 		t.Fatalf("the config lists the project: %+v", cfg.Projects)
 	}
 	var st Status
-	if msg := c.call("status", nil, &st); msg != "" || st.Kind != "project" || st.Name != "thesis" {
+	if msg := c.call("status", nil, &st); msg != "" || st.Name != "thesis" || st.Pages != 4 {
 		t.Fatalf("the same session is now a project session: %q %+v", msg, st)
 	}
 	if msg := c.call("project", map[string]any{"action": "init"}, nil); !strings.Contains(msg, "already") {
@@ -145,47 +81,41 @@ func TestProjectInitFromAPlainFolder(t *testing.T) {
 	if msg := c.call("project", map[string]any{"action": "init", "work": filepath.Join(work, "chapter")}, nil); !strings.Contains(msg, "inside the project") {
 		t.Fatalf("a project inside a project: %q", msg)
 	}
-	if msg := c.call("project", map[string]any{"action": "init", "work": t.TempDir(), "knowledge": "nope"}, nil); !strings.Contains(msg, "no such") {
-		t.Fatalf("an unknown knowledge base: %q", msg)
+	if msg := c.call("project", map[string]any{"action": "init", "work": t.TempDir(), "mode": "para"}, nil); !strings.Contains(msg, "mode must be") {
+		t.Fatalf("an unknown mode: %q", msg)
 	}
 }
 
-func TestProjectLinkUnlinkEditForget(t *testing.T) {
-	a := newAtlas(t, false)
-	c := a.inProject(t)
+func TestProjectEditAndForget(t *testing.T) {
+	a := newAtlas(t)
+	c := a.session(t)
 	var out ProjectToolOut
-	if msg := c.call("project", map[string]any{"action": "unlink"}, &out); msg != "" || out.Project.Knowledge != nil {
-		t.Fatalf("unlink: %q %+v", msg, out.Project)
-	}
-	if msg := c.call("project", map[string]any{"action": "unlink"}, nil); !strings.Contains(msg, "uses no knowledge base") {
-		t.Fatalf("unlink twice: %q", msg)
-	}
-	if msg := c.call("project", map[string]any{"action": "link"}, nil); !strings.Contains(msg, "needs knowledge") {
-		t.Fatalf("link without a knowledge base: %q", msg)
-	}
-	out = ProjectToolOut{}
-	if msg := c.call("project", map[string]any{"action": "link", "knowledge": a.kb.Root}, &out); msg != "" || out.Project.Knowledge == nil || out.Project.Knowledge.Name != "kb" {
-		t.Fatalf("link by path: %q %+v", msg, out.Project)
-	}
 	desc := "The web app."
-	out = ProjectToolOut{}
 	if msg := c.call("project", map[string]any{"action": "edit", "name": "Web App", "description": desc}, &out); msg != "" || out.Project.Name != "Web App" || out.Project.Description != desc {
 		t.Fatalf("edit: %q %+v", msg, out.Project)
 	}
-	if msg := c.call("project", map[string]any{"action": "edit"}, nil); !strings.Contains(msg, "needs name or description") {
+	// The folder follows the name; the work folder, which the config holds, does not move.
+	p, err := project.Open(a.work)
+	if err != nil || p.Folder != "Web App" {
+		t.Fatalf("the folder follows: %+v %v", p, err)
+	}
+	if msg := c.call("project", map[string]any{"action": "edit"}, nil); !strings.Contains(msg, "needs name, description, or mode") {
 		t.Fatalf("empty edit: %q", msg)
 	}
-	// From elsewhere, the project is named with work.
-	k := a.inKnowledge(t)
-	if msg := k.call("project", map[string]any{"action": "edit", "name": "x"}, nil); !strings.Contains(msg, "name the project") {
-		t.Fatalf("no project in a knowledge base session: %q", msg)
+	if msg := c.call("project", map[string]any{"action": "grow"}, nil); !strings.Contains(msg, "action must be") {
+		t.Fatalf("unknown action: %q", msg)
+	}
+	// From another folder, the project is named with work.
+	elsewhere := connectIn(t, a.h, t.TempDir())
+	if msg := elsewhere.call("project", map[string]any{"action": "edit", "name": "x"}, nil); !strings.Contains(msg, "name the project") {
+		t.Fatalf("no project in this session: %q", msg)
 	}
 	out = ProjectToolOut{}
-	if msg := k.call("project", map[string]any{"action": "forget", "work": "Web App"}, &out); msg != "" || out.Forgotten != a.work {
+	if msg := elsewhere.call("project", map[string]any{"action": "forget", "work": "Web App"}, &out); msg != "" || out.Forgotten != a.work {
 		t.Fatalf("forget by name: %q %+v", msg, out)
 	}
-	if project.IsProject(a.work) == false {
-		t.Fatal("the folder and its atlas/ stay")
+	if !project.IsProject(a.work) {
+		t.Fatal("the folder and its atlas/<name>/ stay")
 	}
 	cfg, _ := a.h.Load()
 	if cfg.HasProject(a.work) {
@@ -194,8 +124,8 @@ func TestProjectLinkUnlinkEditForget(t *testing.T) {
 }
 
 func TestSettings(t *testing.T) {
-	a := newAtlas(t, false)
-	c := a.inProject(t)
+	a := newAtlas(t)
+	c := a.session(t)
 	var s Settings
 	if msg := c.call("settings", nil, &s); msg != "" || s.NewDays != home.DefaultNewDays {
 		t.Fatalf("read: %q %+v", msg, s)

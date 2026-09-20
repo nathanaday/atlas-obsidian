@@ -11,85 +11,112 @@ import (
 	"github.com/nathanaday/claude-atlas/internal/gitx"
 	"github.com/nathanaday/claude-atlas/internal/home"
 	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/vault"
 )
 
 var now = time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
 
-// fixture lists three knowledge bases, a v1 vault, a v2 project vault, and an
-// unreadable identity file in the config, and leaves one knowledge base out of it; and
-// three projects: two on ai-ml, one that names a knowledge base the machine does not
-// have.
-func fixture(t *testing.T) (*home.Config, map[string]*vault.Vault, map[string]*project.Project) {
+// fixture lists three projects in the config and leaves one out of it, and adds the
+// folders the scan cannot use: a work folder that is gone, one with no project in it, a
+// project in the flat layout of 2.2.0, a 3.x project, an identity file that is not JSON,
+// one from a later version, and a 3.x knowledge base.
+func fixture(t *testing.T) (*home.Config, map[string]*project.Project, string) {
 	t.Helper()
 	if !gitx.Available() {
 		t.Skip("git is not installed")
 	}
 	root := t.TempDir()
 	cfg := &home.Config{}
-	vs := map[string]*vault.Vault{}
-	mk := func(rel string, opts vault.Options) string {
-		path := filepath.Join(root, filepath.FromSlash(rel))
-		if _, err := vault.Init(path, opts, now); err != nil {
+	ps := map[string]*project.Project{}
+	mk := func(rel string, opts project.Options, list bool) string {
+		work := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(work, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		v, _ := vault.Open(path)
-		vs[opts.Name] = v
-		return path
-	}
-	cfg.Knowledge = []string{
-		mk("Vaults/ai-ml", vault.Options{Name: "ai-ml", Scope: "Machine learning."}),
-		mk("Vaults/deep/nested/robotics", vault.Options{Name: "robotics"}),
-		mk("Elsewhere/side", vault.Options{Name: "side"}),
-	}
-	mk("Vaults/unlisted", vault.Options{Name: "unlisted"})
-	old := filepath.Join(root, "Vaults", "old")
-	os.MkdirAll(filepath.Join(old, "wiki"), 0o755)
-	os.WriteFile(filepath.Join(old, vault.Marker), []byte(`{"schema":"claude-atlas.vault.v1","mode":"generic"}`), 0o644)
-	v2project := filepath.Join(root, "Vaults", "projects", "cs566")
-	os.MkdirAll(filepath.Join(v2project, "wiki"), 0o755)
-	os.WriteFile(filepath.Join(v2project, vault.Marker), []byte(`{"schema":"claude-atlas.vault.v2","id":"p-old","kind":"project","name":"cs566","mode":"generic"}`), 0o644)
-	bad := filepath.Join(root, "Vaults", "bad")
-	os.MkdirAll(bad, 0o755)
-	os.WriteFile(filepath.Join(bad, vault.Marker), []byte(`{not json`), 0o644)
-	cfg.Knowledge = append(cfg.Knowledge, old, v2project, bad)
-
-	ps := map[string]*project.Project{}
-	mkp := func(rel string, opts project.Options) {
-		work := filepath.Join(root, filepath.FromSlash(rel))
-		os.MkdirAll(work, 0o755)
-		p, _, err := project.Init(work, opts, now)
+		res, err := project.Init(work, opts, now)
 		if err != nil {
 			t.Fatal(err)
 		}
-		ps[p.Name()] = p
-		cfg.Projects = append(cfg.Projects, work)
+		ps[res.Project.Name()] = res.Project
+		if list {
+			cfg.Projects = append(cfg.Projects, work)
+		}
+		return work
 	}
-	aiml := &project.Knowledge{ID: vs["ai-ml"].Config.ID, Name: "ai-ml"}
-	mkp("Code/webapp", project.Options{Description: "The web app.", Knowledge: aiml})
-	mkp("Code/firmware", project.Options{Knowledge: aiml})
-	mkp("Docs/thesis", project.Options{Knowledge: &project.Knowledge{ID: "gone-0000", Name: "papers"}})
-	return cfg, vs, ps
+	mk("Code/webapp", project.Options{Name: "webapp", Description: "The web app."}, true)
+	mk("Code/deep/nested/firmware", project.Options{Name: "firmware"}, true)
+	mk("Docs/thesis", project.Options{Name: "thesis", Mode: project.LYT}, true)
+	mk("Code/unlisted", project.Options{Name: "unlisted"}, false)
+
+	bad := func(rel string, write func(dir string)) string {
+		dir := filepath.Join(root, filepath.FromSlash(rel))
+		os.MkdirAll(dir, 0o755)
+		write(dir)
+		cfg.Projects = append(cfg.Projects, dir)
+		return dir
+	}
+	bad("Bad/gone", func(dir string) { os.RemoveAll(dir) })
+	bad("Bad/plain", func(dir string) {})
+	bad("Bad/flat", func(dir string) {
+		os.MkdirAll(filepath.Join(dir, project.Dir), 0o755)
+		os.WriteFile(filepath.Join(dir, project.Dir, project.Marker), []byte(`{"schema":"claude-atlas.project.v3","id":"flat"}`), 0o644)
+	})
+	bad("Bad/split", func(dir string) {
+		os.MkdirAll(filepath.Join(dir, project.Dir, "split"), 0o755)
+		os.WriteFile(filepath.Join(dir, project.Dir, "split", project.Marker), []byte(`{"schema":"claude-atlas.project.v3","id":"split","name":"split","knowledge":{"id":"k1","name":"notes"}}`), 0o644)
+	})
+	bad("Bad/broken", func(dir string) {
+		os.MkdirAll(filepath.Join(dir, project.Dir, "broken"), 0o755)
+		os.WriteFile(filepath.Join(dir, project.Dir, "broken", project.Marker), []byte(`{not json`), 0o644)
+	})
+	bad("Bad/later", func(dir string) {
+		os.MkdirAll(filepath.Join(dir, project.Dir, "later"), 0o755)
+		os.WriteFile(filepath.Join(dir, project.Dir, "later", project.Marker), []byte(`{"schema":"claude-atlas.project.v9","id":"later"}`), 0o644)
+	})
+	kb := filepath.Join(root, "Vaults", "notes")
+	os.MkdirAll(kb, 0o755)
+	os.WriteFile(filepath.Join(kb, project.KnowledgeMarker), []byte(`{"schema":"claude-atlas.vault.v3","id":"k1","kind":"knowledge","name":"notes"}`), 0o644)
+	cfg.Knowledge = []string{kb}
+	return cfg, ps, kb
 }
 
-func TestScanFindsEveryEntryAndSortsThem(t *testing.T) {
-	cfg, vs, ps := fixture(t)
+func TestScanReadsEveryProjectAndSortsThem(t *testing.T) {
+	cfg, ps, _ := fixture(t)
 	ix, err := Scan(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var names []string
-	for _, e := range ix.Entries {
-		if e.Error != "" {
-			continue
-		}
-		names = append(names, string(e.Kind)+":"+e.Name)
+	var good []string
+	for _, e := range ix.Projects() {
+		good = append(good, e.Name)
 	}
-	if got := strings.Join(names, ","); got != "knowledge:ai-ml,knowledge:robotics,knowledge:side,project:firmware,project:thesis,project:webapp" {
-		t.Fatalf("entries %s", got)
+	if strings.Join(good, ",") != "firmware,thesis,webapp" {
+		t.Fatalf("valid entries first, by name: %v", good)
 	}
-	if len(ix.Problems) != 3 || len(ix.Entries) != 9 {
-		t.Fatalf("problems %+v entries %d", ix.Problems, len(ix.Entries))
+	// A project the config does not list is not in the atlas.
+	if _, err := ix.Find("unlisted"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unlisted: %v", err)
+	}
+	web := ix.ByID(ps["webapp"].Config.ID)
+	if web == nil || web.Description != "The web app." || web.Mode != project.Generic || web.Created != "2026-09-15" {
+		t.Fatalf("webapp %+v", web)
+	}
+	if thesis, _ := ix.Find("thesis"); thesis == nil || thesis.Mode != project.LYT {
+		t.Fatalf("the mode travels with the entry: %+v", thesis)
+	}
+	// The wiki and the project's own folder come off the entry.
+	if filepath.Base(web.Atlas()) != "webapp" || filepath.Base(web.Wiki()) != project.WikiDir {
+		t.Fatalf("atlas %q wiki %q", web.Atlas(), web.Wiki())
+	}
+	if web.Rel() != "projects/webapp" {
+		t.Fatalf("rel %q", web.Rel())
+	}
+}
+
+func TestScanNamesEveryFolderItCannotUse(t *testing.T) {
+	cfg, _, kb := fixture(t)
+	ix, err := Scan(cfg)
+	if err != nil {
+		t.Fatal(err)
 	}
 	reasons := map[string]string{}
 	for _, e := range ix.Entries {
@@ -97,136 +124,73 @@ func TestScanFindsEveryEntryAndSortsThem(t *testing.T) {
 			reasons[filepath.Base(e.Path)] = e.Reason
 		}
 	}
-	if reasons["bad"] != ReasonUnreadable || reasons["old"] != ReasonV1 || reasons["cs566"] != ReasonV2Project {
-		t.Fatalf("reasons %v", reasons)
+	want := map[string]string{
+		"gone":   ReasonMissing,
+		"plain":  ReasonNotProject,
+		"flat":   ReasonFlat,
+		"split":  ReasonV3Split,
+		"broken": ReasonUnreadable,
+		"later":  ReasonSchema,
+		"notes":  ReasonV3Split,
 	}
-	for _, e := range ix.Entries {
-		if e.Reason == ReasonV2Project && (!strings.Contains(e.Error, "claude-atlas init") || e.Rel() != "problems/cs566") {
-			t.Fatalf("v2 project entry %+v", e)
+	for name, reason := range want {
+		if reasons[name] != reason {
+			t.Errorf("%s: reason %q, want %q", name, reasons[name], reason)
 		}
 	}
-	if _, err := ix.Find("old", ""); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("find old: %v", err)
+	if len(reasons) != len(want) {
+		t.Fatalf("reasons %+v", reasons)
 	}
-	if e := ix.ByPath(vs["unlisted"].Root); e != nil {
-		t.Fatalf("the scan searches no folder, so a knowledge base the config does not list is not found: %+v", e)
+	// Every unreadable folder is a problem as well, so a command names each one once.
+	if len(ix.Problems) != len(want) {
+		t.Fatalf("problems %+v", ix.Problems)
 	}
-	for _, e := range append(ix.Projects(), ix.Knowledge()...) {
-		if e.Error != "" {
-			t.Fatalf("a listing contains an error entry: %+v", e)
-		}
+	// A 3.x knowledge base's message names the command that makes it a project.
+	e := ix.ByPath(kb)
+	if e == nil || !strings.Contains(e.Error, "claude-atlas upgrade") {
+		t.Fatalf("the knowledge base: %+v", e)
 	}
-	if len(ix.Projects()) != 3 || len(ix.Knowledge()) != 3 {
-		t.Fatalf("projects %d knowledge %d", len(ix.Projects()), len(ix.Knowledge()))
-	}
-	aiml := ix.ByID(vs["ai-ml"].Config.ID)
-	if aiml == nil || aiml.Path != vs["ai-ml"].Root || aiml.Scope != "Machine learning." || aiml.Mode != vault.Generic || aiml.Kind != Knowledge {
-		t.Fatalf("by id %+v", aiml)
-	}
-	if e := ix.ByPath(vs["side"].Root); e == nil || e.Name != "side" {
-		t.Fatalf("by path %+v", e)
-	}
-	webapp := ix.ByPath(ps["webapp"].Root)
-	if webapp == nil || webapp.Kind != Project || webapp.ID != ps["webapp"].Config.ID || webapp.Description != "The web app." || webapp.Created != "2026-09-15" {
-		t.Fatalf("project entry %+v", webapp)
-	}
-	if aiml.Wiki() != filepath.Join(aiml.Path, "wiki") {
-		t.Fatal("Wiki")
+	// A project the atlas cannot read has a path, an error, and a reason, and nothing else.
+	flat := ix.ByPath(filepath.Join(filepath.Dir(kb), "..", "Bad", "flat"))
+	if flat != nil && (flat.Name != "" || flat.ID != "") {
+		t.Fatalf("an unreadable entry carries nothing else: %+v", flat)
 	}
 }
 
-func TestScanResolvesKnowledgeAndProjects(t *testing.T) {
-	cfg, vs, ps := fixture(t)
+func TestFindByNameIDAndPath(t *testing.T) {
+	cfg, ps, _ := fixture(t)
 	ix, _ := Scan(cfg)
-	aiml := ix.ByID(vs["ai-ml"].Config.ID)
-	var users []string
-	for _, r := range aiml.Projects {
-		users = append(users, r.Name+"@"+r.Path)
+	web := ps["webapp"]
+	for _, arg := range []string{"webapp", "WEBAPP", web.Config.ID, web.Config.ID[:8], web.Root} {
+		found, err := ix.Find(arg)
+		if err != nil || found.Name != "webapp" {
+			t.Fatalf("Find(%q): %+v %v", arg, found, err)
+		}
 	}
-	if strings.Join(users, ",") != "firmware@"+ps["firmware"].Root+",webapp@"+ps["webapp"].Root {
-		t.Fatalf("projects of ai-ml %v", users)
+	if _, err := ix.Find("nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a name nothing carries: %v", err)
 	}
-	if len(ix.ByID(vs["robotics"].Config.ID).Projects) != 0 {
-		t.Fatal("robotics has no projects")
+	if _, err := ix.Find("/nowhere/at/all"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a path nothing carries: %v", err)
 	}
-	webapp := ix.ByPath(ps["webapp"].Root)
-	if webapp.Knowledge == nil || webapp.Knowledge.ID != aiml.ID || webapp.Knowledge.Name != "ai-ml" || webapp.Knowledge.Path != aiml.Path || webapp.Knowledge.Error != "" {
-		t.Fatalf("webapp's knowledge base %+v", webapp.Knowledge)
-	}
-	if webapp.KnowledgePath() != aiml.Path || webapp.Rel() != "projects/ai-ml/webapp" {
-		t.Fatalf("path %q rel %q", webapp.KnowledgePath(), webapp.Rel())
-	}
-	thesis := ix.ByPath(ps["thesis"].Root)
-	if thesis.Knowledge == nil || thesis.Knowledge.Name != "papers" || !strings.Contains(thesis.Knowledge.Error, "gone-0000") || thesis.KnowledgePath() != "" || thesis.Rel() != "projects/thesis" {
-		t.Fatalf("thesis's knowledge base %+v rel %q", thesis.Knowledge, thesis.Rel())
-	}
-	of := ix.ProjectsOf(aiml.ID)
-	if len(of) != 2 || of[0].Name != "firmware" || of[1].Name != "webapp" {
-		t.Fatalf("ProjectsOf %+v", of)
-	}
-	if aiml.Rel() != "knowledge/ai-ml" || Knowledge.Noun() != "knowledge base" || Project.Noun() != "project" {
-		t.Fatal("rel and nouns")
-	}
-	// A project without a knowledge base.
-	none := filepath.Join(t.TempDir(), "solo")
-	os.MkdirAll(none, 0o755)
-	if _, _, err := project.Init(none, project.Options{}, now); err != nil {
-		t.Fatal(err)
-	}
-	cfg.Projects = append(cfg.Projects, none)
-	ix, _ = Scan(cfg)
-	if e := ix.ByPath(none); e == nil || e.Knowledge != nil || e.KnowledgePath() != "" {
-		t.Fatalf("solo %+v", e)
-	}
-}
-
-func TestFindByNameIDPathAndKind(t *testing.T) {
-	cfg, vs, ps := fixture(t)
-	ix, _ := Scan(cfg)
-	if e, err := ix.Find("WEBAPP", ""); err != nil || e.Name != "webapp" {
-		t.Fatalf("find by name %+v %v", e, err)
-	}
-	if e, err := ix.Find(vs["robotics"].Config.ID[:8], Knowledge); err != nil || e.Name != "robotics" {
-		t.Fatalf("find by id prefix %+v %v", e, err)
-	}
-	if e, err := ix.Find(ps["firmware"].Root, Project); err != nil || e.Name != "firmware" {
-		t.Fatalf("find by path %+v %v", e, err)
-	}
-	if _, err := ix.Find("webapp", Knowledge); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("a project is not a knowledge base: %v", err)
-	}
-	if _, err := ix.Find(ps["firmware"].Root, Knowledge); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("a project's path is not a knowledge base: %v", err)
-	}
-	if _, err := ix.Find("nope", ""); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("find missing: %v", err)
-	}
-	// A knowledge base and a project may share a name; the kind tells them apart.
-	twin := filepath.Join(t.TempDir(), "ai-ml")
-	os.MkdirAll(twin, 0o755)
-	if _, _, err := project.Init(twin, project.Options{}, now); err != nil {
-		t.Fatal(err)
-	}
-	cfg.Projects = append(cfg.Projects, twin)
-	ix, _ = Scan(cfg)
-	if _, err := ix.Find("ai-ml", ""); !errors.Is(err, ErrAmbiguous) {
-		t.Fatalf("two entries named ai-ml: %v", err)
-	}
-	if e, err := ix.Find("ai-ml", Project); err != nil || e.Path != twin {
-		t.Fatalf("the project named ai-ml: %+v %v", e, err)
-	}
-	if e, err := ix.Find("ai-ml", Knowledge); err != nil || e.Path != vs["ai-ml"].Root {
-		t.Fatalf("the knowledge base named ai-ml: %+v %v", e, err)
+	// Two entries with one name are ambiguous, and the error names both paths.
+	ix.Entries = append(ix.Entries, Entry{ID: "second00", Name: "webapp", Path: filepath.Join(t.TempDir(), "webapp")})
+	_, err := ix.Find("webapp")
+	if !errors.Is(err, ErrAmbiguous) || !strings.Contains(err.Error(), "2 entries") {
+		t.Fatalf("ambiguous: %v", err)
 	}
 }
 
 func TestFindAmbiguousIDPrefix(t *testing.T) {
 	ix := &Index{Entries: []Entry{
-		{ID: "abcdefgh1111", Kind: Project, Name: "one", Path: "/vaults/one"},
-		{ID: "abcdefgh2222", Kind: Project, Name: "two", Path: "/vaults/two"},
+		{ID: "abcdefgh1111", Name: "one", Path: "/one"},
+		{ID: "abcdefgh2222", Name: "two", Path: "/two"},
 	}}
-	if _, err := ix.Find("abcdefgh", ""); !errors.Is(err, ErrAmbiguous) {
-		t.Fatalf("find ambiguous id prefix: %v", err)
+	if _, err := ix.Find("abcdefgh"); !errors.Is(err, ErrAmbiguous) {
+		t.Fatalf("an id prefix two entries share: %v", err)
+	}
+	if found, err := ix.Find("abcdefgh1111"); err != nil || found.Name != "one" {
+		t.Fatalf("the full id: %+v %v", found, err)
 	}
 }
 
@@ -247,88 +211,15 @@ func TestStateFileRoundTrips(t *testing.T) {
 		t.Fatalf("round trip %v %s %+v", err, generated, entries)
 	}
 	data, _ := os.ReadFile(File(dir))
-	if !strings.Contains(string(data), `"schema": "claude-atlas.registry.v3"`) {
+	if !strings.Contains(string(data), `"schema": "claude-atlas.registry.v4"`) {
 		t.Fatalf("file:\n%s", data)
 	}
-	os.WriteFile(File(dir), []byte(`{"schema":"claude-atlas.registry.v1","entries":[]}`), 0o644)
-	if _, _, err := Read(dir); err == nil || !strings.Contains(err.Error(), "claude-atlas.registry.v1") {
+	os.WriteFile(File(dir), []byte(`{"schema":"claude-atlas.registry.v3","entries":[]}`), 0o644)
+	if _, _, err := Read(dir); !errors.Is(err, ErrStale) {
 		t.Fatalf("read another schema: %v", err)
 	}
 }
 
-// A registered path whose folder is gone, and a registered work folder with no project
-// in it, are entries like every other unreadable one, so list, doctor, and forget see
-// them.
-func TestScanMakesMissingEntries(t *testing.T) {
-	cfg, _, _ := fixture(t)
-	gone := filepath.Join(t.TempDir(), "gone")
-	cfg.Knowledge = append(cfg.Knowledge, gone)
-	goneWork := filepath.Join(t.TempDir(), "gone-work")
-	plain := filepath.Join(t.TempDir(), "plain")
-	os.MkdirAll(plain, 0o755)
-	broken := filepath.Join(t.TempDir(), "broken")
-	os.MkdirAll(filepath.Join(broken, project.Dir, "p"), 0o755)
-	os.WriteFile(filepath.Join(broken, project.Dir, "p", project.Marker), []byte("{not json"), 0o644)
-	future := filepath.Join(t.TempDir(), "future")
-	os.MkdirAll(filepath.Join(future, project.Dir, "p"), 0o755)
-	os.WriteFile(filepath.Join(future, project.Dir, "p", project.Marker), []byte(`{"schema":"claude-atlas.project.v9","id":"x"}`), 0o644)
-	noID := filepath.Join(t.TempDir(), "noid")
-	os.MkdirAll(filepath.Join(noID, project.Dir, "p"), 0o755)
-	os.WriteFile(filepath.Join(noID, project.Dir, "p", project.Marker), []byte(`{"schema":"`+project.Schema+`","name":"x"}`), 0o644)
-	flat := filepath.Join(t.TempDir(), "flat")
-	os.MkdirAll(filepath.Join(flat, project.Dir), 0o755)
-	os.WriteFile(filepath.Join(flat, project.Dir, project.Marker), []byte(`{"schema":"`+project.Schema+`","id":"f","name":"flat"}`), 0o644)
-	cfg.Projects = append(cfg.Projects, goneWork, plain, broken, future, noID, flat)
-	ix, err := Scan(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]string{gone: ReasonMissing, goneWork: ReasonMissing, plain: ReasonNotProject, broken: ReasonUnreadable, future: ReasonSchema, noID: ReasonUnreadable, flat: ReasonFlat}
-	for path, reason := range want {
-		e := ix.ByPath(path)
-		if e == nil || e.Reason != reason || e.Error == "" {
-			t.Errorf("%s: %+v, want reason %s", path, e, reason)
-			continue
-		}
-		matched := false
-		for _, p := range ix.Problems {
-			if p.Path == path && p.Reason == e.Error {
-				matched = true
-			}
-		}
-		if !matched {
-			t.Errorf("%s keeps its problem with the same reason: %+v", path, ix.Problems)
-		}
-	}
-	if e := ix.ByPath(gone); !strings.Contains(e.Error, "remove") {
-		t.Fatalf("a gone knowledge base names remove: %s", e.Error)
-	}
-	if e := ix.ByPath(goneWork); !strings.Contains(e.Error, "forget") {
-		t.Fatalf("a gone project names forget: %s", e.Error)
-	}
-	if e := ix.ByPath(plain); !strings.Contains(e.Error, "claude-atlas init") {
-		t.Fatalf("a plain folder names init: %s", e.Error)
-	}
-	if _, err := ix.Find(gone, ""); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("find a missing vault: %v", err)
-	}
-}
-
-func TestScanNamesAListedFolderThatIsNoKnowledgeBase(t *testing.T) {
-	plain := t.TempDir()
-	ix, err := Scan(&home.Config{Knowledge: []string{plain}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	e := ix.ByPath(plain)
-	if e == nil || e.Reason != ReasonNotVault || !strings.Contains(e.Error, "claude-atlas adopt") || !strings.Contains(e.Error, "claude-atlas remove") {
-		t.Fatalf("a listed folder with no identity file is an entry that says what to do: %+v", e)
-	}
-}
-
-// TestByPathFollowsASymlinkedAncestor proves a session that reached a folder through a
-// symlinked parent still finds its entry. On macOS /tmp is such a link, and Claude Code
-// hands the hooks and the server the resolved path.
 func TestByPathFollowsASymlinkedAncestor(t *testing.T) {
 	root := t.TempDir()
 	real := filepath.Join(root, "Code")
@@ -339,16 +230,11 @@ func TestByPathFollowsASymlinkedAncestor(t *testing.T) {
 	if err := os.Symlink(real, link); err != nil {
 		t.Skipf("symlinks are not available: %v", err)
 	}
-	ix := &Index{Entries: []Entry{
-		{ID: "abcdefgh1111", Kind: Project, Name: "webapp", Path: filepath.Join(real, "webapp")},
-	}}
-	e := ix.ByPath(filepath.Join(link, "webapp"))
-	if e == nil || e.Name != "webapp" {
+	ix := &Index{Entries: []Entry{{ID: "abcdefgh1111", Name: "webapp", Path: filepath.Join(real, "webapp")}}}
+	if e := ix.ByPath(filepath.Join(link, "webapp")); e == nil || e.Name != "webapp" {
 		t.Fatalf("ByPath through a symlinked parent: %+v", e)
 	}
-	linked := &Index{Entries: []Entry{
-		{ID: "abcdefgh1111", Kind: Project, Name: "webapp", Path: filepath.Join(link, "webapp")},
-	}}
+	linked := &Index{Entries: []Entry{{ID: "abcdefgh1111", Name: "webapp", Path: filepath.Join(link, "webapp")}}}
 	if linked.ByPath(filepath.Join(real, "webapp")) == nil {
 		t.Fatal("ByPath with a resolved path found nothing")
 	}
@@ -357,45 +243,31 @@ func TestByPathFollowsASymlinkedAncestor(t *testing.T) {
 	}
 }
 
-// An entry the config lists twice, once under a spelling that reaches it through a
+// A project the config lists twice, once under a spelling that reaches it through a
 // symlink, is one entry.
 func TestScanDedupesAnEntryRegisteredThroughASymlink(t *testing.T) {
 	if !gitx.Available() {
 		t.Skip("git is not installed")
 	}
 	root := t.TempDir()
-	cfg := &home.Config{}
-	real := filepath.Join(root, "Vaults", "ai-ml")
-	if _, err := vault.Init(real, vault.Options{Name: "ai-ml"}, now); err != nil {
-		t.Fatal(err)
-	}
-	link := filepath.Join(root, "ai-ml-link")
-	if err := os.Symlink(real, link); err != nil {
-		t.Skipf("symlinks are not available: %v", err)
-	}
-	cfg.Knowledge = []string{real, link}
 	work := filepath.Join(root, "work")
 	os.MkdirAll(work, 0o755)
-	if _, _, err := project.Init(work, project.Options{}, now); err != nil {
+	if _, err := project.Init(work, project.Options{Name: "work"}, now); err != nil {
 		t.Fatal(err)
 	}
-	workLink := filepath.Join(root, "work-link")
-	if err := os.Symlink(work, workLink); err != nil {
+	link := filepath.Join(root, "work-link")
+	if err := os.Symlink(work, link); err != nil {
 		t.Skipf("symlinks are not available: %v", err)
 	}
-	cfg.Projects = []string{work, workLink}
-	ix, err := Scan(cfg)
+	ix, err := Scan(&home.Config{Projects: []string{work, link}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ix.Entries) != 2 {
-		t.Fatalf("two entries, got %d: %+v", len(ix.Entries), ix.Entries)
+	if len(ix.Entries) != 1 || ix.Entries[0].Path != work {
+		t.Fatalf("one entry, with the first spelling: %+v", ix.Entries)
 	}
-	if ix.Entries[0].Path != real || ix.Entries[1].Path != work {
-		t.Fatalf("the entries keep the first spelling: %s %s", ix.Entries[0].Path, ix.Entries[1].Path)
-	}
-	for _, path := range []string{real, link} {
-		if e := ix.ByPath(path); e == nil || e.Name != "ai-ml" {
+	for _, path := range []string{work, link} {
+		if e := ix.ByPath(path); e == nil || e.Name != "work" {
 			t.Fatalf("ByPath(%s): %+v", path, e)
 		}
 	}
