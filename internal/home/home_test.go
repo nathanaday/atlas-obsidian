@@ -195,3 +195,32 @@ func TestAdoptKeepsAnAtlasAlreadyAtTheNewName(t *testing.T) {
 		t.Fatalf("the old home was moved anyway: %v", err)
 	}
 }
+
+// A config that names the plugin under the tool's earlier name is pointed at the new one,
+// while a source the user set to a local checkout is left alone.
+func TestLoadMovesThePluginNamedBeforeTheRename(t *testing.T) {
+	for _, tc := range []struct {
+		name, source, wantSource string
+	}{
+		{"the slug of this repository", "nathanaday/claude-atlas", DefaultPluginSource},
+		{"a local checkout", "/work/checkout", "/work/checkout"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := Home{Root: t.TempDir()}
+			raw := `{"schema":"atlas-obsidian.config.v4","plugin":{"id":"claude-atlas@nathanaday-claude-atlas","source":"` + tc.source + `"}}`
+			if err := os.WriteFile(h.ConfigPath(), []byte(raw), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := h.Load()
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			if cfg.Plugin.ID != DefaultPluginID {
+				t.Fatalf("plugin id %q, want %q", cfg.Plugin.ID, DefaultPluginID)
+			}
+			if cfg.Plugin.Source != tc.wantSource {
+				t.Fatalf("plugin source %q, want %q", cfg.Plugin.Source, tc.wantSource)
+			}
+		})
+	}
+}

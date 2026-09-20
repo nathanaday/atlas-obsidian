@@ -28,6 +28,12 @@ const (
 	DefaultPluginID = "atlas-obsidian@nathanaday-atlas-obsidian"
 	// DefaultPluginSource is what `claude plugin marketplace add` takes: this repository.
 	DefaultPluginSource = "nathanaday/atlas-obsidian"
+	// atlasPluginID and atlasPluginSource name the plugin as it was before the tool was
+	// renamed to atlas-obsidian. Load replaces them, so setup and doctor ask about the
+	// plugin this version installs and not the one it replaced.
+	atlasPluginID     = "claude-atlas@nathanaday-claude-atlas"
+	atlasPluginSource = "nathanaday/claude-atlas"
+
 	// DefaultNewDays is how many days after its creation a vault counts as new.
 	DefaultNewDays = 7
 )
@@ -256,6 +262,14 @@ func (h Home) Load() (*Config, error) {
 	// Configs written before these sections existed keep working with the defaults.
 	if cfg.Plugin.ID == "" {
 		cfg.Plugin = defaultPlugin()
+	}
+	if cfg.Plugin.ID == atlasPluginID {
+		cfg.Plugin.ID = DefaultPluginID
+	}
+	// A source that is a local checkout is the user's own choice and is left alone; only
+	// the slug of this repository moves to its new name.
+	if cfg.Plugin.Source == atlasPluginSource {
+		cfg.Plugin.Source = DefaultPluginSource
 	}
 	cfg.Plugin.Source = Expand(cfg.Plugin.Source)
 	if cfg.ClaudeCode.Command == "" {

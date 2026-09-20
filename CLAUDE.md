@@ -177,6 +177,11 @@ What a user already has on disk still reads:
   raises the schema. Nothing else may compare `cfg.Schema` to `Schema` directly.
 - `home.Load` accepts `claude-atlas.config.v4`; `ledger.LegacySchemas` holds the
   claude-atlas and claude-obsidian ledger names.
+- `home.Load` also points a config that names the old plugin
+  (`claude-atlas@nathanaday-claude-atlas`) at `DefaultPluginID`, and the old
+  slug at `DefaultPluginSource`, so `setup` and `doctor` ask about the plugin
+  this version installs. A source the user set to a local checkout is left
+  alone.
 - `home.Resolve` moves `~/.claude-atlas` to `~/.atlas-obsidian` once, and only
   when it falls through to the default home, so a test or `--home` never
   triggers it (`home.adopt`). A move that fails keeps using the old home.
