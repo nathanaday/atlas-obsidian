@@ -50,13 +50,38 @@ type LaunchConfig struct {
 // Config is the contents of config.json. Paths are absolute. The atlas knows a knowledge
 // base or a project only when the config lists its folder; it never searches for one.
 type Config struct {
-	Schema     string       `json:"schema"`
-	Plugin     PluginConfig `json:"plugin"`
-	ClaudeCode LaunchConfig `json:"claude_code"`
+	PreferredHarness string       `json:"preferred_harness,omitempty"`
+	Schema           string       `json:"schema"`
+	Plugin           PluginConfig `json:"plugin"`
+	ClaudeCode       LaunchConfig `json:"claude_code"`
 	// Heat is nil in a config written before the section existed; NewDays reads it.
 	Heat *HeatConfig `json:"heat,omitempty"`
 	// Projects holds every project's work folder, the parent of its atlas/<name>/ folder.
 	Projects []string `json:"projects,omitempty"`
+}
+
+// Harness returns the preferred interactive agent, defaulting to Claude for older configs.
+func (c *Config) Harness() string {
+	if c.PreferredHarness == "" {
+		return "claude"
+	}
+	return c.PreferredHarness
+}
+
+func (c *Config) SetPreferredHarness(harness string) error {
+	if harness != "claude" && harness != "codex" {
+		return fmt.Errorf("preferred-harness must be claude or codex, got %q", harness)
+	}
+	c.PreferredHarness = harness
+	return nil
+}
+
+// HarnessLaunch preserves the configured Claude command and uses the Codex launcher defaults.
+func (c *Config) HarnessLaunch(harness string) LaunchConfig {
+	if harness == "codex" {
+		return LaunchConfig{Command: "codex", SessionContext: true}
+	}
+	return c.ClaudeCode
 }
 
 // AddProject records a project's work folder; it reports whether it was added.
@@ -193,6 +218,9 @@ func (h Home) Load() (*Config, error) {
 	}
 	if cfg.Heat != nil && cfg.Heat.NewDays < 0 {
 		return nil, fmt.Errorf("%s: heat.new_days must be 0 or more", h.ConfigPath())
+	}
+	if err := cfg.SetPreferredHarness(cfg.Harness()); err != nil {
+		return nil, err
 	}
 	return &cfg, nil
 }

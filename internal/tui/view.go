@@ -1,6 +1,6 @@
 // Package tui is the atlas view: every project on one screen, with the keys that open one
-// in Obsidian or start Claude Code in it. It lists and launches; creating and changing
-// things is the CLI's and the session's job.
+// in Obsidian or start the preferred harness in it. It lists and launches; creating and changing
+// project content is the CLI's and the session's job. Global preferences live on Config.
 package tui
 
 import (
@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/nathanaday/atlas-obsidian/internal/actions"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/registry"
 	"github.com/nathanaday/atlas-obsidian/internal/threads"
 )
@@ -42,21 +43,22 @@ func entryName(e registry.Entry) string {
 	return e.Name
 }
 
-// Opener connects the view to Obsidian and Claude Code without the screen doing the work
-// itself. Obsidian opens the project's folder at path. Claude runs a Claude Code session in
+// Opener connects the view to Obsidian and the preferred harness without the screen doing the work
+// itself. Obsidian opens the atlas/<name>/ folder at path. Agent runs the selected harness in
 // the work folder at path, holding the terminal until the session ends.
 type Opener struct {
 	Obsidian func(path string) error
-	Claude   func(path string) error
+	Agent    func(harness, path string) error
 }
 
 // now is the clock the screens use; tests may replace it.
 var now = time.Now
 
-// claudeDoneMsg reports that a Claude Code session ended and the view has the terminal back.
-type claudeDoneMsg struct {
-	name string
-	err  error
+// agentDoneMsg reports that a harness session ended and the view has the terminal back.
+type agentDoneMsg struct {
+	harness string
+	name    string
+	err     error
 }
 
 // openedMsg reports the outcome of an Obsidian open that ran in the background.
@@ -70,7 +72,7 @@ type refreshedMsg struct {
 	err error
 }
 
-// launch adapts an Opener.Claude call to what Bubble Tea hands the terminal to.
+// launch adapts an Opener.Agent call to what Bubble Tea hands the terminal to.
 type launch struct {
 	run func() error
 }
@@ -86,12 +88,14 @@ type tab int
 const (
 	tabProjects tab = iota
 	tabProblems
+	tabConfig
 )
 
-var tabNames = map[tab]string{tabProjects: "Projects", tabProblems: "Problems"}
+var tabNames = map[tab]string{tabProjects: "Projects", tabProblems: "Problems", tabConfig: "Config"}
 
 // captions say what each tab holds.
 var captions = map[tab]string{
+	tabConfig:   "Global settings. Choose your preferred harness; Enter saves it for every project.",
 	tabProjects: "A project is an atlas/<name>/ folder inside your work: its wiki, and its threads in their phases. Open it in Obsidian to read both.",
 	tabProblems: "Folders the atlas knows but could not read.",
 }
@@ -125,7 +129,8 @@ type view struct {
 	height    int
 	refreshed string
 	// help shows every key in the footer; off, the footer names only the tab's keys.
-	help bool
+	help         bool
+	configChoice string
 }
 
 func newView(items []Item, opener Opener, acts actions.Atlas) view {
@@ -134,6 +139,7 @@ func newView(items []Item, opener Opener, acts actions.Atlas) view {
 		newBoard(boardProjects, items, v.width),
 		newBoard(boardProblems, items, v.width),
 	}
+	v.configChoice = v.harness()
 	v.stamp()
 	return v
 }
@@ -151,7 +157,12 @@ func (v *view) stamp() {
 func (v *view) board() *board { return &v.boards[boardOf(v.tab)] }
 
 // current is the entry under the cursor; nil on the end marker or an empty board.
-func (v *view) current() *Item { return v.board().current() }
+func (v *view) current() *Item {
+	if v.tab == tabConfig {
+		return nil
+	}
+	return v.board().current()
+}
 
 // tabs lists the tabs the bar shows: Problems only while there is one.
 func (v view) tabs() []tab {
@@ -159,7 +170,7 @@ func (v view) tabs() []tab {
 	if len(v.boards[boardOf(tabProblems)].items) > 0 {
 		out = append(out, tabProblems)
 	}
-	return out
+	return append(out, tabConfig)
 }
 
 // switchTab moves along the bar and stops at its ends.
@@ -177,6 +188,10 @@ func (v *view) switchTab(delta int) {
 // goTo shows a tab.
 func (v *view) goTo(t tab) {
 	v.tab = t
+	if t == tabConfig {
+		v.configChoice = v.harness()
+		return
+	}
 	b := v.board()
 	b.layout()
 	b.ensureVisible(v.bodyHeight())
@@ -214,7 +229,9 @@ func (v *view) rebuild(path string) {
 	for i := range v.boards {
 		v.boards[i].layout()
 	}
-	v.board().ensureVisible(v.bodyHeight())
+	if v.tab != tabConfig {
+		v.board().ensureVisible(v.bodyHeight())
+	}
 }
 
 func (v view) Init() tea.Cmd { return nil }
@@ -248,13 +265,15 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			v.boards[i].width = msg.Width
 			v.boards[i].layout()
 		}
-		v.board().ensureVisible(v.bodyHeight())
+		if v.tab != tabConfig {
+			v.board().ensureVisible(v.bodyHeight())
+		}
 		return v, nil
-	case claudeDoneMsg:
+	case agentDoneMsg:
 		if msg.err != nil {
 			v.errMsg = msg.err.Error()
 		} else {
-			v.status = "back from Claude Code in " + msg.name
+			v.status = "back from " + harnessLabel(msg.harness) + " in " + msg.name
 		}
 		// A session may have opened or closed threads; read everything again.
 		return v.refresh()
@@ -303,6 +322,9 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			v.switchTab(1)
 			return v, nil
 		}
+		if v.tab == tabConfig {
+			return v.updateConfig(msg)
+		}
 		switch msg.String() {
 		case "R":
 			return v.refresh()
@@ -321,7 +343,7 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			switch msg.String() {
 			case "c":
-				return v.claude(item)
+				return v.agent(item)
 			case "n":
 				return v.openStub(item)
 			}
@@ -416,15 +438,16 @@ func (v view) updateStub(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return v, cmd
 }
 
-// claude hands the terminal to a Claude Code session in the entry's folder and
+// agent hands the terminal to the preferred harness session in the entry's folder and
 // resumes after.
-func (v view) claude(item *Item) (tea.Model, tea.Cmd) {
-	if v.opener.Claude == nil {
-		v.errMsg = "starting Claude Code is not available here"
+func (v view) agent(item *Item) (tea.Model, tea.Cmd) {
+	if v.opener.Agent == nil {
+		v.errMsg = "starting the preferred harness is not available here"
 		return v, nil
 	}
-	name, path, run := entryName(item.Entry), item.Entry.Path, v.opener.Claude
-	return v, tea.Exec(launch{run: func() error { return run(path) }}, func(err error) tea.Msg { return claudeDoneMsg{name: name, err: err} })
+	harness := v.harness()
+	name, path, run := entryName(item.Entry), item.Entry.Path, v.opener.Agent
+	return v, tea.Exec(launch{run: func() error { return run(harness, path) }}, func(err error) tea.Msg { return agentDoneMsg{name: name, harness: harness, err: err} })
 }
 
 // open starts opening the project's folder in Obsidian in the background.
@@ -435,7 +458,13 @@ func (v view) open(item *Item) (tea.Model, tea.Cmd) {
 	}
 	name, path, fn := entryName(item.Entry), item.Entry.Path, v.opener.Obsidian
 	v.busy = "opening " + name + " in Obsidian…"
-	return v, func() tea.Msg { return openedMsg{name: name, err: fn(path)} }
+	return v, func() tea.Msg {
+		p, err := project.Open(path)
+		if err != nil {
+			return openedMsg{name: name, err: err}
+		}
+		return openedMsg{name: name, err: fn(p.Atlas())}
+	}
 }
 
 // footer renders the prompt, progress, or status lines under a screen.
@@ -482,7 +511,7 @@ func (v view) tabRow(counts bool) string {
 	var parts []string
 	for _, t := range v.tabs() {
 		text := tabNames[t]
-		if counts {
+		if counts && t != tabConfig {
 			text += fmt.Sprintf(" (%d)", len(v.boards[boardOf(t)].items))
 		}
 		parts = append(parts, tabStyle(tabColor(t), t == v.tab).Render(text))
@@ -532,6 +561,9 @@ func (v view) fit(frame string) string {
 }
 
 func (v view) View() string {
+	if v.tab == tabConfig {
+		return v.configView()
+	}
 	var b strings.Builder
 	b.WriteString(v.head())
 	bd := v.board()
@@ -555,6 +587,9 @@ func (v view) View() string {
 // keys for the entry under the cursor, h, and q. With help on it names every key on
 // two lines.
 func (v view) hints() []string {
+	if v.tab == tabConfig {
+		return []string{"↑↓ choose · Enter save · ←→ tabs · q quit"}
+	}
 	quit := "h help · q quit"
 	if v.help {
 		quit = "h hide help · q quit"
@@ -565,9 +600,9 @@ func (v view) hints() []string {
 	bd := v.board()
 	var parts []string
 	if it := bd.current(); it != nil {
-		parts = append(parts, enterHint(bd, it), entryKeys(it.Entry))
+		parts = append(parts, enterHint(bd, it), v.entryKeys(it.Entry))
 	}
-	return []string{strings.Join(append(parts, quit), " · ")}
+	return []string{strings.Join(append(parts, "←→ tabs", quit), " · ")}
 }
 
 // enterHint says what Enter does to the entry under the cursor.
@@ -579,11 +614,11 @@ func enterHint(bd *board, it *Item) string {
 }
 
 // entryKeys lists the launch keys for one entry.
-func entryKeys(e registry.Entry) string {
+func (v view) entryKeys(e registry.Entry) string {
 	if e.Error != "" {
 		return "R refresh"
 	}
-	return "o Obsidian · c Claude · n new thread"
+	return "o Obsidian · c " + harnessLabel(v.harness()) + " · n new thread"
 }
 
 // boardHints lists the keys for the entry under the cursor.
@@ -594,7 +629,7 @@ func (v view) boardHints() string {
 	if it == nil {
 		return hints
 	}
-	return hints + " · " + enterHint(bd, it) + " · " + entryKeys(it.Entry)
+	return hints + " · " + enterHint(bd, it) + " · " + v.entryKeys(it.Entry)
 }
 
 // RunView shows the atlas until the user quits. It reports whether anything changed: a

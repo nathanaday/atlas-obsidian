@@ -60,6 +60,7 @@ Projects (PROJECT is a name, a path, or nothing for the project you are in):
   edit NAME                 change it: --name N, --description TEXT, --mode generic|lyt
   describe PROJECT          stage a snapshot of the work; the describe skill writes its page
   forget PROJECT            drop a project from the atlas; its atlas/<name>/ folder stays
+  open-agent NAME          start the preferred harness in the work folder
   open-vault [PROJECT]      open the project's folder in Obsidian
   open-claude NAME          start Claude Code in the work; --thread ID continues a thread
   open-codex NAME           start Codex in the work; --thread ID continues a thread
@@ -88,7 +89,7 @@ The wiki (PROJECT is a name, a path, or nothing for the project you are in):
 Across the atlas:
   view                      the interactive screen; the same as no command at all
   refresh                   read everything again and rewrite the registry
-  config [KEY VALUE]        show the settings, or set one: new-days N
+  config [KEY VALUE]        show or set new-days / preferred-harness
   info                      show every path and version the atlas uses
   doctor                    check the installation and every project
 
@@ -172,6 +173,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.view(rest[1:])
 	case "open-vault":
 		code, err = e.openVault(rest[1:])
+	case "open-agent":
+		code, err = e.openPreferredAgent(rest[1:])
 	case "open-claude":
 		code, err = e.openClaude(rest[1:])
 	case "open-codex":
@@ -1080,8 +1083,8 @@ func (e *env) view(args []string) (int, error) {
 	}
 	opener := tui.Opener{
 		Obsidian: func(path string) error { return obsidian.RegisterAndOpen(path) },
-		Claude: func(path string) error {
-			cmd, err := claudecode.LaunchCommand(cfg.ClaudeCode, path, "")
+		Agent: func(harness, path string) error {
+			cmd, err := claudecode.LaunchCommand(cfg.HarnessLaunch(harness), path, "")
 			if err != nil {
 				return err
 			}
@@ -1167,6 +1170,14 @@ func skillHint() string { return "skills: " + hooks.Skills }
 // trustNote explains Claude Code's own first-run dialog, whose default answer quits.
 const trustNote = "The first time in a folder, Claude Code asks whether you trust it; choose Yes."
 
+func (e *env) openPreferredAgent(args []string) (int, error) {
+	cfg, err := e.home.Load()
+	if err != nil {
+		return 1, err
+	}
+	return e.openAgent(args, cfg.Harness())
+}
+
 func (e *env) openClaude(args []string) (int, error) {
 	return e.openAgent(args, "claude")
 }
@@ -1212,9 +1223,8 @@ func (e *env) openAgent(args []string, agent string) (int, error) {
 		prompt = claudecode.ThreadPrompt(t.Stage, t.ID)
 		e.console.Say("  thread: %s (%s)", t.Title, t.Stage)
 	}
-	launch := cfg.ClaudeCode
+	launch := cfg.HarnessLaunch(agent)
 	if agent == "codex" {
-		launch = home.LaunchConfig{Command: "codex", SessionContext: true}
 		prompt = strings.Replace(prompt, "/atlas-obsidian:", "$", 1)
 	}
 	cmd, err := claudecode.LaunchCommand(launch, entry.Path, prompt)
@@ -1882,6 +1892,7 @@ func (e *env) config(args []string) (int, error) {
 	c := e.console
 	if len(args) == 0 {
 		row := func(label, value string) { c.Say("  %-18s %s", label, value) }
+		row("preferred-harness", cfg.Harness())
 		row("new-days", fmt.Sprintf("%d  (an entry is new for this many days after its creation; 0 turns it off)", cfg.NewDays()))
 		row("projects", fmt.Sprintf("%d registered", len(cfg.Projects)))
 		row("claude command", cfg.ClaudeCode.Command)
@@ -1890,9 +1901,15 @@ func (e *env) config(args []string) (int, error) {
 		return 0, nil
 	}
 	if len(args) != 2 {
-		return 2, errors.New("usage: atlas-obsidian config [KEY VALUE]; keys: new-days")
+		return 2, errors.New("usage: atlas-obsidian config [KEY VALUE]; keys: new-days, preferred-harness")
 	}
 	switch args[0] {
+	case "preferred-harness":
+		if err := actions.Bind(e.home, cfg, c).SetPreferredHarness(args[1]); err != nil {
+			return 1, err
+		}
+		c.Step(console.OK, args[0], args[1])
+		return 0, nil
 	case "new-days":
 		days, err := strconv.Atoi(args[1])
 		if err != nil {
@@ -1902,7 +1919,7 @@ func (e *env) config(args []string) (int, error) {
 			return 2, err
 		}
 	default:
-		return 2, fmt.Errorf("unknown setting %q; keys: new-days", args[0])
+		return 2, fmt.Errorf("unknown setting %q; keys: new-days, preferred-harness", args[0])
 	}
 	if err := e.home.Save(cfg); err != nil {
 		return 1, err

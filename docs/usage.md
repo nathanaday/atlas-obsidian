@@ -12,8 +12,10 @@ one tool from a Claude Code session, so scripts, muscle memory, and the
 | In `view` | Command | Tool, from a Claude Code session |
 |---|---|---|
 | Enter on a project | `show NAME` | `atlas`, `status` |
-| `o` open the project's folder in Obsidian | `open-vault NAME` | — |
-| `c` start Claude Code in the work | `open-claude NAME [--thread ID]` | — |
+| `o` open `atlas/<name>/` in Obsidian | `open-vault NAME` | — |
+| `c` start the preferred harness in the work | `open-agent NAME [--thread ID]` | — |
+| Config: choose harness, Enter saves | `config preferred-harness codex` | — |
+| — | `open-claude NAME [--thread ID]` | — |
 | — | `open-codex NAME [--thread ID]` | — |
 | `n` open a new thread | `thread PROJECT new TEXT` | `thread` |
 | `R` refresh | `refresh` | `atlas` with `refresh` |
@@ -404,8 +406,8 @@ CLI's and the session's job.
 | `←` `→` | previous tab, next tab |
 | `↑` `↓` | move |
 | Enter | expand the entry under the cursor, or collapse it |
-| `o` | open the project's folder in Obsidian |
-| `c` | start Claude Code in the work |
+| `o` | open `atlas/<name>/` in Obsidian |
+| `c` | start the preferred harness in the work |
 | `n` | open a new thread |
 | `R` | refresh in the background |
 | `h` | show every key; again to hide them |
@@ -508,6 +510,18 @@ atlas-obsidian apply webapp plan.json
   }
 }
 ```
+
+The TUI's Config tab edits the global preferred harness: use ↑/↓ to choose
+Claude Code or Codex, then Enter to save. The `c` shortcut uses the saved choice
+immediately. Existing configs default to Claude Code.
+
+```bash
+atlas-obsidian config preferred-harness codex
+atlas-obsidian open-agent webapp
+```
+
+`preferred_harness` in the config file accepts `claude` or `codex`.
+`open-claude` and `open-codex` continue to select a specific harness.
 
 `atlas-obsidian config` prints the settings; `atlas-obsidian config new-days 14`
 sets one and refreshes.

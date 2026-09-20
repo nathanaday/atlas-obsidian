@@ -157,12 +157,15 @@ atlas-obsidian
 
 With no arguments the binary opens a terminal view of every project it knows,
 listed by name, each with its recent activity and what is open. Arrow keys
-move, Enter expands an entry in place, `o` opens it in Obsidian, `c` starts
-Claude Code in the work folder, `n` opens a new thread, `R` re-reads
+move, Enter expands an entry in place, `o` opens `atlas/<name>/` in Obsidian, `c` starts
+your preferred harness in the work folder, `n` opens a new thread, `R` re-reads
 everything, and `h` shows the keys.
 
-The terminal view's `c` shortcut and `open-claude` command launch Claude Code.
-Use `atlas-obsidian open-codex webapp` to launch Codex, or add
+On the Config tab, use ↑/↓ to choose Claude Code or Codex and Enter to save.
+The preference is stored globally; existing configs default to Claude Code.
+You can also set it with `atlas-obsidian config preferred-harness codex`.
+`open-agent webapp` launches the preferred harness; `open-claude` and
+`open-codex` select a specific harness. Use `atlas-obsidian open-codex webapp` to launch Codex, or add
 `--thread "Filter vehicle"` to continue a particular thread.
 
 ## How writes reach the wiki

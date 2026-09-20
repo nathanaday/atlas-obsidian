@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -128,15 +129,15 @@ func TestTheScreenIsOneListOfProjects(t *testing.T) {
 		t.Fatalf("problems: tab=%d", v.tab)
 	}
 	v = pressV(v, tea.KeyRight)
-	if v.tab != tabProblems {
-		t.Fatal("the bar does not wrap")
+	if v.tab != tabConfig {
+		t.Fatal("the Config tab follows Problems")
 	}
 	v = pressV(v, tea.KeyLeft, tea.KeyLeft)
 	if v.tab != tabProjects {
 		t.Fatalf("left stops at Projects: tab=%d", v.tab)
 	}
 	clean := newView(sample()[:3], Opener{}, actions.Atlas{})
-	if strings.Contains(clean.View(), "Problems") || len(clean.tabs()) != 1 {
+	if strings.Contains(clean.View(), "Problems") || len(clean.tabs()) != 2 {
 		t.Fatal("no problems, no Problems tab")
 	}
 }
@@ -207,24 +208,39 @@ func TestCursorMovesAndStopsAtTheEndMarker(t *testing.T) {
 }
 
 func TestOpenPutsTheProjectsFolderInObsidian(t *testing.T) {
+	work := t.TempDir()
+	_, err := project.Init(work, project.Options{Name: "webapp", NoGit: true}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := sample()
+	items[0].Entry.Path = work
 	opened := ""
 	opener := Opener{Obsidian: func(path string) error { opened = path; return nil }}
-	v := findEntry(t, newView(sample(), opener, actions.Atlas{}), "webapp")
+	v := findEntry(t, newView(items, opener, actions.Atlas{}), "webapp")
 	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
 	v = next.(view)
 	if v.busy == "" || cmd == nil {
 		t.Fatal("o opens in the background")
 	}
 	v = runCmd(v, cmd)
-	if opened != "/code/webapp" || v.busy != "" || !strings.Contains(v.status, "opened webapp in Obsidian") {
+	if opened != filepath.Join(work, "atlas", "webapp") || v.busy != "" || !strings.Contains(v.status, "opened webapp in Obsidian") {
 		t.Fatalf("opened=%q busy=%q status=%q", opened, v.busy, v.status)
 	}
 	failing := Opener{Obsidian: func(string) error { return errors.New("no Obsidian") }}
-	v = findEntry(t, newView(sample(), failing, actions.Atlas{}), "webapp")
+	v = findEntry(t, newView(items, failing, actions.Atlas{}), "webapp")
 	next, cmd = v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
 	v = runCmd(next.(view), cmd)
 	if v.errMsg != "no Obsidian" {
 		t.Fatalf("the error reaches the footer: %q", v.errMsg)
+	}
+	items[0].Entry.Path = t.TempDir()
+	opened = ""
+	v = findEntry(t, newView(items, opener, actions.Atlas{}), "webapp")
+	next, cmd = v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+	v = runCmd(next.(view), cmd)
+	if opened != "" || v.errMsg == "" || v.busy != "" {
+		t.Fatalf("missing project: opened=%q error=%q busy=%q", opened, v.errMsg, v.busy)
 	}
 	none := findEntry(t, newView(sample(), Opener{}, actions.Atlas{}), "webapp")
 	if none = keyV(none, "o"); !strings.Contains(none.errMsg, "not available") {
@@ -234,7 +250,7 @@ func TestOpenPutsTheProjectsFolderInObsidian(t *testing.T) {
 
 func TestClaudeStartsInTheWork(t *testing.T) {
 	launched := ""
-	opener := Opener{Claude: func(path string) error { launched = path; return nil }}
+	opener := Opener{Agent: func(harness, path string) error { launched = path; return nil }}
 	v := findEntry(t, newView(sample(), opener, actions.Atlas{}), "webapp")
 	_, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	if cmd == nil {
@@ -243,7 +259,7 @@ func TestClaudeStartsInTheWork(t *testing.T) {
 	if _, ok := cmd().(tea.QuitMsg); ok {
 		t.Fatal("c does not quit")
 	}
-	next, refreshCmd := v.Update(claudeDoneMsg{name: "webapp"})
+	next, refreshCmd := v.Update(agentDoneMsg{name: "webapp"})
 	v = next.(view)
 	if !strings.Contains(v.errMsg+v.status, "back from Claude Code in webapp") && refreshCmd != nil {
 		t.Fatalf("status=%q err=%q", v.status, v.errMsg)
@@ -384,7 +400,7 @@ func TestNewThreadWritesARealStub(t *testing.T) {
 func TestHelpTogglesTheFooter(t *testing.T) {
 	v := findEntry(t, newView(sample(), Opener{}, actions.Atlas{}), "webapp")
 	out := v.View()
-	if !strings.Contains(out, "Enter details · o Obsidian · c Claude · n new thread · h help · q quit") || strings.Contains(out, "←→ tabs") {
+	if !strings.Contains(out, "Enter details · o Obsidian · c Claude Code · n new thread · ←→ tabs · h help · q quit") {
 		t.Fatalf("help off names the row's keys:\n%s", out)
 	}
 	v = keyV(v, "h")

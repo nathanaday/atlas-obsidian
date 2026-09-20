@@ -28,6 +28,8 @@ type InitProject struct {
 // Atlas is every action the CLI, the view, and the tools reach. Each field is one
 // function from the package that owns the action, bound to the atlas home and its config.
 type Atlas struct {
+	PreferredHarness    func() string
+	SetPreferredHarness func(string) error
 	// Load reads the registry, refreshing it first when no refresh has run yet. Scan
 	// reads everything afresh, with its state derived, and writes nothing. Refresh reads
 	// everything again and rewrites the registry.
@@ -66,6 +68,21 @@ type Atlas struct {
 func Bind(h home.Home, cfg *home.Config, c *console.Console) Atlas {
 	openProject := func(en registry.Entry) (*project.Project, error) { return project.Open(en.Path) }
 	return Atlas{
+		PreferredHarness: cfg.Harness,
+		SetPreferredHarness: func(harness string) error {
+			latest, err := h.Load()
+			if err != nil {
+				return err
+			}
+			if err := latest.SetPreferredHarness(harness); err != nil {
+				return err
+			}
+			if err := h.Save(latest); err != nil {
+				return err
+			}
+			*cfg = *latest
+			return nil
+		},
 		Load: func() ([]registry.Entry, error) { return refresh.Entries(h, cfg, time.Now()) },
 		Scan: func() (*registry.Index, error) { return refresh.Derived(cfg, time.Now()) },
 		Refresh: func() (*registry.Index, error) {

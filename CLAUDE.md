@@ -277,7 +277,9 @@ restart the session. Setup selects the host with `--agent claude|codex`.
 Keep both plugin manifests and the Claude marketplace version in step.
 `open-codex NAME [--thread ID]` launches Codex in a registered project's work
 folder; `doctor --agent codex` checks its plugin via the Codex CLI. The terminal
-view's `c` shortcut and its automatic launch offers remain Claude-specific.
+view's `c` shortcut and `open-agent` use the global `preferred_harness`
+(`claude` by default, or `codex`), editable on the Config tab or with
+`config preferred-harness`. Automatic launch offers remain Claude-specific.
 
 - A plugin's `.mcp.json` may run `${CLAUDE_PLUGIN_ROOT}/...`. The server starts
   in the project directory with `CLAUDE_PROJECT_DIR` and `CLAUDE_PLUGIN_ROOT`

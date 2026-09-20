@@ -63,6 +63,16 @@ func TestCodexDoctorAndLaunch(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("open-codex=%d: %s %s", code, out.String(), stderr.String())
 	}
+	if code := h.run("config", "preferred-harness", "codex"); code != 0 {
+		t.Fatalf("config: %s", h.err.String())
+	}
+	if code := h.run("config", "preferred-harness", "other"); code == 0 || h.config(t).Harness() != "codex" {
+		t.Fatal("invalid preference changed config")
+	}
+	code = run([]string{"--home", h.home, "open-agent", "work", "--thread", "Fix it"}, strings.NewReader(""), &out, &stderr, c)
+	if code != 0 {
+		t.Fatalf("open-agent=%d: %s", code, stderr.String())
+	}
 	data, err := os.ReadFile(log)
 	if err != nil {
 		t.Fatal(err)
