@@ -1,7 +1,7 @@
 # Stubs
 
 Status: built. Lint's two lists, the stub operation, the `stub` tool, and
-`claude-atlas stub` landed on 2026-09-14
+`atlas-obsidian stub` landed on 2026-09-14
 (`superpowers/plans/2026-09-14-stubs-status.md`); v2 added the mounts a lint
 run reads, the target that files a stub in a mounted knowledge base, and the
 skipped list. The session-start line, the skills, and the docs are folded
@@ -97,7 +97,7 @@ and keeps its `missing_frontmatter` and `orphans` findings.
 `txn.StubRequest(v, titles, defaultType, mounts, now)` builds the request;
 `mounts` is what the vault mounts, for the lint run that says what is wanted,
 and `nil` reads the symlinks under `kb/`. The `stub` tool and
-`claude-atlas stub` pass the request to `txn.Prepare` and `txn.Apply` at once,
+`atlas-obsidian stub` pass the request to `txn.Prepare` and `txn.Apply` at once,
 as `plant` does: no preview, one commit, and `undo` reverts it.
 
 - With no titles, it stubs every wanted page and every empty-file stub in a
@@ -138,7 +138,7 @@ operation id and commit.
 | Surface | Form |
 |---|---|
 | MCP tool `stub` | `titles` (optional list of `{title, type, target}`), `type` (the default for titles that name none: `concept` or `entity`; in a project also `question` or `session`; in lyt mode `note` or `moc` as well), `vault` |
-| CLI | `claude-atlas stub VAULT [TITLE...] [--type T]` |
+| CLI | `atlas-obsidian stub VAULT [TITLE...] [--type T]` |
 | TUI | none; the TUI is a subset of the CLI |
 
 ## Filling a stub
@@ -171,7 +171,7 @@ hook timeout is 10 s.
   (`stubs`) and adds `WantedPages` (`wanted_pages`). Refresh takes both from
   the lint report it already runs. `refresh.SeedPages` is removed. Refresh
   rebuilds the state files, so the rename needs no migration.
-- The TUI detail pane and `claude-atlas show` list
+- The TUI detail pane and `atlas-obsidian show` list
   "empty sections · stubs · wanted pages · dead links". The unfinished total
   adds all four.
 

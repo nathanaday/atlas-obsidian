@@ -291,16 +291,22 @@ func (r Repo) matching(specs []string) []string {
 	return out
 }
 
-// Add stages the given paths, deletions included.
+// Add stages the given paths, deletions included. A path that names nothing, on disk or in
+// the index, is left out, because git add refuses a pathspec that matches nothing and a
+// caller may name a file it removed that this repository never tracked.
 func (r Repo) Add(paths ...string) error {
 	if len(paths) == 0 {
 		return nil
 	}
-	args := []string{"add", "-A", "--"}
+	specs := make([]string, 0, len(paths))
 	for _, p := range paths {
-		args = append(args, r.in(p))
+		specs = append(specs, r.in(p))
 	}
-	_, err := r.run(args...)
+	specs = r.matching(specs)
+	if len(specs) == 0 {
+		return nil
+	}
+	_, err := r.run(append([]string{"add", "-A", "--"}, specs...)...)
 	return err
 }
 
@@ -309,7 +315,7 @@ func (r Repo) identityArgs() []string {
 	if err == nil && strings.TrimSpace(out) != "" {
 		return nil
 	}
-	return []string{"-c", "user.name=claude-atlas", "-c", "user.email=claude-atlas@localhost"}
+	return []string{"-c", "user.name=atlas-obsidian", "-c", "user.email=atlas-obsidian@localhost"}
 }
 
 // Commit records the index with message and returns the new commit. It falls back to a
@@ -349,7 +355,7 @@ func (r Repo) commitPrefix(message string) (string, error) {
 			return "", err
 		}
 	}
-	dir, err := os.MkdirTemp("", "claude-atlas-index")
+	dir, err := os.MkdirTemp("", "atlas-obsidian-index")
 	if err != nil {
 		return "", err
 	}

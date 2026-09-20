@@ -11,7 +11,7 @@ the plugin, and the atlas. It takes the brainstorm in the personal-projects
 vault ("Atlas ideas") as its starting point and says where and why it departs
 from it. Two details differ from the first proposal: cross-vault planting
 through a `vaults` tool is not built, since the tools already take a `vault`
-path and `claude-atlas list` prints them; and the stale threshold is 14 days.
+path and `atlas-obsidian list` prints them; and the stale threshold is 14 days.
 
 ## What a task must do
 
@@ -112,7 +112,7 @@ new one. A task titled "Tasks" or "index" gets a numbered page.
 Two doors, one result: a page with status `planted`.
 
 1. A note in `inbox/tasks/`. The user drops a file there, from the terminal,
-   from Obsidian, or through `claude-atlas plant`. The `inbox` tool and
+   from Obsidian, or through `atlas-obsidian plant`. The `inbox` tool and
    `status` report it as a task note, not a source. The `task-plant` skill
    turns each note into a task page and removes the note in the same plan;
    the wiki-ingest skill leaves `inbox/tasks/` alone.
@@ -122,7 +122,7 @@ Two doors, one result: a page with status `planted`.
 `plant` is a core tool: it creates the page from the skeleton, gives it an id,
 updates the ledger and the index, deletes the inbox note when given one, and
 commits, as one operation of kind `task`. No plan preview is needed for a
-plant; the page is the user's own words, and undo covers it. `claude-atlas
+plant; the page is the user's own words, and undo covers it. `atlas-obsidian
 plant NAME "text"` and the `p` key in the atlas call the same function, so a
 task can be planted from anywhere without a session.
 
@@ -184,7 +184,7 @@ link which repos. So:
   that project's vault is the session's vault. Inside a folder several
   projects link, the tools name the candidates and ask for `vault`; the hook
   names them too. Outside any linked folder, silence, as today.
-  `CLAUDE_ATLAS_VAULT` still overrides everything.
+  `ATLAS_OBSIDIAN_VAULT` still overrides everything.
 - The session-start hook then prints, in a repo: the project and its vault;
   the rule to search the wiki before answering from the code alone; the open
   tasks whose `workdir` is this repo, and the rest of the project's open
@@ -204,8 +204,8 @@ file, under `docs/atlas/` by convention, and the task page links to it. The
 vault page remains the record of the task; the repo file is an artifact of
 the work, like the code.
 
-`claude-atlas open-claude NAME --task ID` starts Claude Code in the task's
-`workdir` with the vault selected, and `/claude-atlas:task-run ID` as the
+`atlas-obsidian open-claude NAME --task ID` starts Claude Code in the task's
+`workdir` with the vault selected, and `/atlas-obsidian:task-run ID` as the
 first message. From the atlas, `c` on a task does the same. A task with no workdir runs in the
 vault.
 
@@ -223,8 +223,8 @@ The atlas reads ledgers; it never writes into a vault.
   age, workdir), with `p` plant, `Enter` to open the page in Obsidian, and
   `c` to start Claude Code on the task. `T` from the tree shows the open tasks
   of every project in one list, the same keys.
-- Commands: `claude-atlas tasks [NAME]`, `claude-atlas plant NAME "text"`,
-  `claude-atlas open-claude NAME --task ID`, mirroring the keys.
+- Commands: `atlas-obsidian tasks [NAME]`, `atlas-obsidian plant NAME "text"`,
+  `atlas-obsidian open-claude NAME --task ID`, mirroring the keys.
 
 Planting from another vault's session ("add a task to cs566-project") needs
 the server to know the atlas's projects. A read-only `vaults` tool lists them
@@ -236,7 +236,7 @@ atlas; the plugin does, the way the CLI already does.
 1. Core: the task page rules, the `task` kind, the ledger, the generated
    index, `plant`, `tasks`, and `route type=task`; task lines in `status` and
    the session hook; `inbox/tasks/` and `ideas/` in the template and in adopt;
-   lint's `task_errors`; `claude-atlas plant` and `tasks`. Vault discovery
+   lint's `task_errors`; `atlas-obsidian plant` and `tasks`. Vault discovery
    from a linked folder, in the server and the hooks.
 2. Skills: `task`, `task-plant`, `task-plan`, `task-run`, `task-finish`; the
    router and the ingest skill updated.

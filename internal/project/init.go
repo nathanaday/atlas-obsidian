@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/ledger"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/ledger"
 )
 
 //go:embed all:templates
@@ -51,10 +51,41 @@ const AppFile = ".obsidian/app.json"
 
 // Snippet is the project's CSS snippet: the wiki's folder colors and every thread stage's
 // callout color and icon.
-const Snippet = ".obsidian/snippets/claude-atlas.css"
+const Snippet = ".obsidian/snippets/atlas-obsidian.css"
 
 // SnippetName is the snippet's name in Obsidian's settings.
-const SnippetName = "claude-atlas"
+const SnippetName = "atlas-obsidian"
+
+// atlasSnippet and atlasSnippetName are the snippet under the name the tool had before it
+// was renamed to atlas-obsidian. Refresh deletes the file and turns the name off, so a
+// project carried over does not keep two copies of the same rules.
+const (
+	atlasSnippet     = ".obsidian/snippets/claude-atlas.css"
+	atlasSnippetName = "claude-atlas"
+)
+
+// HasAtlasSnippet reports whether a project still carries the CSS snippet the tool wrote
+// under its earlier name, as the file or as a name Obsidian still has turned on. Refresh
+// retires both, so upgrade names this as a step it would take.
+func HasAtlasSnippet(p *Project) bool {
+	if _, err := os.Stat(p.Path(atlasSnippet)); err == nil {
+		return true
+	}
+	settings, found, err := readSettings(p.Atlas(), AppearanceFile)
+	if err != nil || !found {
+		return false
+	}
+	list, ok := settings["enabledCssSnippets"].([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range list {
+		if item == atlasSnippetName {
+			return true
+		}
+	}
+	return false
+}
 
 // settingsMerges are the Obsidian settings files an existing folder keeps, with the change
 // each one needs.
@@ -118,18 +149,32 @@ func mergeSettings(root, rel string, template []byte, merge func(map[string]any)
 	return true, os.WriteFile(filepath.Join(root, filepath.FromSlash(rel)), append(data, '\n'), 0o644)
 }
 
-// enableSnippet turns on the project's CSS snippet.
+// enableSnippet turns on the project's CSS snippet and turns off the one the tool enabled
+// under its earlier name.
 func enableSnippet(settings map[string]any) bool {
 	var enabled []any
 	if list, ok := settings["enabledCssSnippets"].([]any); ok {
 		enabled = list
 	}
+	kept := make([]any, 0, len(enabled)+1)
+	var on, dropped bool
 	for _, item := range enabled {
-		if item == SnippetName {
-			return false
+		switch item {
+		case SnippetName:
+			on = true
+		case atlasSnippetName:
+			dropped = true
+			continue
 		}
+		kept = append(kept, item)
 	}
-	settings["enabledCssSnippets"] = append(enabled, SnippetName)
+	if on && !dropped {
+		return false
+	}
+	if !on {
+		kept = append(kept, SnippetName)
+	}
+	settings["enabledCssSnippets"] = kept
 	return true
 }
 
@@ -174,7 +219,7 @@ func mergeGitignore(root string, template []byte) error {
 	if !bytes.HasSuffix(existing, []byte("\n")) {
 		b.WriteString("\n")
 	}
-	b.WriteString("\n# added by claude-atlas\n")
+	b.WriteString("\n# added by atlas-obsidian\n")
 	b.WriteString(strings.Join(missing, "\n") + "\n")
 	return os.WriteFile(path, b.Bytes(), 0o644)
 }
@@ -236,6 +281,11 @@ func writeMissing(root string, cfg Config, now time.Time, overwrite bool) ([]str
 		if err := put(rel, data); err != nil {
 			return nil, err
 		}
+	}
+	if err := os.Remove(filepath.Join(root, filepath.FromSlash(atlasSnippet))); err == nil {
+		written = append(written, atlasSnippet)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
 	}
 	if err := put(Marker, cfg.Encode()); err != nil {
 		return nil, err

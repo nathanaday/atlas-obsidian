@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
 )
 
 var now = time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)

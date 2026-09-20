@@ -6,14 +6,14 @@ package actions
 import (
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/capture"
-	"github.com/nathanaday/claude-atlas/internal/console"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/manage"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/refresh"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/threads"
+	"github.com/nathanaday/atlas-obsidian/internal/capture"
+	"github.com/nathanaday/atlas-obsidian/internal/console"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/manage"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/refresh"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
 )
 
 // InitProject is what a caller chose for a new project.

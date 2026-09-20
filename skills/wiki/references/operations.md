@@ -9,7 +9,7 @@ one `apply`, one git commit. Parallel workers read and draft; only the
 orchestrator plans and applies.
 
 The tools are on the atlas MCP server, named
-`mcp__plugin_claude-atlas_atlas__<tool>`. Every tool acts on this session's
+`mcp__plugin_atlas-obsidian_atlas__<tool>`. Every tool acts on this session's
 project and its one wiki. None takes a vault argument.
 
 | Tool | Use |
@@ -102,7 +102,7 @@ it).
   plan was made. Read it again and plan again.
 - A validation error means nothing was written.
 - An interrupted apply is restored from git by the next `status` or by
-  `claude-atlas recover`. The user runs recovery; tell them when it is
+  `atlas-obsidian recover`. The user runs recovery; tell them when it is
   needed.
 - Hand edits the user made in Obsidian are committed as `manual` operations
   before yours runs. They are never lost and never mixed into your commit;

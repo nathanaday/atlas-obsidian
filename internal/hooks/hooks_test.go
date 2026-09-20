@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/manage"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/threads"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/manage"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
 )
 
-// env answers CLAUDE_ATLAS_HOME with a temp path that does not exist, so a test that names
-// no home reads no atlas at all instead of the developer's ~/.claude-atlas.
+// env answers ATLAS_OBSIDIAN_HOME with a temp path that does not exist, so a test that names
+// no home reads no atlas at all instead of the developer's ~/.atlas-obsidian.
 func env(t *testing.T, values map[string]string) Env {
 	t.Helper()
 	noAtlas := filepath.Join(t.TempDir(), "no-atlas")
@@ -63,7 +63,7 @@ func TestSessionStartInAProject(t *testing.T) {
 	p, _ := project.Open(work)
 	text := run(t, filepath.Join(work, "src"), e, true, now)
 	for _, want := range []string{
-		"claude-atlas: project code at " + home.Display(work) + " (git, ",
+		"atlas-obsidian: project code at " + home.Display(work) + " (git, ",
 		"Description: The web app.",
 		"Wiki: atlas/code/wiki · ",
 		" pages · generic mode",
@@ -83,8 +83,8 @@ func TestSessionStartInAProject(t *testing.T) {
 		}
 	}
 	// Context off, and the place named by the environment rather than the folder.
-	off := env(t, map[string]string{home.EnvHome: h.Root, project.EnvProject: work, "CLAUDE_ATLAS_SESSION_CONTEXT": "0"})
-	if text := run(t, "/nowhere", off, true, now); !strings.Contains(text, "claude-atlas: project code") || strings.Contains(text, "<vault-context>") {
+	off := env(t, map[string]string{home.EnvHome: h.Root, project.EnvProject: work, "ATLAS_OBSIDIAN_SESSION_CONTEXT": "0"})
+	if text := run(t, "/nowhere", off, true, now); !strings.Contains(text, "atlas-obsidian: project code") || strings.Contains(text, "<vault-context>") {
 		t.Fatalf("the environment names the project, with context off:\n%s", text)
 	}
 	// Outside every project the hook is silent.
@@ -124,7 +124,7 @@ func TestSessionStartInAProject(t *testing.T) {
 		" · Alpha · high · updated " + now.Format("2006-01-02") + "\n",
 		"Inbox: 1 source for the wiki-ingest skill, 1 note for the thread-stub skill.",
 		"Not readable: threads/specs/broken.md (",
-		"task pages from before threads; `claude-atlas upgrade",
+		"task pages from before threads; `atlas-obsidian upgrade",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in:\n%s", want, text)
@@ -206,14 +206,14 @@ func TestSessionStartNamesTheLayoutsOfEarlierVersions(t *testing.T) {
 	os.WriteFile(filepath.Join(split, project.Dir, "old", project.Marker),
 		[]byte(`{"schema":"claude-atlas.project.v3","id":"p1","name":"old","knowledge":{"id":"k1","name":"notes"}}`), 0o644)
 	text := run(t, split, env(t, nil), true, time.Now())
-	if !strings.Contains(text, "3.x project") || !strings.Contains(text, "claude-atlas upgrade") {
+	if !strings.Contains(text, "3.x project") || !strings.Contains(text, "atlas-obsidian upgrade") {
 		t.Errorf("a 3.x project:\n%s", text)
 	}
 	// The flat layout of 2.2.0.
 	flat := t.TempDir()
 	os.MkdirAll(filepath.Join(flat, project.Dir), 0o755)
 	os.WriteFile(filepath.Join(flat, project.Dir, project.Marker), []byte(`{"schema":"`+project.Schema+`","id":"f","name":"flat"}`), 0o644)
-	if text := run(t, flat, env(t, nil), true, time.Now()); !strings.Contains(text, "sits directly in atlas/; run claude-atlas upgrade") {
+	if text := run(t, flat, env(t, nil), true, time.Now()); !strings.Contains(text, "sits directly in atlas/; run atlas-obsidian upgrade") {
 		t.Errorf("a flat project:\n%s", text)
 	}
 	// A 3.x knowledge base.

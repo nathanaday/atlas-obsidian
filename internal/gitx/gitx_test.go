@@ -520,3 +520,26 @@ func TestScopeNarrowsAPrefixToTheFoldersTheCallerOwns(t *testing.T) {
 		t.Fatalf("the scoped log holds the engine's commits only: %v %v", commits, err)
 	}
 }
+
+// Add takes a path the caller removed that the repository never tracked, and stages the
+// rest instead of failing the whole call.
+func TestAddSkipsAPathThatNamesNothing(t *testing.T) {
+	r := repo(t)
+	write(t, r, "kept.md", "kept\n")
+	if err := r.Add("kept.md", "never-existed.css"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	staged, err := r.Staged()
+	if err != nil || !staged {
+		t.Fatalf("staged %v %v", staged, err)
+	}
+	entries, err := r.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Path == "never-existed.css" {
+			t.Fatalf("a path that names nothing was staged: %+v", entries)
+		}
+	}
+}

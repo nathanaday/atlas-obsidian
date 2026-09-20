@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/threads"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
 )
 
 // v3Knowledge writes a 3.x knowledge base at dir: its identity file, a wiki page, an inbox

@@ -1,6 +1,6 @@
 # Knowledge base clusters
 
-Date: 2026-09-16. Applies to claude-atlas 1.1.0; ships as 1.2.0.
+Date: 2026-09-16. Applies to atlas-obsidian 1.1.0; ships as 1.2.0.
 Builds on `docs/v2-design.md`, which this document extends. Nothing here
 changes what a project or a knowledge base already is.
 
@@ -25,7 +25,7 @@ members is what exists today. Nothing else distinguishes the two.
 
 ```json
 {
-  "schema": "claude-atlas.vault.v2",
+  "schema": "atlas-obsidian.vault.v2",
   "id": "1a2b3c4d-…",
   "kind": "knowledge",
   "name": "p3",
@@ -150,12 +150,12 @@ link removed by the same pass.
 ## Commands
 
 ```bash
-claude-atlas new-cluster p3 --scope "The moviTHERM ecosystem."
-claude-atlas cluster add p3 p3-software
-claude-atlas cluster add p3 p3-people
-claude-atlas cluster remove p3 p3-people
-claude-atlas mount vision-algorithms p3
-claude-atlas unmount vision-algorithms p3
+atlas-obsidian new-cluster p3 --scope "The moviTHERM ecosystem."
+atlas-obsidian cluster add p3 p3-software
+atlas-obsidian cluster add p3 p3-people
+atlas-obsidian cluster remove p3 p3-people
+atlas-obsidian mount vision-algorithms p3
+atlas-obsidian unmount vision-algorithms p3
 ```
 
 - `new-cluster NAME` creates a knowledge base with an empty `members` list. It

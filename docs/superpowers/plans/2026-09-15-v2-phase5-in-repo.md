@@ -13,11 +13,11 @@
 ## Global Constraints
 
 - Every write path goes through `txn.Prepare` and `txn.Apply`. `vault.Init`, `vault.InitIn` (new), `vault.Adopt`, `vault.Upgrade`, and `vault.UpdateConfig` are the only code that writes vault files directly, and only before or outside an operation.
-- Ids travel; paths stay. The identity file never holds a path or a layout. `~/.claude-atlas/config.json` holds the paths the atlas cannot compute: an in-repository project sits outside the vaults directory, so `new-project --in` registers its path there.
+- Ids travel; paths stay. The identity file never holds a path or a layout. `~/.atlas-obsidian/config.json` holds the paths the atlas cannot compute: an in-repository project sits outside the vaults directory, so `new-project --in` registers its path there.
 - Every git command the engine runs inside a repository takes the pathspec `atlas/`. The manual-edits commit and the operation commit touch only paths under `atlas/`. An operation never commits code outside `atlas/`, staged or not.
 - The scan is the truth; every command that acts on a vault scans afresh.
 - Dependencies: `gopkg.in/yaml.v3`, the MCP `go-sdk` v1.4.0, Bubble Tea, Bubbles, Lip Gloss. Nothing else.
-- Tests never touch a real `~/.claude-atlas`; they skip when git is missing (`gitx.Available`); MCP tools are tested in-process.
+- Tests never touch a real `~/.atlas-obsidian`; they skip when git is missing (`gitx.Available`); MCP tools are tested in-process.
 - Commits: `git -c user.name=nathanaday -c user.email=nraday1221@gmail.com commit`; no `Co-Authored-By`; subject `area: what changed`; stage by name; never stage `.superpowers/`.
 - Prose (comments, messages, docs): short plain sentences, active voice, no metaphors; never "flag" (except a CLI flag), "genuine", "honest", "shape", "load bearing", "judgement call", "earned its keep", "worth flagging". Comments are sparse.
 - The folder name is fixed: `atlas`. `vault.InRepoDir = "atlas"`.

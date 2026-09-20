@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nathanaday/claude-atlas/internal/links"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/threads"
+	"github.com/nathanaday/atlas-obsidian/internal/links"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
 )
 
 func TestBoxLinesShowBothHalves(t *testing.T) {
@@ -75,10 +75,10 @@ func TestThreadSummaryText(t *testing.T) {
 
 func TestProblemFixNamesTheCommand(t *testing.T) {
 	cases := []struct{ reason, err, want string }{
-		{registry.ReasonV3Split, "e", "claude-atlas upgrade"},
-		{registry.ReasonFlat, "e", "claude-atlas upgrade"},
-		{registry.ReasonMissing, "not found; work in it again to heal the path, or run claude-atlas forget", "claude-atlas forget"},
-		{registry.ReasonNotProject, "e", "claude-atlas init"},
+		{registry.ReasonV3Split, "e", "atlas-obsidian upgrade"},
+		{registry.ReasonFlat, "e", "atlas-obsidian upgrade"},
+		{registry.ReasonMissing, "not found; work in it again to heal the path, or run atlas-obsidian forget", "atlas-obsidian forget"},
+		{registry.ReasonNotProject, "e", "atlas-obsidian init"},
 		{registry.ReasonUnreadable, "e", "repair the identity file"},
 		{registry.ReasonSchema, "e", "update the binary"},
 	}

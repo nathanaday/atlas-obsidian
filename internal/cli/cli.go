@@ -15,36 +15,36 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/actions"
-	"github.com/nathanaday/claude-atlas/internal/capture"
-	"github.com/nathanaday/claude-atlas/internal/claudecode"
-	"github.com/nathanaday/claude-atlas/internal/console"
-	"github.com/nathanaday/claude-atlas/internal/describe"
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/hooks"
-	"github.com/nathanaday/claude-atlas/internal/lint"
-	"github.com/nathanaday/claude-atlas/internal/manage"
-	"github.com/nathanaday/claude-atlas/internal/mcpserver"
-	"github.com/nathanaday/claude-atlas/internal/obsidian"
-	"github.com/nathanaday/claude-atlas/internal/place"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/refresh"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/threads"
-	"github.com/nathanaday/claude-atlas/internal/tui"
-	"github.com/nathanaday/claude-atlas/internal/txn"
-	"github.com/nathanaday/claude-atlas/internal/wizard"
+	"github.com/nathanaday/atlas-obsidian/internal/actions"
+	"github.com/nathanaday/atlas-obsidian/internal/capture"
+	"github.com/nathanaday/atlas-obsidian/internal/claudecode"
+	"github.com/nathanaday/atlas-obsidian/internal/console"
+	"github.com/nathanaday/atlas-obsidian/internal/describe"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/hooks"
+	"github.com/nathanaday/atlas-obsidian/internal/lint"
+	"github.com/nathanaday/atlas-obsidian/internal/manage"
+	"github.com/nathanaday/atlas-obsidian/internal/mcpserver"
+	"github.com/nathanaday/atlas-obsidian/internal/obsidian"
+	"github.com/nathanaday/atlas-obsidian/internal/place"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/refresh"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
+	"github.com/nathanaday/atlas-obsidian/internal/tui"
+	"github.com/nathanaday/atlas-obsidian/internal/txn"
+	"github.com/nathanaday/atlas-obsidian/internal/wizard"
 )
 
 // Version is set at build time with -ldflags "-X .../cli.Version=v1.2.3".
 var Version = "dev"
 
-const usage = `claude-atlas: a wiki and the state of the work, in every project.
+const usage = `atlas-obsidian: a wiki and the state of the work, in every project.
 
 Usage:
-  claude-atlas                       open the view: every project on one screen
-  claude-atlas [--home DIR] [-y] <command> [options]
+  atlas-obsidian                       open the view: every project on one screen
+  atlas-obsidian [--home DIR] [-y] <command> [options]
 
 Getting started:
   setup                     install the Claude Code plugin
@@ -98,7 +98,7 @@ Plugin:
   version                   print the version
 
 Global options:
-  --home DIR       atlas home (default ~/.claude-atlas or $CLAUDE_ATLAS_HOME)
+  --home DIR       atlas home (default ~/.atlas-obsidian or $ATLAS_OBSIDIAN_HOME)
   -y, --yes        answer yes to every prompt
 `
 
@@ -117,7 +117,7 @@ func Main(args []string) int {
 
 // run is Main with injectable streams; console may be nil to build one from stdin.
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Console) int {
-	global := flag.NewFlagSet("claude-atlas", flag.ContinueOnError)
+	global := flag.NewFlagSet("atlas-obsidian", flag.ContinueOnError)
 	global.SetOutput(io.Discard)
 	homeFlag := global.String("home", "", "")
 	yes := global.Bool("yes", false, "")
@@ -145,7 +145,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 			return 0
 		case !e.home.Exists():
 			fmt.Fprint(stdout, usage)
-			fmt.Fprintf(stdout, "\nNo atlas yet; run `claude-atlas setup`, then `claude-atlas init` in your work.\n")
+			fmt.Fprintf(stdout, "\nNo atlas yet; run `atlas-obsidian setup`, then `atlas-obsidian init` in your work.\n")
 			return 0
 		}
 		rest = []string{"view"}
@@ -317,7 +317,7 @@ func findEntry(ix *registry.Index, arg string) (registry.Entry, error) {
 	if bad := badEntry(ix, arg); bad != nil {
 		return registry.Entry{}, fmt.Errorf("%s: %s", home.Display(bad.Path), bad.Error)
 	}
-	return registry.Entry{}, fmt.Errorf("no project named %q; see `claude-atlas list`", arg)
+	return registry.Entry{}, fmt.Errorf("no project named %q; see `atlas-obsidian list`", arg)
 }
 
 // findAnyEntry resolves an entry by name, id, or path, and one the atlas could not read
@@ -333,7 +333,7 @@ func findAnyEntry(ix *registry.Index, arg string) (registry.Entry, error) {
 	if bad := badEntry(ix, arg); bad != nil {
 		return *bad, nil
 	}
-	return registry.Entry{}, fmt.Errorf("nothing named %q in the atlas; see `claude-atlas list`", arg)
+	return registry.Entry{}, fmt.Errorf("nothing named %q in the atlas; see `atlas-obsidian list`", arg)
 }
 
 // uncoveredProblems lists the scan's problems that no entry carries, so a command names
@@ -411,7 +411,7 @@ func (e *env) projectArg(arg string) (*project.Project, *registry.Entry, error) 
 	case arg == "" || arg == ".":
 		work = project.FindAbove(cwd())
 		if work == "" {
-			return nil, nil, fmt.Errorf("%w: the current directory is not inside a project; name one or run `claude-atlas init`", project.ErrNotProject)
+			return nil, nil, fmt.Errorf("%w: the current directory is not inside a project; name one or run `atlas-obsidian init`", project.ErrNotProject)
 		}
 	case strings.ContainsAny(arg, `/\`) || strings.HasPrefix(arg, "~"):
 		abs, err := filepath.Abs(home.Expand(arg))
@@ -430,7 +430,7 @@ func (e *env) projectArg(arg string) (*project.Project, *registry.Entry, error) 
 				found, err := ix.Find(arg)
 				if err != nil {
 					if errors.Is(err, registry.ErrNotFound) {
-						return nil, nil, fmt.Errorf("no project named %q; see `claude-atlas list`", arg)
+						return nil, nil, fmt.Errorf("no project named %q; see `atlas-obsidian list`", arg)
 					}
 					return nil, nil, err
 				}
@@ -442,7 +442,7 @@ func (e *env) projectArg(arg string) (*project.Project, *registry.Entry, error) 
 		}
 	}
 	if work == "" {
-		return nil, nil, fmt.Errorf("no atlas config; name the project by its path, or run `claude-atlas setup`")
+		return nil, nil, fmt.Errorf("no atlas config; name the project by its path, or run `atlas-obsidian setup`")
 	}
 	p, err := project.Open(work)
 	if err != nil {
@@ -540,7 +540,7 @@ func (e *env) initProject(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) > 1 {
-		return 2, errors.New("usage: claude-atlas init [PATH] [--name N] [--description TEXT] [--mode generic|lyt] [--no-git]")
+		return 2, errors.New("usage: atlas-obsidian init [PATH] [--name N] [--description TEXT] [--mode generic|lyt] [--no-git]")
 	}
 	work := cwd()
 	if len(positional) == 1 {
@@ -601,15 +601,15 @@ func (e *env) initProject(args []string) (int, error) {
 		ref = entryArg(ix, p.Root)
 	}
 	next := [][2]string{
-		{"claude-atlas describe " + ref, "a page in its wiki that says what the work is"},
-		{"claude-atlas thread " + ref + ` new "..."`, "open a thread, or drop a note in " + p.Rel() + "/" + project.InboxDir + "/"},
+		{"atlas-obsidian describe " + ref, "a page in its wiki that says what the work is"},
+		{"atlas-obsidian thread " + ref + ` new "..."`, "open a thread, or drop a note in " + p.Rel() + "/" + project.InboxDir + "/"},
 	}
 	if here {
 		next = append(next, [2]string{"claude", "Claude Code here sees the project, its wiki, and its threads"})
 	} else {
-		next = append(next, [2]string{"claude-atlas open-claude " + ref, "Claude Code in the project"})
+		next = append(next, [2]string{"atlas-obsidian open-claude " + ref, "Claude Code in the project"})
 	}
-	next = append(next, [2]string{"claude-atlas open-vault " + ref, "open " + p.Rel() + "/ in Obsidian"})
+	next = append(next, [2]string{"atlas-obsidian open-vault " + ref, "open " + p.Rel() + "/ in Obsidian"})
 	c.Say("")
 	c.Say("  Next:")
 	sayCommands(c, next)
@@ -663,7 +663,7 @@ func shellArg(s string) string {
 
 func (e *env) forget(args []string) (int, error) {
 	if len(args) != 1 {
-		return 2, errors.New("usage: claude-atlas forget PROJECT")
+		return 2, errors.New("usage: atlas-obsidian forget PROJECT")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -706,7 +706,7 @@ func (e *env) describe(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) > 1 {
-		return 2, errors.New("usage: claude-atlas describe [PROJECT] [--no-claude]")
+		return 2, errors.New("usage: atlas-obsidian describe [PROJECT] [--no-claude]")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -717,7 +717,7 @@ func (e *env) describe(args []string) (int, error) {
 		return 1, err
 	}
 	if entry == nil {
-		return 1, fmt.Errorf("%s is not in the atlas; run `claude-atlas init` there", p.Name())
+		return 1, fmt.Errorf("%s is not in the atlas; run `atlas-obsidian init` there", p.Name())
 	}
 	snap, err := actions.Bind(e.home, cfg, e.console).StageProject(*entry)
 	if err != nil {
@@ -784,7 +784,7 @@ func (e *env) threads(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) > 1 {
-		return 2, errors.New("usage: claude-atlas threads [PROJECT] [--all] [--stage S] [--json]")
+		return 2, errors.New("usage: atlas-obsidian threads [PROJECT] [--all] [--stage S] [--json]")
 	}
 	if *stage != "" && threads.Dir(*stage) == "" {
 		return 2, fmt.Errorf("stage must be one of %s", strings.Join(threads.Stages, ", "))
@@ -849,7 +849,7 @@ func (e *env) threads(args []string) (int, error) {
 		return 0, e.printJSON(boards)
 	}
 	if every && shown == 0 {
-		e.console.Say("no open threads in any project; open one with `claude-atlas thread PROJECT new \"...\"`")
+		e.console.Say("no open threads in any project; open one with `atlas-obsidian thread PROJECT new \"...\"`")
 	}
 	return 0, nil
 }
@@ -911,7 +911,7 @@ func (e *env) threadText(text, file string, words []string) (string, error) {
 	return string(data), err
 }
 
-const threadUsage = "usage: claude-atlas thread PROJECT new TEXT... | show ID | file ID STAGE | close ID TEXT... | set ID | reopen ID"
+const threadUsage = "usage: atlas-obsidian thread PROJECT new TEXT... | show ID | file ID STAGE | close ID TEXT... | set ID | reopen ID"
 
 func (e *env) thread(args []string) (int, error) {
 	fs := newFlags("thread", e.stderr)
@@ -968,7 +968,7 @@ func (e *env) thread(args []string) (int, error) {
 		verb = "thread"
 	case "file":
 		if len(rest) != 2 {
-			return 2, errors.New("usage: claude-atlas thread PROJECT file ID STAGE [--text T | --file PATH] [--outcome completed|killed]")
+			return 2, errors.New("usage: atlas-obsidian thread PROJECT file ID STAGE [--text T | --file PATH] [--outcome completed|killed]")
 		}
 		body, err := e.threadText(*text, *file, nil)
 		if err != nil {
@@ -1006,7 +1006,7 @@ func (e *env) thread(args []string) (int, error) {
 			ch.Blocked = blocked
 		}
 		if ch.Empty() {
-			return 2, errors.New("usage: claude-atlas thread PROJECT set ID [--title T] [--priority P] [--phase NAME] [--blocked TEXT]")
+			return 2, errors.New("usage: atlas-obsidian thread PROJECT set ID [--title T] [--priority P] [--phase NAME] [--blocked TEXT]")
 		}
 		if t, err = threads.Set(p, rest[0], ch, now); err != nil {
 			return 1, err
@@ -1057,7 +1057,7 @@ func (e *env) phase(args []string) (int, error) {
 	}
 	set := setFlags(fs)
 	if len(positional) != 3 {
-		return 2, errors.New("usage: claude-atlas phase PROJECT create|rename|reorder|remove TITLE [--goal TEXT] [--order N] [--to NEW]")
+		return 2, errors.New("usage: atlas-obsidian phase PROJECT create|rename|reorder|remove TITLE [--goal TEXT] [--order N] [--to NEW]")
 	}
 	p, _, err := e.projectArg(positional[0])
 	if err != nil {
@@ -1150,7 +1150,7 @@ func (e *env) openVault(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) > 1 {
-		return 2, errors.New("usage: claude-atlas open-vault [PROJECT | PATH]")
+		return 2, errors.New("usage: atlas-obsidian open-vault [PROJECT | PATH]")
 	}
 	v, err := e.vaultArg(first(positional))
 	if err != nil {
@@ -1215,7 +1215,7 @@ func (e *env) openClaude(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) != 1 {
-		return 2, errors.New("usage: claude-atlas open-claude NAME [--thread ID]")
+		return 2, errors.New("usage: atlas-obsidian open-claude NAME [--thread ID]")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -1243,7 +1243,7 @@ func (e *env) openClaude(args []string) (int, error) {
 			return 1, err
 		}
 		if t.Closed() {
-			return 1, fmt.Errorf("%s is closed (%s); `claude-atlas thread %s reopen %s` opens it again", t.Title, t.Outcome, entry.Name, t.ID)
+			return 1, fmt.Errorf("%s is closed (%s); `atlas-obsidian thread %s reopen %s` opens it again", t.Title, t.Outcome, entry.Name, t.ID)
 		}
 		prompt = claudecode.ThreadPrompt(t.Stage, t.ID)
 		e.console.Say("  thread: %s (%s)", t.Title, t.Stage)
@@ -1275,7 +1275,7 @@ func (e *env) ingest(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) == 0 {
-		return 2, errors.New("usage: claude-atlas ingest [PROJECT] [PATH ...] [--dry-run] [--no-claude]")
+		return 2, errors.New("usage: atlas-obsidian ingest [PROJECT] [PATH ...] [--dry-run] [--no-claude]")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -1335,7 +1335,7 @@ func (e *env) ingest(args []string) (int, error) {
 		}
 		c.Step(console.OK, "staged", fmt.Sprintf("%d file%s in %s", len(res.Staged), plural(len(res.Staged)), home.Display(v.Path(project.InboxDir))))
 		for _, dir := range remembered {
-			c.Step(console.OK, "remembered", home.Display(dir)+"; `claude-atlas ingest "+entry.Name+"` stages what is new there next time")
+			c.Step(console.OK, "remembered", home.Display(dir)+"; `atlas-obsidian ingest "+entry.Name+"` stages what is new there next time")
 		}
 	} else {
 		c.Say("  nothing new to stage; %d file%s already waiting", plan.Waiting, plural(plan.Waiting))
@@ -1345,7 +1345,7 @@ func (e *env) ingest(args []string) (int, error) {
 
 func (e *env) list(args []string) (int, error) {
 	if len(args) != 0 {
-		return 2, errors.New("usage: claude-atlas list")
+		return 2, errors.New("usage: atlas-obsidian list")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -1356,7 +1356,7 @@ func (e *env) list(args []string) (int, error) {
 		return 1, err
 	}
 	if len(entries) == 0 {
-		e.console.Say("no projects yet; run `claude-atlas init` in your work")
+		e.console.Say("no projects yet; run `atlas-obsidian init` in your work")
 		return 0, nil
 	}
 	var good, bad []registry.Entry
@@ -1418,7 +1418,7 @@ func listHeat(en registry.Entry) string {
 
 func (e *env) show(args []string) (int, error) {
 	if len(args) != 1 {
-		return 2, errors.New("usage: claude-atlas show NAME")
+		return 2, errors.New("usage: atlas-obsidian show NAME")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -1460,7 +1460,7 @@ func (e *env) show(args []string) (int, error) {
 	}
 	state := entry.State
 	if state == nil {
-		row("Refreshed", "never; run `claude-atlas refresh`")
+		row("Refreshed", "never; run `atlas-obsidian refresh`")
 		return 0, nil
 	}
 	if state.OK {
@@ -1548,7 +1548,7 @@ func (e *env) edit(args []string) (int, error) {
 	}
 	set := setFlags(fs)
 	if len(positional) != 1 || len(set) == 0 {
-		return 2, errors.New("usage: claude-atlas edit NAME [--name N] [--description TEXT] [--mode generic|lyt]")
+		return 2, errors.New("usage: atlas-obsidian edit NAME [--name N] [--description TEXT] [--mode generic|lyt]")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -1590,7 +1590,7 @@ func (e *env) edit(args []string) (int, error) {
 
 func (e *env) refresh(args []string) (int, error) {
 	if len(args) != 0 {
-		return 2, errors.New("usage: claude-atlas refresh")
+		return 2, errors.New("usage: atlas-obsidian refresh")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -1636,7 +1636,7 @@ func (e *env) lint(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) > 1 {
-		return 2, errors.New("usage: claude-atlas lint [PROJECT] [--json] [--strict]")
+		return 2, errors.New("usage: atlas-obsidian lint [PROJECT] [--json] [--strict]")
 	}
 	v, err := e.vaultArg(first(positional))
 	if err != nil {
@@ -1665,7 +1665,7 @@ func (e *env) history(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) > 1 {
-		return 2, errors.New("usage: claude-atlas history [PROJECT] [-n N]")
+		return 2, errors.New("usage: atlas-obsidian history [PROJECT] [-n N]")
 	}
 	v, err := e.vaultArg(first(positional))
 	if err != nil {
@@ -1693,7 +1693,7 @@ func (e *env) stub(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) < 1 {
-		return 2, errors.New("usage: claude-atlas stub [PROJECT] [TITLE...] [--type T]")
+		return 2, errors.New("usage: atlas-obsidian stub [PROJECT] [TITLE...] [--type T]")
 	}
 	v, err := e.vaultArg(positional[0])
 	if err != nil {
@@ -1732,7 +1732,7 @@ func (e *env) upgrade(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) > 1 || (*all && (len(positional) > 0 || *absorb != "")) {
-		return 2, errors.New("usage: claude-atlas upgrade [NAME] [--absorb PATH], or claude-atlas upgrade --all")
+		return 2, errors.New("usage: atlas-obsidian upgrade [NAME] [--absorb PATH], or atlas-obsidian upgrade --all")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -1826,13 +1826,13 @@ func (e *env) upgrade(args []string) (int, error) {
 		return 1, err
 	}
 	c.Step(console.OK, "refreshed", refreshed(entries))
-	c.Say("  The folder colors come from .obsidian/snippets/claude-atlas.css in each project's folder; reload Obsidian (Cmd+R) to see them.")
+	c.Say("  The folder colors come from .obsidian/snippets/atlas-obsidian.css in each project's folder; reload Obsidian (Cmd+R) to see them.")
 	return 0, nil
 }
 
 func (e *env) undo(args []string) (int, error) {
 	if len(args) != 2 {
-		return 2, errors.New("usage: claude-atlas undo PROJECT OPERATION")
+		return 2, errors.New("usage: atlas-obsidian undo PROJECT OPERATION")
 	}
 	v, err := e.vaultArg(args[0])
 	if err != nil {
@@ -1862,7 +1862,7 @@ func (e *env) undo(args []string) (int, error) {
 
 func (e *env) recover(args []string) (int, error) {
 	if len(args) > 1 {
-		return 2, errors.New("usage: claude-atlas recover [PROJECT]")
+		return 2, errors.New("usage: atlas-obsidian recover [PROJECT]")
 	}
 	v, err := e.vaultArg(first(args))
 	if err != nil {
@@ -1904,7 +1904,7 @@ type planFile struct {
 
 func (e *env) apply(args []string) (int, error) {
 	if len(args) != 2 {
-		return 2, errors.New("usage: claude-atlas apply PROJECT PLAN.json")
+		return 2, errors.New("usage: atlas-obsidian apply PROJECT PLAN.json")
 	}
 	v, err := e.vaultArg(args[0])
 	if err != nil {
@@ -1966,7 +1966,7 @@ func (e *env) apply(args []string) (int, error) {
 
 func (e *env) mcp(args []string) (int, error) {
 	if len(args) != 0 {
-		return 2, errors.New("usage: claude-atlas mcp")
+		return 2, errors.New("usage: atlas-obsidian mcp")
 	}
 	dir := os.Getenv("CLAUDE_PROJECT_DIR")
 	if dir == "" {
@@ -1983,7 +1983,7 @@ func (e *env) mcp(args []string) (int, error) {
 
 func (e *env) hook(args []string) (int, error) {
 	if len(args) != 1 {
-		return 2, errors.New("usage: claude-atlas hook session-start|guard|touched|stop")
+		return 2, errors.New("usage: atlas-obsidian hook session-start|guard|touched|stop")
 	}
 	switch args[0] {
 	case "session-start":
@@ -2022,7 +2022,7 @@ func (e *env) config(args []string) (int, error) {
 		return 0, nil
 	}
 	if len(args) != 2 {
-		return 2, errors.New("usage: claude-atlas config [KEY VALUE]; keys: new-days")
+		return 2, errors.New("usage: atlas-obsidian config [KEY VALUE]; keys: new-days")
 	}
 	switch args[0] {
 	case "new-days":
@@ -2051,14 +2051,14 @@ func (e *env) config(args []string) (int, error) {
 func (e *env) info(args []string) (int, error) {
 	c := e.console
 	row := func(label, value string) { c.Say("  %-18s %s", label, value) }
-	row("claude-atlas", Version)
+	row("atlas-obsidian", Version)
 	if exe, err := os.Executable(); err == nil {
 		row("binary", home.Display(exe))
 	}
 	row("home", home.Display(e.home.Root))
 	row("config", home.Display(e.home.ConfigPath()))
 	if !e.home.Exists() {
-		row("status", "not set up; run `claude-atlas setup`")
+		row("status", "not set up; run `atlas-obsidian setup`")
 		return 0, nil
 	}
 	cfg, err := e.home.Load()
@@ -2071,7 +2071,7 @@ func (e *env) info(args []string) (int, error) {
 		row("plugin", fmt.Sprintf("%s v%s", cfg.Plugin.ID, inst.Version))
 		row("  path", home.Display(inst.InstallPath))
 	} else {
-		row("plugin", cfg.Plugin.ID+" (not installed; run `claude-atlas setup`)")
+		row("plugin", cfg.Plugin.ID+" (not installed; run `atlas-obsidian setup`)")
 	}
 	row("  source", cfg.Plugin.Source)
 	row("claude config", home.Display(claudecode.ConfigDir()))
@@ -2101,7 +2101,7 @@ func (e *env) doctor(args []string) (int, error) {
 		return 1, err
 	}
 	ok := true
-	line("claude-atlas", Version)
+	line("atlas-obsidian", Version)
 	if gitx.Available() {
 		line("git", "on PATH")
 	} else {
@@ -2121,7 +2121,7 @@ func (e *env) doctor(args []string) (int, error) {
 		line("plugin", fmt.Sprintf("v%s at %s%s", inst.Version, home.Display(inst.InstallPath), note))
 	} else {
 		ok = false
-		line("plugin", cfg.Plugin.ID+" is not installed; run `claude-atlas setup`")
+		line("plugin", cfg.Plugin.ID+" is not installed; run `atlas-obsidian setup`")
 	}
 	ix, err := registry.Scan(cfg)
 	if err != nil {

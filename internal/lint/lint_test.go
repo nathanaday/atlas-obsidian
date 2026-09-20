@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
 )
 
 const front = "---\ntitle: %s\ntype: concept\nstatus: seed\ncreated: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - x\n---\n"
@@ -314,7 +314,7 @@ func TestASeedStubKeepsItsMissingFrontmatterFinding(t *testing.T) {
 func TestLedgerErrors(t *testing.T) {
 	root := fixture(t, map[string]string{
 		"wiki/index.md": mkpage("Index", "# I\n"),
-		"wiki/meta/ledgers/source-ledger.json": `{"schema":"claude-atlas.source-ledger.v1","generated_at":"2026-01-01T00:00:00Z","sources":{
+		"wiki/meta/ledgers/source-ledger.json": `{"schema":"atlas-obsidian.source-ledger.v1","generated_at":"2026-01-01T00:00:00Z","sources":{
 			"src-a":{"title":"A","origin":{"kind":"file","locator":".raw/captured/a.pdf"},"authority":"unknown","review_status":"active","pages":["wiki/sources/A.md"]}}}`,
 	})
 	r, _ := Run(root, Options{})
@@ -377,7 +377,7 @@ func TestLayoutErrors(t *testing.T) {
 	if strings.Join(got, ",") != "kb,project.json,repos,stubs,wiki/questions,wiki/tasks" {
 		t.Fatalf("layout errors %v", got)
 	}
-	if !strings.Contains(r.KindErrors[1].Message, "claude-atlas upgrade") {
+	if !strings.Contains(r.KindErrors[1].Message, "atlas-obsidian upgrade") {
 		t.Fatalf("the 3.x identity file names the command: %+v", r.KindErrors[1])
 	}
 	if r.Summary.CategoryCounts["kind_errors"] != 6 || r.Version != 3 || !strings.Contains(r.Markdown(), "## Kind (6)") {

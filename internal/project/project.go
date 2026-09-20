@@ -1,4 +1,4 @@
-// Package project knows what a claude-atlas project is: a folder atlas/<name>/ inside the
+// Package project knows what a atlas-obsidian project is: a folder atlas/<name>/ inside the
 // user's work that holds everything the atlas knows about it. Two halves live there. The
 // wiki, under wiki/ with its raw store and its source ledger, is the knowledge base: only
 // an operation writes it, and every operation is one commit. The threads, under threads/,
@@ -19,10 +19,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/ledger"
-	"github.com/nathanaday/claude-atlas/internal/links"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/ledger"
+	"github.com/nathanaday/atlas-obsidian/internal/links"
 )
 
 const (
@@ -31,7 +31,10 @@ const (
 	// Marker is the identity file inside the project's folder. It is visible because the
 	// folder is the user's and the file says what the folder is.
 	Marker = "project.json"
-	Schema = "claude-atlas.project.v4"
+	Schema = "atlas-obsidian.project.v4"
+	// SchemaV4Atlas is the same identity file under the name the tool had before it was
+	// renamed to atlas-obsidian. Open accepts it and the next Save writes Schema.
+	SchemaV4Atlas = "claude-atlas.project.v4"
 	// SchemaV3 is the identity file 3.x wrote, when a project named a separate knowledge
 	// base. Open refuses it; upgrade absorbs the knowledge base and raises the schema.
 	SchemaV3 = "claude-atlas.project.v3"
@@ -42,7 +45,7 @@ const (
 	LegacyMarker = ".claude-obsidian.json"
 	// EnvProject names the project explicitly for the MCP server and the hooks. The
 	// launcher sets it.
-	EnvProject = "CLAUDE_ATLAS_PROJECT"
+	EnvProject = "ATLAS_OBSIDIAN_PROJECT"
 
 	// The wiki, and the engine's own paths.
 	WikiDir      = "wiki"
@@ -255,7 +258,7 @@ func joinRepo(abs string) (gitx.Repo, bool, error) {
 }
 
 var (
-	ErrNotProject = errors.New("not a claude-atlas project")
+	ErrNotProject = errors.New("not a atlas-obsidian project")
 	// ErrFlat means the project sits directly in atlas/, as 2.2.0 and earlier made it;
 	// upgrade moves it into atlas/<name>/.
 	ErrFlat = errors.New("the project sits directly in atlas/")
@@ -274,7 +277,7 @@ func FolderName(name string) string { return links.CleanName(strings.TrimSpace(n
 func Locate(work string) (string, error) {
 	atlas := filepath.Join(work, Dir)
 	if isFile(filepath.Join(atlas, Marker)) {
-		return "", fmt.Errorf("%w; run claude-atlas upgrade %s", ErrFlat, home.Display(work))
+		return "", fmt.Errorf("%w; run atlas-obsidian upgrade %s", ErrFlat, home.Display(work))
 	}
 	// A file named atlas, such as a binary, is not a project.
 	if info, err := os.Stat(atlas); err == nil && !info.IsDir() {
@@ -339,6 +342,11 @@ func KnowledgeAbove(start string) string {
 	}
 }
 
+// Current reports whether schema names a v4 identity file. It accepts the name the tool
+// wrote before it was renamed to atlas-obsidian, so a project made by an earlier version
+// opens unchanged; the next Save raises it to Schema.
+func Current(schema string) bool { return schema == Schema || schema == SchemaV4Atlas }
+
 // ReadConfig parses the identity file without validating it, given the work folder. ok is
 // false when there is none, the layout is not the current one, or it is not JSON.
 func ReadConfig(work string) (Config, bool) {
@@ -383,10 +391,11 @@ func Open(work string) (*Project, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch cfg.Schema {
-	case Schema:
-	case SchemaV3:
-		return nil, fmt.Errorf("%w: %s; run claude-atlas upgrade %s to absorb it into the project", ErrSplit, marker, home.Display(abs))
+	switch {
+	case Current(cfg.Schema):
+		cfg.Schema = Schema
+	case cfg.Schema == SchemaV3:
+		return nil, fmt.Errorf("%w: %s; run atlas-obsidian upgrade %s to absorb it into the project", ErrSplit, marker, home.Display(abs))
 	default:
 		return nil, fmt.Errorf("%s: unsupported schema %q", marker, cfg.Schema)
 	}
@@ -465,7 +474,7 @@ func CheckNew(work string) error {
 		return fmt.Errorf("%s is inside the project %s; a project does not go inside another", abs, outer)
 	}
 	if IsKnowledge(abs) {
-		return fmt.Errorf("%s is a knowledge base of an earlier version; run claude-atlas upgrade %s to make it a project", abs, home.Display(abs))
+		return fmt.Errorf("%s is a knowledge base of an earlier version; run atlas-obsidian upgrade %s to make it a project", abs, home.Display(abs))
 	}
 	return nil
 }

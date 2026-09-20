@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
 )
 
 // The migration from 3.x, where a project and a knowledge base were two entities. Nothing
-// here runs without `claude-atlas upgrade`.
+// here runs without `atlas-obsidian upgrade`.
 
 // V3Config is what a 3.x identity file says: the same facts, plus the knowledge base the
 // project used.
@@ -312,7 +312,7 @@ func OpenV3(work string) (*Project, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Schema != SchemaV3 && cfg.Schema != Schema {
+	if cfg.Schema != SchemaV3 && !Current(cfg.Schema) {
 		return nil, fmt.Errorf("%s: unsupported schema %q", filepath.Join(abs, Dir, folder, Marker), cfg.Schema)
 	}
 	if strings.TrimSpace(cfg.Name) == "" {

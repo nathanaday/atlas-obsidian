@@ -1,4 +1,4 @@
-# claude-atlas
+# atlas-obsidian
 
 A Go binary and a Claude Code plugin. The binary makes a folder of work a
 project, which holds a wiki and the threads of the work in one folder, and
@@ -61,7 +61,7 @@ over projects that each hold a wiki; see "Left for later" in
 5. **Ids travel; paths stay.** `project.json` holds no path; the atlas config
    holds every project's work folder and nothing else. A project heals its own
    entry when a session starts in it (`manage.RegisterProject`).
-   `~/.claude-atlas/state/registry.json` is derived, and `refresh` rebuilds it
+   `~/.atlas-obsidian/state/registry.json` is derived, and `refresh` rebuilds it
    in full.
 
 ## One entity, two halves
@@ -122,7 +122,7 @@ scripts/atlas           sh wrapper that finds the installed binary
 hooks/hooks.json        SessionStart context, PreToolUse guard, PostToolUse touch, Stop warning
 skills/                 one directory per skill; skills/wiki/references/ is shared
 agents/                 wiki-ingest worker, wiki-lint interpreter
-cmd/claude-atlas/       main
+cmd/atlas-obsidian/       main
 internal/cli/           argument parsing and one method per subcommand
 internal/actions/       every atlas action as one struct of functions, and Bind, the one place it is built
 internal/wizard/        the setup flow
@@ -144,11 +144,11 @@ internal/manage/        init, edit, forget, and register a project; the upgrade 
 internal/links/         the facts git reports about a folder, and CleanName
 internal/tui/           Bubble Tea screens: the view (one list of projects, a Problems tab while there is one, expand in place, open and launch keys)
 internal/obsidian/      Obsidian's vault registry, obsidian:// URIs, restart
-internal/home/          ~/.claude-atlas and config.json
+internal/home/          ~/.atlas-obsidian and config.json
 internal/console/       prompts and step lines
 ```
 
-`~/.claude-atlas/` holds `config.json` and `state/registry.json`. The projects
+`~/.atlas-obsidian/` holds `config.json` and `state/registry.json`. The projects
 are the user's and live wherever the user puts them. The atlas has no default
 location and never searches the disk: the config lists every project's work
 folder under `projects` (`manage.Init`, `manage.Forget`) and nothing else.
@@ -158,6 +158,35 @@ and a folder that carries a 3.x knowledge base's identity file is refused with
 the upgrade command (`project.CheckNew`). A session heals its own entry by id
 when its folder moved or the config does not list it
 (`manage.RegisterProject`).
+
+## The rename, and what still answers to the old name
+
+5.0.0 renamed everything a user sees: the binary, the module path, the plugin
+(`atlas-obsidian@nathanaday-atlas-obsidian`), the marketplace, the skills
+(`/atlas-obsidian:wiki`), the tools (`mcp__plugin_atlas-obsidian_atlas__*`),
+the home (`~/.atlas-obsidian`), and the environment variables
+(`ATLAS_OBSIDIAN_HOME`, `_BIN`, `_PROJECT`, `_SESSION*`, `_VAULT*`). The folder
+inside the work stays `atlas/<name>/`: it names a place in the user's
+repository, not the tool.
+
+What a user already has on disk still reads:
+
+- `project.Current` accepts `claude-atlas.project.v4` beside
+  `atlas-obsidian.project.v4`, and every schema check goes through it
+  (`project.Open`, `registry.Scan`, `project.OpenV3`). The next `Save`
+  raises the schema. Nothing else may compare `cfg.Schema` to `Schema` directly.
+- `home.Load` accepts `claude-atlas.config.v4`; `ledger.LegacySchemas` holds the
+  claude-atlas and claude-obsidian ledger names.
+- `home.Resolve` moves `~/.claude-atlas` to `~/.atlas-obsidian` once, and only
+  when it falls through to the default home, so a test or `--home` never
+  triggers it (`home.adopt`). A move that fails keeps using the old home.
+- `Refresh` deletes `.obsidian/snippets/claude-atlas.css` and drops
+  `claude-atlas` from `enabledCssSnippets`, so an upgraded project does not
+  carry two copies of the same rules.
+- Untouched, because they name files earlier versions wrote:
+  `.claude-atlas.json` (the 3.x knowledge base marker),
+  `claude-atlas.project.v3`, `claude-atlas.vault.v3`, and
+  `claude-atlas.config.v1|v2|v3`.
 
 ## Constraints
 
@@ -171,7 +200,7 @@ when its folder moved or the config does not list it
 - `git` is a runtime requirement. `python3` is not. macOS and Linux only.
 - The binary and the plugin are installed separately. `scripts/atlas` finds the
   binary on PATH, in `~/go/bin`, in the Homebrew prefixes, or at
-  `$CLAUDE_ATLAS_BIN`. `plugin.json` and `marketplace.json` carry the version
+  `$ATLAS_OBSIDIAN_BIN`. `plugin.json` and `marketplace.json` carry the version
   the binary should match; `status` and `doctor` warn on a mismatch.
 - Every write into the wiki goes through `txn.Prepare` and `txn.Apply`.
   `project.Init`, `project.Refresh`, `project.UpdateConfig`, and the upgrade
@@ -188,7 +217,7 @@ when its folder moved or the config does not list it
   changes, and a taken folder refuses the save. `project.Locate` finds the
   folder as the one child of `atlas/` that holds `project.json`, and refuses
   two. `Open` refuses a 3.x identity file with `project.ErrSplit` and the flat
-  layout of 2.2.0 with `project.ErrFlat`; only `claude-atlas upgrade` moves
+  layout of 2.2.0 with `project.ErrFlat`; only `atlas-obsidian upgrade` moves
   anything. `project.Init` also runs `git init` in a work folder that is in no
   repository (on `main`), unless the caller asks for none, because the wiki
   needs a history. A session heals the config (`manage.RegisterProject`): an
@@ -196,7 +225,7 @@ when its folder moved or the config does not list it
   listed at a path that is gone is taken for the moved one only when it is the
   only one gone.
 - The migration is `manage.PlanUpgrade` and `manage.RunUpgrade`, over
-  `project.Absorb`, `project.MoveStages`, `project.MakeProject`, and
+  `project.Absorb`, `project.MoveStages`, `project.OpenV3`, and
   `project.MoveFlat`. It moves the user's files, so it plans first, prints
   every step, and asks; `git mv` where one repository holds both sides, a copy
   otherwise; and it refuses a knowledge base several projects used, naming
@@ -220,7 +249,7 @@ when its folder moved or the config does not list it
   every card that does. There is no ledger; `updated` on the card is the
   last touch, `Stale` reads it, and the `touched` hook sets it when a
   document is edited.
-- The template writes `.obsidian/snippets/claude-atlas.css` (the wiki's folder
+- The template writes `.obsidian/snippets/atlas-obsidian.css` (the wiki's folder
   colors, the stage callouts and folder colors) and `appearance.json` only when
   there is none. `EnsureFolders` rebuilds the folders a clone left out.
 - In the atlas, "thread" means a project's thread only. The bullets under
@@ -252,7 +281,7 @@ when its folder moved or the config does not list it
   one of them changed since (`gitx.Unchanged`), and restores each from the
   commit's parent (`gitx.RestoreFrom`).
 - The server and the hooks resolve the session through `place.Resolve`: an
-  explicit path, `CLAUDE_ATLAS_PROJECT`, then the nearest
+  explicit path, `ATLAS_OBSIDIAN_PROJECT`, then the nearest
   `atlas/<name>/project.json` at or above the working directory. A folder that
   carries a 3.x knowledge base's identity file is named with the upgrade
   command instead (`project.KnowledgeAbove`).
@@ -271,7 +300,7 @@ when its folder moved or the config does not list it
   out of that count and out of the snapshot.
 - Lint is read-only; refresh writes nothing git tracks.
 - TUI models keep all logic in `Update`; tests drive them with `tea.KeyMsg`.
-- Tests never touch a real `~/.claude-atlas`, never install a plugin, and skip
+- Tests never touch a real `~/.atlas-obsidian`, never install a plugin, and skip
   when `git` is missing. MCP tools are tested in-process over the SDK's
   in-memory transport.
 - Prose follows the user's global writing guide.
@@ -288,8 +317,8 @@ when its folder moved or the config does not list it
   `systemMessage`.
 - Plugin agents may list MCP tools in `tools:`.
 - The repository's `main` branch is a marketplace named
-  `nathanaday-claude-atlas`; a local checkout works as a marketplace source
-  for development (`claude-atlas setup --plugin-source /path/to/checkout`).
+  `nathanaday-atlas-obsidian`; a local checkout works as a marketplace source
+  for development (`atlas-obsidian setup --plugin-source /path/to/checkout`).
 - A session started inside a checkout of this repository reports that a
   project MCP server `${CLAUDE_PLUGIN_ROOT}/scripts/atlas` failed to start:
   Claude Code reads the checkout's own `.mcp.json` as a project server, and
@@ -307,7 +336,7 @@ when its folder moved or the config does not list it
 ## Build and test
 
 ```
-make build      # build/claude-atlas
+make build      # build/atlas-obsidian
 make install    # go install into $(go env GOPATH)/bin
 make test
 ```
@@ -318,8 +347,8 @@ The installed plugin is a git clone of this repository at a commit, and
 reaches Claude Code after: bump both versions, commit, then
 
 ```
-claude plugin marketplace update nathanaday-claude-atlas
-claude plugin update claude-atlas@nathanaday-claude-atlas
+claude plugin marketplace update nathanaday-atlas-obsidian
+claude plugin update atlas-obsidian@nathanaday-atlas-obsidian
 make install
 ```
 
@@ -327,7 +356,7 @@ make install
 `status` can tell when the two drift. Uncommitted skill edits can be tried
 with `claude --plugin-dir .` from inside a project. End-to-end by hand:
 `claude -p "..."` inside a project with
-`--allowedTools "mcp__plugin_claude-atlas_atlas__*,Read,Grep,Glob,Skill"`.
+`--allowedTools "mcp__plugin_atlas-obsidian_atlas__*,Read,Grep,Glob,Skill"`.
 
 1.0.0 is the first v2 release; 1.1.0 is the view with tabs; 1.2.0 is
 clusters; 1.3.0 is the atlas tools and skills; 1.4.0 is repositories in the
@@ -340,7 +369,9 @@ a git repository. 3.0.0 puts a project in `atlas/<name>/` and replaces tasks
 with threads; `upgrade` moves a 2.x project over. 4.0.0 is v4: one entity. The
 wiki moves into `atlas/<name>/wiki/`, the stage folders move under `threads/`,
 the `vault` and `mode` tools fold into `project`, linking is gone, and
-`upgrade` absorbs a 3.x knowledge base into the project that used it.
+`upgrade` absorbs a 3.x knowledge base into the project that used it. 5.0.0
+renames the tool from claude-atlas to atlas-obsidian, because `atlas` alone
+collides with two widely installed CLIs.
 
 ## Open questions
 

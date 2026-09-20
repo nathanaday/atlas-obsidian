@@ -18,7 +18,7 @@ session: inside a project, or in a folder the atlas does not know.
    problem entry and its reason. Keep it short; the user asked for
    orientation, not a dump.
 3. Say what needs attention: a project no page describes, a registered folder
-   that is gone, a folder waiting for `claude-atlas upgrade`, a blocked or
+   that is gone, a folder waiting for `atlas-obsidian upgrade`, a blocked or
    stale thread.
 
 ## Route
@@ -41,12 +41,12 @@ session: inside a project, or in a folder the atlas does not know.
 
 ## What stays in the terminal
 
-`claude-atlas doctor` (the installation check), `upgrade`, `recover`, `setup`,
+`atlas-obsidian doctor` (the installation check), `upgrade`, `recover`, `setup`,
 `open-vault`, and `open-claude` are commands, not tools. Name the command; do
 not run it through Bash unless the user asks. `upgrade` moves the user's
 files, so it is always theirs to run.
 
 Every write here is reversible or leaves the folder alone, so no plan preview
 exists; the skill that writes states the change in one line and waits for yes.
-Never edit `atlas/<name>/project.json`, `~/.claude-atlas/config.json`, or
+Never edit `atlas/<name>/project.json`, `~/.atlas-obsidian/config.json`, or
 `registry.json` with Write or Edit.

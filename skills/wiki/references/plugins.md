@@ -1,6 +1,6 @@
 # Optional Obsidian integrations
 
-A claude-atlas vault uses Markdown, JSON, and Obsidian core
+A atlas-obsidian vault uses Markdown, JSON, and Obsidian core
 features. No community plugin, theme, or downloaded executable is required.
 
 ## Install and open Obsidian

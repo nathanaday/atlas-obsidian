@@ -10,10 +10,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/nathanaday/claude-atlas/internal/actions"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/threads"
+	"github.com/nathanaday/atlas-obsidian/internal/actions"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
 )
 
 func proj(name, heat string) Item {
@@ -41,7 +41,7 @@ func sample() []Item {
 	return items
 }
 
-const missingError = "not found; work in it again to heal the path, or run claude-atlas forget"
+const missingError = "not found; work in it again to heal the path, or run atlas-obsidian forget"
 
 func entriesOf(items []Item) []registry.Entry {
 	out := make([]registry.Entry, 0, len(items))
@@ -419,7 +419,7 @@ func TestEveryTabFillsTheScreenExactly(t *testing.T) {
 
 func TestAnEmptyScreenSaysWhatToRun(t *testing.T) {
 	v := newView(nil, Opener{}, actions.Atlas{})
-	if out := v.View(); !strings.Contains(out, "claude-atlas init") {
+	if out := v.View(); !strings.Contains(out, "atlas-obsidian init") {
 		t.Fatalf("empty:\n%s", out)
 	}
 }

@@ -11,4 +11,4 @@ tags:
 
 # Wiki Log
 
-Newest completed operations appear first. claude-atlas writes this page.
+Newest completed operations appear first. atlas-obsidian writes this page.

@@ -17,15 +17,15 @@ on `main`, what is not done, and what v2 changes.
 | 4 | New vaults, upgrade, and adopt put Obsidian's new notes under `wiki/` | `df8e578` | passed |
 | 5 | `txn.StubPages` and the `stub` operation kind | `97003d7`, fix `dd3b93c` | passed after one fix |
 | 6 | The `stub` MCP tool | `6b7a5a2` | passed |
-| 7 | The `claude-atlas stub` command | `07fe4f2` | not reviewed; the review was stopped |
+| 7 | The `atlas-obsidian stub` command | `07fe4f2` | not reviewed; the review was stopped |
 
 `go test ./...` and `go vet ./...` pass at `07fe4f2`.
 
 What a user can do now:
 
-- `claude-atlas lint` lists "Wanted pages" and "Stubs to fill" after the
+- `atlas-obsidian lint` lists "Wanted pages" and "Stubs to fill" after the
   findings. `--strict` ignores both.
-- `claude-atlas stub VAULT` and the `stub` tool create a seed page for each
+- `atlas-obsidian stub VAULT` and the `stub` tool create a seed page for each
   wanted page, as one commit that `undo` reverts.
 - `refresh`, the overview, the TUI, and `show` count stubs and wanted pages.
 
@@ -50,7 +50,7 @@ not change until its version goes up (Task 9).
    a placeholder link in Obsidian, which the user does by hand.
 5. **The final review** of `285edb9..07fe4f2`, with the deferred findings
    below.
-6. **Existing vaults.** No real vault has run `claude-atlas upgrade` since
+6. **Existing vaults.** No real vault has run `atlas-obsidian upgrade` since
    Task 4, so none has the new-note folder yet.
 
 ## Decisions made during the work

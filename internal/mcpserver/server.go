@@ -16,20 +16,20 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/nathanaday/claude-atlas/internal/capture"
-	"github.com/nathanaday/claude-atlas/internal/describe"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/ledger"
-	"github.com/nathanaday/claude-atlas/internal/links"
-	"github.com/nathanaday/claude-atlas/internal/lint"
-	"github.com/nathanaday/claude-atlas/internal/place"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/threads"
-	"github.com/nathanaday/claude-atlas/internal/txn"
+	"github.com/nathanaday/atlas-obsidian/internal/capture"
+	"github.com/nathanaday/atlas-obsidian/internal/describe"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/ledger"
+	"github.com/nathanaday/atlas-obsidian/internal/links"
+	"github.com/nathanaday/atlas-obsidian/internal/lint"
+	"github.com/nathanaday/atlas-obsidian/internal/place"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
+	"github.com/nathanaday/atlas-obsidian/internal/txn"
 )
 
-// Name is the MCP server name; Claude Code exposes tools as mcp__plugin_claude-atlas_atlas__<tool>.
+// Name is the MCP server name; Claude Code exposes tools as mcp__plugin_atlas-obsidian_atlas__<tool>.
 const Name = "atlas"
 
 // Options configure a server.
@@ -90,7 +90,7 @@ func (s *Server) projectOf(pl *place.Place, arg string) (*project.Project, *regi
 		return pl.Project, pl.Entry, nil
 	}
 	if pl.Index == nil {
-		return nil, nil, errors.New("no atlas config on this machine; run claude-atlas setup")
+		return nil, nil, errors.New("no atlas config on this machine; run atlas-obsidian setup")
 	}
 	e, err := pl.Index.Find(arg)
 	if err != nil {
@@ -225,7 +225,7 @@ func (s *Server) status(ctx context.Context, req *mcp.CallToolRequest, a Empty) 
 		out.LastOperation = &ops[0]
 	}
 	if threads.Legacy(p) {
-		out.Warnings = append(out.Warnings, "this project holds task pages from before threads; `claude-atlas upgrade` turns each one into a thread")
+		out.Warnings = append(out.Warnings, "this project holds task pages from before threads; `atlas-obsidian upgrade` turns each one into a thread")
 	}
 	if board, err := threads.Load(p); err == nil {
 		pt := &ProjectThreads{Counts: board.Counts(now), Phases: []string{}}
@@ -252,7 +252,7 @@ func (s *Server) status(ctx context.Context, req *mcp.CallToolRequest, a Empty) 
 	}
 	if pending, _ := txn.Pending(p); pending != nil {
 		out.PendingRecovery = true
-		out.Warnings = append(out.Warnings, "an operation was interrupted; run `claude-atlas recover "+p.Root+"` before changing the wiki")
+		out.Warnings = append(out.Warnings, "an operation was interrupted; run `atlas-obsidian recover "+p.Root+"` before changing the wiki")
 	}
 	if out.Versions.Plugin != "" && out.Versions.Binary != "dev" && out.Versions.Plugin != out.Versions.Binary {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("plugin %s and binary %s differ; update one of them", out.Versions.Plugin, out.Versions.Binary))
@@ -774,7 +774,7 @@ func ro() *mcp.ToolAnnotations {
 
 // MCP builds the protocol server with every tool registered.
 func (s *Server) MCP() *mcp.Server {
-	server := mcp.NewServer(&mcp.Implementation{Name: Name, Title: "claude-atlas", Version: s.opts.Version}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: Name, Title: "atlas-obsidian", Version: s.opts.Version}, nil)
 	mcp.AddTool(server, &mcp.Tool{Name: "status", Annotations: ro(),
 		Description: "Describe the session's project: its folder, its description and mode, what git says about the work, the page that describes the work, its thread counts by stage and its phases, its wiki's page count and git state, what waits in its inbox, and warnings. Call this first."}, s.status)
 	mcp.AddTool(server, &mcp.Tool{Name: "inbox", Annotations: ro(),

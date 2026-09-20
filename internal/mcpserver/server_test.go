@@ -11,11 +11,11 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/threads"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
 )
 
 var now = time.Date(2026, 9, 17, 15, 0, 0, 0, time.UTC)
@@ -148,7 +148,7 @@ func TestToolsListAndStatus(t *testing.T) {
 		t.Fatalf("an undescribed project warns: %v", st.Warnings)
 	}
 	none := connectIn(t, a.h, t.TempDir())
-	if msg := none.call("status", nil, nil); !strings.Contains(msg, "not in a claude-atlas") {
+	if msg := none.call("status", nil, nil); !strings.Contains(msg, "not in a atlas-obsidian") {
 		t.Fatalf("no place: %q", msg)
 	}
 }

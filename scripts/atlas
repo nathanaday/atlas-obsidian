@@ -1,21 +1,21 @@
 #!/bin/sh
-# Runs the installed claude-atlas binary for the plugin's MCP server and hooks.
+# Runs the installed atlas-obsidian binary for the plugin's MCP server and hooks.
 # The plugin cache holds skills and manifests only; the binary is installed separately
 # (Homebrew or `go install`) so it matches the machine.
 set -u
 for candidate in \
-  "${CLAUDE_ATLAS_BIN:-}" \
-  "$(command -v claude-atlas 2>/dev/null)" \
-  "$HOME/go/bin/claude-atlas" \
-  "/opt/homebrew/bin/claude-atlas" \
-  "/usr/local/bin/claude-atlas" \
-  "${CLAUDE_PLUGIN_DATA:-/nonexistent}/bin/claude-atlas"
+  "${ATLAS_OBSIDIAN_BIN:-}" \
+  "$(command -v atlas-obsidian 2>/dev/null)" \
+  "$HOME/go/bin/atlas-obsidian" \
+  "/opt/homebrew/bin/atlas-obsidian" \
+  "/usr/local/bin/atlas-obsidian" \
+  "${CLAUDE_PLUGIN_DATA:-/nonexistent}/bin/atlas-obsidian"
 do
   if [ -n "$candidate" ] && [ -x "$candidate" ]; then
     exec "$candidate" "$@"
   fi
 done
-echo "claude-atlas: the claude-atlas binary is not installed." >&2
-echo "Install it with: go install github.com/nathanaday/claude-atlas/cmd/claude-atlas@latest" >&2
-echo "or set CLAUDE_ATLAS_BIN to its path." >&2
+echo "atlas-obsidian: the atlas-obsidian binary is not installed." >&2
+echo "Install it with: go install github.com/nathanaday/atlas-obsidian/cmd/atlas-obsidian@latest" >&2
+echo "or set ATLAS_OBSIDIAN_BIN to its path." >&2
 exit 1

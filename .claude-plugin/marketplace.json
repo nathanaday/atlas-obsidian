@@ -1,19 +1,19 @@
 {
-  "name": "nathanaday-claude-atlas",
+  "name": "nathanaday-atlas-obsidian",
   "owner": {
     "name": "nathanaday",
     "url": "https://github.com/nathanaday"
   },
   "metadata": {
-    "description": "claude-atlas: a wiki and the state of the work, in every project, and one view across them.",
-    "version": "4.0.0"
+    "description": "atlas-obsidian: a wiki and the state of the work, in every project, and one view across them.",
+    "version": "5.0.0"
   },
   "plugins": [
     {
-      "name": "claude-atlas",
+      "name": "atlas-obsidian",
       "source": "./",
-      "description": "A source-cited Obsidian wiki and the threads of the work, in one folder inside every project, backed by the claude-atlas binary.",
-      "version": "4.0.0",
+      "description": "A source-cited Obsidian wiki and the threads of the work, in one folder inside every project, backed by the atlas-obsidian binary.",
+      "version": "5.0.0",
       "category": "productivity"
     }
   ]

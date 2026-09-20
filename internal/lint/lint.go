@@ -17,8 +17,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nathanaday/claude-atlas/internal/ledger"
-	"github.com/nathanaday/claude-atlas/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/ledger"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
 )
 
 const ReportVersion = 3
@@ -199,19 +199,19 @@ func layoutErrors(root string) []PathFinding {
 	}
 	var out []PathFinding
 	if cfg.Schema == project.SchemaV3 {
-		out = append(out, PathFinding{Path: project.Marker, Message: "a 3.x project, whose knowledge base sits outside it; run `claude-atlas upgrade` to absorb it"})
+		out = append(out, PathFinding{Path: project.Marker, Message: "a 3.x project, whose knowledge base sits outside it; run `atlas-obsidian upgrade` to absorb it"})
 	}
 	// The stage folders sat beside threads/ until 4.0.0, and a knowledge base held the
 	// typed folders of v2.
 	moved := []string{"stubs", "specs", "plans", "receipts", "phases"}
 	for _, rel := range moved {
 		if info, err := os.Lstat(filepath.Join(root, rel)); err == nil && info.IsDir() {
-			out = append(out, PathFinding{Path: rel, Message: "a thread folder of 3.x; the stage folders sit under threads/ now, so run `claude-atlas upgrade`"})
+			out = append(out, PathFinding{Path: rel, Message: "a thread folder of 3.x; the stage folders sit under threads/ now, so run `atlas-obsidian upgrade`"})
 		}
 	}
 	for _, rel := range []string{"tasks", "wiki/tasks", "wiki/questions", "wiki/sessions", "kb", "repos"} {
 		if info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(rel))); err == nil && info.IsDir() {
-			out = append(out, PathFinding{Path: rel, Message: "a folder of an earlier version; run `claude-atlas upgrade`, then move what is left under wiki/ or threads/"})
+			out = append(out, PathFinding{Path: rel, Message: "a folder of an earlier version; run `atlas-obsidian upgrade`, then move what is left under wiki/ or threads/"})
 		}
 	}
 	return out

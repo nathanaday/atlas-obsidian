@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
 )
 
 // SnapshotType is the type property of a snapshot file, which tells the ingest skills it
@@ -87,9 +87,9 @@ func TakeSnapshot(e registry.Entry, since string, now time.Time) (*Snapshot, err
 		snapshotTitle(s), SnapshotType, e.ID, e.Name, s.Commit, s.Branch, now.Format("2006-01-02"), s.Since)
 	fmt.Fprintf(&b, "# %s\n\n", snapshotTitle(s))
 	if s.Commit != "" {
-		fmt.Fprintf(&b, "A snapshot of the project %s (id %s) at commit %s on branch %s, taken %s by claude-atlas. The work is in the repository; this file is what a page about it cites.\n", e.Name, e.ID, s.Commit, s.Branch, now.Format("2006-01-02"))
+		fmt.Fprintf(&b, "A snapshot of the project %s (id %s) at commit %s on branch %s, taken %s by atlas-obsidian. The work is in the repository; this file is what a page about it cites.\n", e.Name, e.ID, s.Commit, s.Branch, now.Format("2006-01-02"))
 	} else {
-		fmt.Fprintf(&b, "A snapshot of the project %s (id %s), a folder that is not a git repository, taken %s by claude-atlas. The work is in the folder; this file is what a page about it cites.\n", e.Name, e.ID, now.Format("2006-01-02"))
+		fmt.Fprintf(&b, "A snapshot of the project %s (id %s), a folder that is not a git repository, taken %s by atlas-obsidian. The work is in the folder; this file is what a page about it cites.\n", e.Name, e.ID, now.Format("2006-01-02"))
 	}
 	if e.Description != "" {
 		fmt.Fprintf(&b, "\nThe project describes itself as: %s\n", e.Description)

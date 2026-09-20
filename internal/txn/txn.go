@@ -21,10 +21,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/ledger"
-	"github.com/nathanaday/claude-atlas/internal/lint"
-	"github.com/nathanaday/claude-atlas/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/ledger"
+	"github.com/nathanaday/atlas-obsidian/internal/lint"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
 )
 
 // Kind names the workflow that produced a plan. It bounds what the plan may write.
@@ -187,7 +187,7 @@ func allowed(kind Kind, p string, mode WriteMode) error {
 		return fmt.Errorf("%s is updated through the plan's sources field; do not write it", p)
 	}
 	if p == project.Marker {
-		return fmt.Errorf("%s changes only through the project tool and `claude-atlas edit`; do not write it", p)
+		return fmt.Errorf("%s changes only through the project tool and `atlas-obsidian edit`; do not write it", p)
 	}
 	switch kind {
 	case Capture:

@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/capture"
-	"github.com/nathanaday/claude-atlas/internal/describe"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/links"
-	"github.com/nathanaday/claude-atlas/internal/lint"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/threads"
-	"github.com/nathanaday/claude-atlas/internal/txn"
+	"github.com/nathanaday/atlas-obsidian/internal/capture"
+	"github.com/nathanaday/atlas-obsidian/internal/describe"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/links"
+	"github.com/nathanaday/atlas-obsidian/internal/lint"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
+	"github.com/nathanaday/atlas-obsidian/internal/txn"
 )
 
 // Derive observes one entry and returns what refresh records for it: the wiki's counts and
@@ -182,7 +182,7 @@ func Signals(e registry.Entry, today time.Time) []string {
 		notes = append(notes, "unreachable: "+state.Error)
 	}
 	if state.PendingRecovery {
-		notes = append(notes, "an operation was interrupted; run `claude-atlas recover "+e.Path+"`")
+		notes = append(notes, "an operation was interrupted; run `atlas-obsidian recover "+e.Path+"`")
 	}
 	if state.Described == nil {
 		notes = append(notes, registry.NotDescribed+"; the describe skill writes the page")

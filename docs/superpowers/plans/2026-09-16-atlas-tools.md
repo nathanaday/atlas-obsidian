@@ -16,13 +16,13 @@
 - Go 1.24. Do not pull `golang.org/x/*`.
 - Commits use the identity `nathanaday <nraday1221@gmail.com>` and carry no `Co-Authored-By` line. Every commit command below passes `-c user.name=nathanaday -c user.email=nraday1221@gmail.com`.
 - Commit subjects follow the log's form: `area: what changed`, lowercase, no period (`vaults: a rename takes the folder with it`).
-- Tests never touch a real `~/.claude-atlas`; every test builds its atlas under `t.TempDir()` and skips when `gitx.Available()` is false.
+- Tests never touch a real `~/.atlas-obsidian`; every test builds its atlas under `t.TempDir()` and skips when `gitx.Available()` is false.
 - Every tool description is one line. A write tool is a noun; its `action` field is the verb; every argument's `jsonschema` doc names the actions that read it.
 - Prose in skills and docs follows the user's writing guide: short sentences, active voice, no "flag", "genuine", "honest", "shape", "load bearing", "judgement call".
 - An action lives once, in `internal/vaults`, `internal/refresh`, `internal/vault`, `internal/txn`, or `internal/capture`. `actions.Bind` is the one place the struct is built. `tui` and `mcpserver` import `actions`; neither imports the other; `actions` imports neither.
 - `make test` and `go vet ./...` pass at the end of every task. Run `gofmt -l internal/` and expect no output.
 - The work happens in the git worktree at
-  `/Users/nathanaday/SoftwareProjects/claude-atlas/.claude/worktrees/atlas-tools`,
+  `/Users/nathanaday/SoftwareProjects/atlas-obsidian/.claude/worktrees/atlas-tools`,
   on branch `worktree-atlas-tools`. Run every command from there and never
   `cd` to the main checkout, which another session is using. A command below
   that begins `` is
@@ -152,11 +152,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/vault"
-	"github.com/nathanaday/claude-atlas/internal/vaults"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/vault"
+	"github.com/nathanaday/atlas-obsidian/internal/vaults"
 )
 
 // oneVault builds an atlas home whose vaults directory holds one project.
@@ -325,7 +325,7 @@ The wording is the one `cli.ingestSources` uses today, verbatim, because
 `internal/cli/cli_test.go:839` asserts `has not ingested from a folder yet` and
 Task 3 routes the `ingest` command through this function. Do not reword it.
 
-Add `"github.com/nathanaday/claude-atlas/internal/home"` to `stage.go`'s imports.
+Add `"github.com/nathanaday/atlas-obsidian/internal/home"` to `stage.go`'s imports.
 
 - [ ] **Step 4: Run the tests**
 
@@ -416,11 +416,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/vault"
-	"github.com/nathanaday/claude-atlas/internal/vaults"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/vault"
+	"github.com/nathanaday/atlas-obsidian/internal/vaults"
 )
 
 var now = time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
@@ -557,15 +557,15 @@ package actions
 import (
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/capture"
-	"github.com/nathanaday/claude-atlas/internal/console"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/refresh"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/tasks"
-	"github.com/nathanaday/claude-atlas/internal/txn"
-	"github.com/nathanaday/claude-atlas/internal/vault"
-	"github.com/nathanaday/claude-atlas/internal/vaults"
+	"github.com/nathanaday/atlas-obsidian/internal/capture"
+	"github.com/nathanaday/atlas-obsidian/internal/console"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/refresh"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/tasks"
+	"github.com/nathanaday/atlas-obsidian/internal/txn"
+	"github.com/nathanaday/atlas-obsidian/internal/vault"
+	"github.com/nathanaday/atlas-obsidian/internal/vaults"
 )
 
 // AddVault is what a caller chose for a new or adopted vault.
@@ -753,13 +753,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/console"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/tasks"
-	"github.com/nathanaday/claude-atlas/internal/txn"
-	"github.com/nathanaday/claude-atlas/internal/vault"
-	"github.com/nathanaday/claude-atlas/internal/vaults"
+	"github.com/nathanaday/atlas-obsidian/internal/console"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/tasks"
+	"github.com/nathanaday/atlas-obsidian/internal/txn"
+	"github.com/nathanaday/atlas-obsidian/internal/vault"
+	"github.com/nathanaday/atlas-obsidian/internal/vaults"
 )
 
 // createOrAdopt makes or adopts the vault, records the facts the template does not
@@ -911,13 +911,13 @@ Remove `type Hooks struct { ... }` from `internal/tui/editor.go` (the whole bloc
 for f in internal/tui/*.go; do
   perl -pi -e 's/\btui\.Hooks\b/actions.Atlas/g; s/\bHooks\b/actions.Atlas/g; s/\bAddVault\b/actions.AddVault/g' "$f"
   if grep -q 'actions\.' "$f" && ! grep -q 'internal/actions"' "$f"; then
-    perl -0pi -e 's/(\t"github.com\/nathanaday\/claude-atlas\/internal\/)/\t"github.com\/nathanaday\/claude-atlas\/internal\/actions"\n$1/' "$f"
+    perl -0pi -e 's/(\t"github.com\/nathanaday\/atlas-obsidian\/internal\/)/\t"github.com\/nathanaday\/atlas-obsidian\/internal\/actions"\n$1/' "$f"
   fi
 done
 gofmt -l internal/tui/
 ```
 
-`\bHooks\b` leaves `taskHooks`, `RunAddVault`, and `TestEditNeedsHooks` alone: no word boundary sits inside them. The perl insert puts the import before the first `internal/` import, which keeps gofmt's order since `actions` sorts first. A file that uses `actions.` and has no `internal/` import gets no line; `go vet ./internal/tui/` names it with `undefined: actions`, and the fix is to add `"github.com/nathanaday/claude-atlas/internal/actions"` to that file's import block by hand.
+`\bHooks\b` leaves `taskHooks`, `RunAddVault`, and `TestEditNeedsHooks` alone: no word boundary sits inside them. The perl insert puts the import before the first `internal/` import, which keeps gofmt's order since `actions` sorts first. A file that uses `actions.` and has no `internal/` import gets no line; `go vet ./internal/tui/` names it with `undefined: actions`, and the fix is to add `"github.com/nathanaday/atlas-obsidian/internal/actions"` to that file's import block by hand.
 
 Then the two call sites whose signatures changed. `internal/tui/view.go`, in `refreshCmd`:
 
@@ -976,7 +976,7 @@ func (e *env) registryEntries(cfg *home.Config) ([]registry.Entry, error) {
 perl -pi -e 's/\btui\.AddVault\b/actions.AddVault/g; s/\btui\.Hooks\b/actions.Atlas/g' internal/cli/cli.go internal/cli/cli_test.go
 ```
 
-7. Add `"github.com/nathanaday/claude-atlas/internal/actions"` and `"github.com/nathanaday/claude-atlas/internal/refresh"` to `cli.go`'s imports if absent (`refresh` is already imported; check). Remove imports the deletions orphaned; `go vet` names them.
+7. Add `"github.com/nathanaday/atlas-obsidian/internal/actions"` and `"github.com/nathanaday/atlas-obsidian/internal/refresh"` to `cli.go`'s imports if absent (`refresh` is already imported; check). Remove imports the deletions orphaned; `go vet` names them.
 
 In `internal/cli/cli_test.go`, `TestViewHooksCreateEditAndForget`: replace `hooks := e.hooks(cfg)` with `hooks := actions.Bind(home.Home{Root: h.home}, cfg, e.console)`, and `if err := hooks.Refresh(); err != nil {` with `if _, _, err := hooks.Refresh(); err != nil {`. Add the `actions` import.
 
@@ -1020,11 +1020,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/links"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/vault"
-	"github.com/nathanaday/claude-atlas/internal/vaults"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/links"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/vault"
+	"github.com/nathanaday/atlas-obsidian/internal/vaults"
 )
 
 func TestAtlasReadsWithoutWritingAndRefreshWrites(t *testing.T) {
@@ -1080,10 +1080,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/nathanaday/claude-atlas/internal/actions"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/refresh"
-	"github.com/nathanaday/claude-atlas/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/actions"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/refresh"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
 )
 
 // The atlas tools: the whole atlas as one read, and the writes that configure it. They
@@ -1149,7 +1149,7 @@ func settingsOf(cfg *home.Config) Settings {
 }
 
 type AtlasArgs struct {
-	Refresh bool `json:"refresh,omitempty" jsonschema:"also rewrite the registry, recreate each project's kb/ links, and adopt repositories waiting under repos/: what claude-atlas refresh does"`
+	Refresh bool `json:"refresh,omitempty" jsonschema:"also rewrite the registry, recreate each project's kb/ links, and adopt repositories waiting under repos/: what atlas-obsidian refresh does"`
 }
 
 // AtlasOut is the whole atlas: every vault with its state, the folders the atlas cannot
@@ -1318,7 +1318,7 @@ Expected: `undefined: VaultToolOut`.
 
 - [ ] **Step 3: Implement**
 
-Append to `internal/mcpserver/atlas.go`; add `"github.com/nathanaday/claude-atlas/internal/vault"` and `"github.com/nathanaday/claude-atlas/internal/vaults"` to its imports:
+Append to `internal/mcpserver/atlas.go`; add `"github.com/nathanaday/atlas-obsidian/internal/vault"` and `"github.com/nathanaday/atlas-obsidian/internal/vaults"` to its imports:
 
 ```go
 type VaultToolArgs struct {
@@ -1997,7 +1997,7 @@ Expected: `undefined: RepoToolOut`.
 
 - [ ] **Step 3: Implement**
 
-Append to `internal/mcpserver/atlas.go`; add `"github.com/nathanaday/claude-atlas/internal/links"` to its imports:
+Append to `internal/mcpserver/atlas.go`; add `"github.com/nathanaday/atlas-obsidian/internal/links"` to its imports:
 
 ```go
 type RepoToolArgs struct {
@@ -2179,7 +2179,7 @@ Expected: `undefined: StageOut`.
 
 - [ ] **Step 3: Implement**
 
-Append to `internal/mcpserver/atlas.go`; add `"github.com/nathanaday/claude-atlas/internal/capture"` to its imports:
+Append to `internal/mcpserver/atlas.go`; add `"github.com/nathanaday/atlas-obsidian/internal/capture"` to its imports:
 
 ```go
 type SettingsArgs struct {
@@ -2344,13 +2344,13 @@ does not know.
 
 ## What stays in the terminal
 
-`claude-atlas doctor` (the installation check), `upgrade`, `recover`,
+`atlas-obsidian doctor` (the installation check), `upgrade`, `recover`,
 `setup`, `open-vault`, and `open-claude` are commands, not tools. Name the
 command; do not run it through Bash unless the user asks.
 
 Every write here is reversible or leaves the folder alone, so no plan preview
 exists; the skill that writes states the change in one line and waits for
-yes. Never edit `.claude-atlas.json`, `~/.claude-atlas/config.json`, or
+yes. Never edit `.claude-atlas.json`, `~/.atlas-obsidian/config.json`, or
 `registry.json` with Write or Edit.
 ```
 
@@ -2400,7 +2400,7 @@ State the whole change in one line, in the user's words:
 On yes: `vault` with `action: create`, `kind: project`, and the answers;
 then `mount` for each further knowledge base; then `repo` with `link`,
 `clone`, or `new`. Report each tool's result. Then say how to work there:
-`claude-atlas open-claude <name>`, or `cd` into the vault and start `claude`.
+`atlas-obsidian open-claude <name>`, or `cd` into the vault and start `claude`.
 A session in a linked repository reaches the project too.
 
 If a tool refuses, say why in the tool's words and ask again for that one
@@ -2604,18 +2604,18 @@ edit('skills/wiki/SKILL.md', [
 of these in a terminal, then start a session inside the vault:
 
 ```bash
-claude-atlas new-project               # create a project, step by step
-claude-atlas new-knowledge             # create a knowledge base, step by step
-claude-atlas adopt /path/to/vault      # an existing Obsidian or claude-obsidian vault
+atlas-obsidian new-project               # create a project, step by step
+atlas-obsidian new-knowledge             # create a knowledge base, step by step
+atlas-obsidian adopt /path/to/vault      # an existing Obsidian or claude-obsidian vault
 ```
 ''',
 '''If `status` fails because no vault is selected, the session is outside every
 vault and every project's repository. Hand off: `atlas-project` creates a
 project, `atlas-knowledge` a knowledge base, and either adopts an existing
 Obsidian vault; `atlas` shows what exists. A new vault's session starts with
-`claude-atlas open-claude NAME`, or `cd` there and `claude`.
+`atlas-obsidian open-claude NAME`, or `cd` there and `claude`.
 '''),
-('''| Mount, unmount, grant, or revoke access to a knowledge base | the CLI (`claude-atlas mount …`), not a tool |''',
+('''| Mount, unmount, grant, or revoke access to a knowledge base | the CLI (`atlas-obsidian mount …`), not a tool |''',
 '''| See the whole atlas, refresh it, or change a setting | `atlas` |
 | Create, rename, retag, or forget a project | `atlas-project` |
 | Create a knowledge base or a cluster, or change its scope, access, or members | `atlas-knowledge` |
@@ -2626,7 +2626,7 @@ Obsidian vault; `atlas` shows what exists. A new vault's session starts with
 edit('skills/wiki-ingest/SKILL.md', [
 ('''base: ask the user once, and offer the choices, each mounted knowledge base
 with its scope and the project's wiki. When there is no mount, say so, and
-name `claude-atlas mount <project> <kb>` as the way to add one before the
+name `atlas-obsidian mount <project> <kb>` as the way to add one before the
 ingest.''',
 '''base: ask the user once, and offer the choices, each mounted knowledge base
 with its scope and the project's wiki. When there is no mount, say so, and
@@ -2641,10 +2641,10 @@ outside the vault enters through the `stage` tool: it copies what is new into
 ('''"`<project> mounts <kb> read-only`". Stop before capturing and tell the user
 which command to run in a terminal:
 
-- the mount's own `access` is `read`: `claude-atlas mount <project> <kb>`
+- the mount's own `access` is `read`: `atlas-obsidian mount <project> <kb>`
   without `--read`;
 - `access` is `write` but `effective` is `read`: the knowledge base is guarded,
-  so `claude-atlas grant <kb> <project> --write`.
+  so `atlas-obsidian grant <kb> <project> --write`.
 ''',
 '''"`<project> mounts <kb> read-only`". Stop before capturing and hand off to
 the `atlas-mount` skill, which reads `effective` and changes the right thing:
@@ -2661,7 +2661,7 @@ Expected: `edited`, then the new lines.
 
 `skills/wiki-ingest/SKILL.md` is under edit in another session while this plan
 is written. If an `assert` fails because its text moved, do not weaken the
-assert: read the file, find the sentence that still names a `claude-atlas`
+assert: read the file, find the sentence that still names a `atlas-obsidian`
 command, and replace that sentence with the same hand-off (`atlas-mount` for a
 mount or a grant, `stage` for a file outside the vault). The rule is that no
 skill sends the user to a terminal for something a tool now does.
@@ -2763,9 +2763,9 @@ table='''| In `view` | Command | Tool, from a Claude Code session |
 | — (no `view` key; run from a `lint` finding) | `stub VAULT [TITLE...] [--type T]` | `stub` |
 '''
 s=s[:start]+table+s[end:]
-old='''(`claude-atlas view` says the same explicitly). Everything it does is also
+old='''(`atlas-obsidian view` says the same explicitly). Everything it does is also
 one command, so scripts and muscle memory both work:'''
-new='''(`claude-atlas view` says the same explicitly). Everything it does is also
+new='''(`atlas-obsidian view` says the same explicitly). Everything it does is also
 one command, and one tool from a Claude Code session, so scripts, muscle
 memory, and the `atlas` skills all work:'''
 assert old in s
@@ -2824,14 +2824,14 @@ git -c user.name=nathanaday -c user.email=nraday1221@gmail.com add CLAUDE.md doc
 
 ### Task 12: Verify end to end
 
-The tests prove the tools; this proves the plugin: the tools appear in a session, the skills trigger, and a guided create lands on disk. Everything runs against a scratch atlas home, never `~/.claude-atlas`.
+The tests prove the tools; this proves the plugin: the tools appear in a session, the skills trigger, and a guided create lands on disk. Everything runs against a scratch atlas home, never `~/.atlas-obsidian`.
 
 **Files:** none changed. If a step fails, fix it in the task that owns the code and re-run from Step 1.
 
 - [ ] **Step 1: The whole suite, vet, format, build**
 
 ```bash
-make test && go vet ./... && gofmt -l internal/ cmd/ && make install && claude-atlas version
+make test && go vet ./... && gofmt -l internal/ cmd/ && make install && atlas-obsidian version
 ```
 
 Expected: every package `ok`; nothing from vet or gofmt; the version the build stamps.
@@ -2839,7 +2839,7 @@ Expected: every package `ok`; nothing from vet or gofmt; the version the build s
 - [ ] **Step 2: A scratch atlas**
 
 ```bash
-S=/private/tmp/claude-501/-Users-nathanaday-SoftwareProjects-claude-atlas/1f02bef0-7321-4284-a48a-6d700030bf78/scratchpad/atlas-tools && rm -rf "$S" && mkdir -p "$S" && claude-atlas --home "$S/home" -y setup --no-plugin --vaults-dir "$S/Vaults" --first-vault welcome && claude-atlas --home "$S/home" -y new-knowledge ai-ml --scope "Machine learning: models, training, evaluation." && claude-atlas --home "$S/home" list
+S=/private/tmp/claude-501/-Users-nathanaday-SoftwareProjects-atlas-obsidian/1f02bef0-7321-4284-a48a-6d700030bf78/scratchpad/atlas-tools && rm -rf "$S" && mkdir -p "$S" && atlas-obsidian --home "$S/home" -y setup --no-plugin --vaults-dir "$S/Vaults" --first-vault welcome && atlas-obsidian --home "$S/home" -y new-knowledge ai-ml --scope "Machine learning: models, training, evaluation." && atlas-obsidian --home "$S/home" list
 ```
 
 Expected: `welcome` (project) and `ai-ml` (knowledge base) listed.
@@ -2847,7 +2847,7 @@ Expected: `welcome` (project) and `ai-ml` (knowledge base) listed.
 - [ ] **Step 3: The tools are served and the `atlas` skill reads them**
 
 ```bash
-S=/private/tmp/claude-501/-Users-nathanaday-SoftwareProjects-claude-atlas/1f02bef0-7321-4284-a48a-6d700030bf78/scratchpad/atlas-tools && cd "$S" && CLAUDE_ATLAS_HOME="$S/home" claude --plugin-dir /Users/nathanaday/SoftwareProjects/claude-atlas/.claude/worktrees/atlas-tools -p "Use the atlas skill. What vaults exist, and what does each mount?" --allowedTools "mcp__plugin_claude-atlas_atlas__*,Skill,Read,Grep,Glob"
+S=/private/tmp/claude-501/-Users-nathanaday-SoftwareProjects-atlas-obsidian/1f02bef0-7321-4284-a48a-6d700030bf78/scratchpad/atlas-tools && cd "$S" && ATLAS_OBSIDIAN_HOME="$S/home" claude --plugin-dir /Users/nathanaday/SoftwareProjects/atlas-obsidian/.claude/worktrees/atlas-tools -p "Use the atlas skill. What vaults exist, and what does each mount?" --allowedTools "mcp__plugin_atlas-obsidian_atlas__*,Skill,Read,Grep,Glob"
 ```
 
 Expected: an answer that names `welcome` and `ai-ml`, with the knowledge base's scope, and no mention of running a terminal command. The session started in a folder that is not a vault, and the tool still answered.
@@ -2855,7 +2855,7 @@ Expected: an answer that names `welcome` and `ai-ml`, with the knowledge base's 
 - [ ] **Step 4: A guided create lands on disk**
 
 ```bash
-S=/private/tmp/claude-501/-Users-nathanaday-SoftwareProjects-claude-atlas/1f02bef0-7321-4284-a48a-6d700030bf78/scratchpad/atlas-tools && cd "$S" && CLAUDE_ATLAS_HOME="$S/home" claude --plugin-dir /Users/nathanaday/SoftwareProjects/claude-atlas/.claude/worktrees/atlas-tools -p "Use the atlas-project skill to create a project named triage, tags usc, mounting ai-ml, no repository. Take the defaults for everything else. I have read your one-line summary and my answer is yes; do not wait for another answer." --allowedTools "mcp__plugin_claude-atlas_atlas__*,Skill,Read,Grep,Glob" && claude-atlas --home "$S/home" show triage
+S=/private/tmp/claude-501/-Users-nathanaday-SoftwareProjects-atlas-obsidian/1f02bef0-7321-4284-a48a-6d700030bf78/scratchpad/atlas-tools && cd "$S" && ATLAS_OBSIDIAN_HOME="$S/home" claude --plugin-dir /Users/nathanaday/SoftwareProjects/atlas-obsidian/.claude/worktrees/atlas-tools -p "Use the atlas-project skill to create a project named triage, tags usc, mounting ai-ml, no repository. Take the defaults for everything else. I have read your one-line summary and my answer is yes; do not wait for another answer." --allowedTools "mcp__plugin_atlas-obsidian_atlas__*,Skill,Read,Grep,Glob" && atlas-obsidian --home "$S/home" show triage
 ```
 
 Expected: `show triage` prints the project at `$S/Vaults/projects/triage` with tag `usc` and the mount `ai-ml` (effective write).
@@ -2863,10 +2863,10 @@ Expected: `show triage` prints the project at `$S/Vaults/projects/triage` with t
 - [ ] **Step 5: The in-vault skills still hand off, not to the terminal**
 
 ```bash
-S=/private/tmp/claude-501/-Users-nathanaday-SoftwareProjects-claude-atlas/1f02bef0-7321-4284-a48a-6d700030bf78/scratchpad/atlas-tools && cd "$S/Vaults/projects/triage" && CLAUDE_ATLAS_HOME="$S/home" claude --plugin-dir /Users/nathanaday/SoftwareProjects/claude-atlas/.claude/worktrees/atlas-tools -p "Use the wiki skill. I want to make ai-ml read-only for this project. Which skill handles that, and what would it call? Do not change anything." --allowedTools "mcp__plugin_claude-atlas_atlas__*,Skill,Read,Grep,Glob"
+S=/private/tmp/claude-501/-Users-nathanaday-SoftwareProjects-atlas-obsidian/1f02bef0-7321-4284-a48a-6d700030bf78/scratchpad/atlas-tools && cd "$S/Vaults/projects/triage" && ATLAS_OBSIDIAN_HOME="$S/home" claude --plugin-dir /Users/nathanaday/SoftwareProjects/atlas-obsidian/.claude/worktrees/atlas-tools -p "Use the wiki skill. I want to make ai-ml read-only for this project. Which skill handles that, and what would it call? Do not change anything." --allowedTools "mcp__plugin_atlas-obsidian_atlas__*,Skill,Read,Grep,Glob"
 ```
 
-Expected: the answer names `atlas-mount` and the `mount` tool with `action: access`, `access: read`; it does not name `claude-atlas mount`.
+Expected: the answer names `atlas-mount` and the `mount` tool with `action: access`, `access: read`; it does not name `atlas-obsidian mount`.
 
 - [ ] **Step 6: Report**
 

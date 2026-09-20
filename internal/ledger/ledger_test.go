@@ -117,3 +117,15 @@ func TestParseKeepsLegacyFields(t *testing.T) {
 		t.Fatalf("encode:\n%s", out)
 	}
 }
+
+// A ledger written before the rename reads, and Parse raises its schema.
+func TestParseAcceptsTheSchemaWrittenBeforeTheRename(t *testing.T) {
+	raw := `{"schema":"claude-atlas.source-ledger.v1","generated_at":"2026-01-01T00:00:00Z","sources":{}}`
+	l, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if l.Schema != Schema {
+		t.Fatalf("schema %q, want %q", l.Schema, Schema)
+	}
+}

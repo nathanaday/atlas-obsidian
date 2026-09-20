@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
 )
 
 func TestInspectRepo(t *testing.T) {

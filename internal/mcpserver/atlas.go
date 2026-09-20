@@ -9,18 +9,18 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/nathanaday/claude-atlas/internal/actions"
-	"github.com/nathanaday/claude-atlas/internal/capture"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/manage"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/actions"
+	"github.com/nathanaday/atlas-obsidian/internal/capture"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/manage"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
 )
 
 // The atlas tools: the whole atlas as one read, and the writes that configure it. They
 // bind the same functions the view calls, once per call over a config loaded for that
 // call, because the CLI in another process may change config.json between two calls. A
-// write ends in a refresh, so the stored registry `claude-atlas list` and the view read
+// write ends in a refresh, so the stored registry `atlas-obsidian list` and the view read
 // carries the change, and the tool answers from the index that refresh derived. They
 // work with no place at all, because init is how a plain folder becomes a project.
 
@@ -81,7 +81,7 @@ func settingsOf(cfg *home.Config) Settings {
 }
 
 type AtlasArgs struct {
-	Refresh bool `json:"refresh,omitempty" jsonschema:"also rewrite the registry: what claude-atlas refresh does"`
+	Refresh bool `json:"refresh,omitempty" jsonschema:"also rewrite the registry: what atlas-obsidian refresh does"`
 }
 
 // AtlasOut is the whole atlas: every project with its state, the folders the atlas cannot
@@ -278,11 +278,11 @@ func (s *Server) stageTool(ctx context.Context, req *mcp.CallToolRequest, a Stag
 		return nil, StageOut{}, err
 	}
 	if pl.Index == nil {
-		return nil, StageOut{}, errors.New("no atlas config on this machine; run claude-atlas setup")
+		return nil, StageOut{}, errors.New("no atlas config on this machine; run atlas-obsidian setup")
 	}
 	en := pl.Index.ByPath(p.Root)
 	if en == nil || en.Error != "" {
-		return nil, StageOut{}, fmt.Errorf("the atlas does not list %s; start a session in it, or run `claude-atlas init`", p.Name())
+		return nil, StageOut{}, fmt.Errorf("the atlas does not list %s; start a session in it, or run `atlas-obsidian init`", p.Name())
 	}
 	out := StageOut{Project: p.Root}
 	if a.Snapshot {

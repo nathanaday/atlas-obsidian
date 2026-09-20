@@ -4,7 +4,7 @@ Status: implemented, 2026-09-12. v2 (`v2-design.md`) supersedes what this
 document says about the atlas and about a single vault kind; the engine
 rules below stand. Decisions taken after the proposal: no claim ledger, hand edits are auto-committed, the binary is installed first and the plugin finds it, Go stays at 1.24 with the SDK pinned to v1.4.0.
 
-claude-atlas stops wrapping the claude-obsidian plugin and ships its own
+atlas-obsidian stops wrapping the claude-obsidian plugin and ships its own
 core. The core is Go, exposed to Claude Code as an MCP server, and packaged
 with the skills, agents, and hooks in one plugin. The workflow stays the one
 claude-obsidian established: sources enter through an inbox, every change to
@@ -83,7 +83,7 @@ vault/
 `.claude-atlas.json`:
 
 ```json
-{ "schema": "claude-atlas.vault.v1", "mode": "generic", "created": "2026-09-12" }
+{ "schema": "atlas-obsidian.vault.v1", "mode": "generic", "created": "2026-09-12" }
 ```
 
 Runtime state under `.vault-meta/` is ignored by git and safe to delete: the
@@ -217,8 +217,8 @@ skills follow and lint can check.
 ## The plugin
 
 ```text
-claude-atlas/                      this repository, also the marketplace
-├── .claude-plugin/plugin.json      name claude-atlas
+atlas-obsidian/                      this repository, also the marketplace
+├── .claude-plugin/plugin.json      name atlas-obsidian
 ├── .claude-plugin/marketplace.json this repo at ./
 ├── .mcp.json                       { "atlas": { "command": "${CLAUDE_PLUGIN_ROOT}/bin/atlas", "args": ["mcp"] } }
 ├── bin/atlas                       shell wrapper that finds the installed binary
@@ -229,12 +229,12 @@ claude-atlas/                      this repository, also the marketplace
 ```
 
 The plugin cache is code; it never holds a vault or a binary we built. The
-wrapper looks for the binary in `$CLAUDE_ATLAS_BIN`, on `PATH`, in
+wrapper looks for the binary in `$ATLAS_OBSIDIAN_BIN`, on `PATH`, in
 `~/go/bin`, in the Homebrew prefixes, then in `${CLAUDE_PLUGIN_DATA}/bin`. If
 none exists it prints the install command and exits. The binary reads the
 plugin's `plugin.json` at start and warns when the two versions differ.
 
-Install order stays as it is now: install the binary, run `claude-atlas
+Install order stays as it is now: install the binary, run `atlas-obsidian
 setup`, which adds this repository as a marketplace and installs the plugin.
 A later release can teach the wrapper to download a checksummed binary into
 `${CLAUDE_PLUGIN_DATA}`; that is not part of this design.
@@ -242,7 +242,7 @@ A later release can teach the wrapper to download a checksummed binary into
 ### Tools
 
 Server name `atlas`. Every tool takes an optional `vault`; when absent the
-server resolves `CLAUDE_ATLAS_VAULT`, then the nearest `.claude-atlas.json`
+server resolves `ATLAS_OBSIDIAN_VAULT`, then the nearest `.claude-atlas.json`
 above `CLAUDE_PROJECT_DIR`, and fails closed otherwise.
 
 | Tool | Reads or writes | Returns |
@@ -290,11 +290,11 @@ rule 2 (commit manual edits first) keeps them recoverable.
 Ported from claude-obsidian with the invocation rewritten from
 `python3 "$CORE" ...` to tool calls, and the transaction prose replaced by
 the plan and apply contract. Names are unchanged so the slash menu reads as
-before, under `/claude-atlas:`.
+before, under `/atlas-obsidian:`.
 
 | Skill | Change beyond the rewrite |
 |---|---|
-| `wiki` | routes; setup points at `claude-atlas new-project` or `new-knowledge` and `claude-atlas adopt` |
+| `wiki` | routes; setup points at `atlas-obsidian new-project` or `new-knowledge` and `atlas-obsidian adopt` |
 | `wiki-ingest` | uses `inbox`, `capture`, `route`, `plan`, `apply`; ledger via the `sources` field |
 | `wiki-query` | read-only; retrieval is Grep and Glob until `search` exists |
 | `wiki-lint` | calls `lint`; repairs are a `repair` plan |
@@ -327,7 +327,7 @@ Changed:
   `git init` when needed, and commits a baseline.
 - `setup` installs this plugin instead of claude-obsidian.
 - `doctor` checks the binary, the plugin, git, and every vault.
-- `open-claude` sets `CLAUDE_ATLAS_VAULT`.
+- `open-claude` sets `ATLAS_OBSIDIAN_VAULT`.
 
 New, all thin over the packages the MCP server uses: `mcp`, `hook`, `lint`,
 `history`, `undo`, `recover`, `mode`, `apply PLAN.json` for scripts and

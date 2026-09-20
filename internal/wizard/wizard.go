@@ -1,16 +1,16 @@
-// Package wizard is the guided `claude-atlas setup` flow.
+// Package wizard is the guided `atlas-obsidian setup` flow.
 package wizard
 
 import (
 	"fmt"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/claudecode"
-	"github.com/nathanaday/claude-atlas/internal/console"
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/refresh"
-	"github.com/nathanaday/claude-atlas/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/claudecode"
+	"github.com/nathanaday/atlas-obsidian/internal/console"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/refresh"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
 )
 
 // Options come from setup's flags.
@@ -51,7 +51,7 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 		return 1, err
 	}
 	c.Say("")
-	c.Say("claude-atlas setup")
+	c.Say("atlas-obsidian setup")
 	c.Say("")
 	plan(c, "home", ternary(fresh, "create", "exists"), home.Display(h.Root))
 	switch {
@@ -72,7 +72,7 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	}
 	note := fmt.Sprintf("%d listed", len(ix.Projects()))
 	if waiting > 0 {
-		note += fmt.Sprintf(", %d waiting for `claude-atlas upgrade`", waiting)
+		note += fmt.Sprintf(", %d waiting for `atlas-obsidian upgrade`", waiting)
 	}
 	plan(c, "projects", "keep", note)
 	c.Say("")
@@ -128,10 +128,10 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	c.Say("Setup complete.")
 	c.Say("")
 	c.Say("Next:")
-	c.Say("  cd <your work> && claude-atlas init   make a folder or a repository a project")
-	c.Say("  claude-atlas open-vault NAME          open a project in Obsidian")
-	c.Say("  claude-atlas open-claude NAME         start Claude Code in a project")
-	c.Say("  claude-atlas refresh                  read everything again")
+	c.Say("  cd <your work> && atlas-obsidian init   make a folder or a repository a project")
+	c.Say("  atlas-obsidian open-vault NAME          open a project in Obsidian")
+	c.Say("  atlas-obsidian open-claude NAME         start Claude Code in a project")
+	c.Say("  atlas-obsidian refresh                  read everything again")
 	if installed == nil {
 		c.Say("")
 		c.Say("The plugin is not installed. Install it, then run setup again:")

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
 )
 
 const Repo = "repo"

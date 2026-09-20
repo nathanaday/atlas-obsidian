@@ -93,7 +93,7 @@ property editor lists the pages, so linking from inside Obsidian is a pick
 rather than a paste. The page is authored, not generated: the user may rename
 it, write notes in it, or create one by hand with `schema: atlas.link.v1`
 and a `path`. Refresh derives the facts about the repository (branch,
-uncommitted changes, last commit) into `~/.claude-atlas/state/links.json` and
+uncommitted changes, last commit) into `~/.atlas-obsidian/state/links.json` and
 the overview, never into the page.
 
 Pages from before this design held plain paths. `refresh` upgrades them once:
@@ -118,9 +118,9 @@ mean two edits per change and two places to drift.
 
 ## Linking from the terminal
 
-`claude-atlas link NAME TARGET` takes a repository's path or a page name;
+`atlas-obsidian link NAME TARGET` takes a repository's path or a page name;
 `--init` makes a plain folder a repository first, and the interactive forms
-ask before doing so. `claude-atlas new-repo NAME REPO [--at DIR]` creates one.
+ask before doing so. `atlas-obsidian new-repo NAME REPO [--at DIR]` creates one.
 Every field in the interactive screens that takes a path completes it as a
 shell does, and the link field also completes page names. In `view`, `l` is a
 screen of its own: one box per repository, and `n`, `a`, `e`, `u` act at

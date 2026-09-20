@@ -12,10 +12,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/links"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/threads"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/links"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
 )
 
 // The reasons an entry the atlas knows cannot be read. An Entry with an Error carries
@@ -221,10 +221,10 @@ func Scan(cfg *home.Config) (*Index, error) {
 		}
 		found[key] = true
 		if info, err := os.Stat(abs); err != nil || !info.IsDir() {
-			fail(ix, abs, "a knowledge base of 3.x whose folder is gone; run claude-atlas forget "+abs, ReasonMissing)
+			fail(ix, abs, "a knowledge base of 3.x whose folder is gone; run atlas-obsidian forget "+abs, ReasonMissing)
 			continue
 		}
-		fail(ix, abs, "a knowledge base of 3.x; run claude-atlas upgrade "+abs+" to make it a project, or claude-atlas forget to drop it", ReasonV3Split)
+		fail(ix, abs, "a knowledge base of 3.x; run atlas-obsidian upgrade "+abs+" to make it a project, or atlas-obsidian forget to drop it", ReasonV3Split)
 	}
 
 	sortEntries(ix.Entries)
@@ -245,15 +245,15 @@ func realPath(path string) string {
 func scanProject(ix *Index, work string) {
 	info, err := os.Stat(work)
 	if err != nil || !info.IsDir() {
-		fail(ix, work, "not found; work in it again to heal the path, or run claude-atlas forget", ReasonMissing)
+		fail(ix, work, "not found; work in it again to heal the path, or run atlas-obsidian forget", ReasonMissing)
 		return
 	}
 	if _, err := project.Locate(work); err != nil {
 		switch {
 		case errors.Is(err, project.ErrFlat):
-			fail(ix, work, "the project sits directly in "+project.Dir+"/; run claude-atlas upgrade "+work, ReasonFlat)
+			fail(ix, work, "the project sits directly in "+project.Dir+"/; run atlas-obsidian upgrade "+work, ReasonFlat)
 		case errors.Is(err, project.ErrNotProject):
-			fail(ix, work, "no "+project.Dir+"/<name>/"+project.Marker+"; run claude-atlas init there, or claude-atlas forget", ReasonNotProject)
+			fail(ix, work, "no "+project.Dir+"/<name>/"+project.Marker+"; run atlas-obsidian init there, or atlas-obsidian forget", ReasonNotProject)
 		default:
 			fail(ix, work, err.Error(), ReasonUnreadable)
 		}
@@ -264,10 +264,10 @@ func scanProject(ix *Index, work string) {
 		fail(ix, work, "identity file is not JSON", ReasonUnreadable)
 		return
 	}
-	switch cfg.Schema {
-	case project.Schema:
-	case project.SchemaV3:
-		fail(ix, work, "a 3.x project, whose knowledge base sits outside it; run claude-atlas upgrade "+work, ReasonV3Split)
+	switch {
+	case project.Current(cfg.Schema):
+	case cfg.Schema == project.SchemaV3:
+		fail(ix, work, "a 3.x project, whose knowledge base sits outside it; run atlas-obsidian upgrade "+work, ReasonV3Split)
 		return
 	default:
 		fail(ix, work, fmt.Sprintf("unsupported schema %q", cfg.Schema), ReasonSchema)
@@ -440,7 +440,7 @@ func (e Entry) Atlas() string {
 func (e Entry) Wiki() string { return filepath.Join(e.Atlas(), project.WikiDir) }
 
 // StateSchema is the schema the registry state file declares.
-const StateSchema = "claude-atlas.registry.v4"
+const StateSchema = "atlas-obsidian.registry.v4"
 
 // registryFile is the on-disk shape of the state file.
 type registryFile struct {
@@ -498,7 +498,7 @@ func Read(stateDir string) ([]Entry, string, error) {
 		return nil, "", fmt.Errorf("%w: %s: %v", ErrStale, File(stateDir), err)
 	}
 	if doc.Schema != StateSchema {
-		return nil, "", fmt.Errorf("%w: %s: unsupported schema %q; run claude-atlas refresh", ErrStale, File(stateDir), doc.Schema)
+		return nil, "", fmt.Errorf("%w: %s: unsupported schema %q; run atlas-obsidian refresh", ErrStale, File(stateDir), doc.Schema)
 	}
 	return doc.Entries, doc.GeneratedAt, nil
 }

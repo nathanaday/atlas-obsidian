@@ -16,7 +16,7 @@ func TestResolvePrecedence(t *testing.T) {
 		t.Fatalf("env should win, got %s", h.Root)
 	}
 	t.Setenv(EnvHome, "")
-	if h := Resolve(""); filepath.Base(h.Root) != ".claude-atlas" {
+	if h := Resolve(""); filepath.Base(h.Root) != ".atlas-obsidian" {
 		t.Fatalf("default wrong: %s", h.Root)
 	}
 }
@@ -100,7 +100,7 @@ func TestV2ConfigVaultsBecomeKnowledge(t *testing.T) {
   "vaults": ["~/Elsewhere/kb"],
   "repos": {"id/paper": "~/Code/paper"},
   "default_repo_changes": "pr",
-  "plugin": {"id": "claude-atlas@x", "source": "x"},
+  "plugin": {"id": "atlas-obsidian@x", "source": "x"},
   "claude_code": {"command": "claude", "session_context": true}
 }
 `
@@ -132,5 +132,66 @@ func TestDisplayAndExpand(t *testing.T) {
 	}
 	if Expand("~/x") != filepath.Join(userHome, "x") || Expand("/abs") != "/abs" {
 		t.Fatal("expand wrong")
+	}
+}
+
+// A config written before the rename loads, and Save raises its schema.
+func TestLoadAcceptsTheSchemaWrittenBeforeTheRename(t *testing.T) {
+	h := Home{Root: t.TempDir()}
+	raw := `{"schema":"claude-atlas.config.v4","projects":["/work/webapp"]}`
+	if err := os.WriteFile(h.ConfigPath(), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := h.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Schema != ConfigSchema {
+		t.Fatalf("schema %q, want %q", cfg.Schema, ConfigSchema)
+	}
+	if !cfg.HasProject("/work/webapp") {
+		t.Fatalf("the projects were dropped: %+v", cfg.Projects)
+	}
+}
+
+// adopt moves an atlas left at the old name; it never overwrites one at the new name.
+func TestAdoptMovesTheAtlasLeftAtTheOldName(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	old := filepath.Join(dir, ".claude-atlas")
+	os.MkdirAll(old, 0o755)
+	os.WriteFile(filepath.Join(old, "config.json"), []byte(`{"schema":"claude-atlas.config.v4"}`), 0o644)
+
+	root := filepath.Join(dir, ".atlas-obsidian")
+	if got := adopt(root); got != root {
+		t.Fatalf("adopt returned %q, want %q", got, root)
+	}
+	if _, err := os.Stat(filepath.Join(root, "config.json")); err != nil {
+		t.Fatalf("the config did not move: %v", err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("the old home is still there: %v", err)
+	}
+}
+
+func TestAdoptKeepsAnAtlasAlreadyAtTheNewName(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	old := filepath.Join(dir, ".claude-atlas")
+	os.MkdirAll(old, 0o755)
+	os.WriteFile(filepath.Join(old, "config.json"), []byte(`{"schema":"claude-atlas.config.v4"}`), 0o644)
+	root := filepath.Join(dir, ".atlas-obsidian")
+	os.MkdirAll(root, 0o755)
+	os.WriteFile(filepath.Join(root, "config.json"), []byte(`{"schema":"atlas-obsidian.config.v4"}`), 0o644)
+
+	if got := adopt(root); got != root {
+		t.Fatalf("adopt returned %q, want %q", got, root)
+	}
+	data, _ := os.ReadFile(filepath.Join(root, "config.json"))
+	if !strings.Contains(string(data), "atlas-obsidian.config.v4") {
+		t.Fatalf("the new home was overwritten: %s", data)
+	}
+	if _, err := os.Stat(old); err != nil {
+		t.Fatalf("the old home was moved anyway: %v", err)
 	}
 }

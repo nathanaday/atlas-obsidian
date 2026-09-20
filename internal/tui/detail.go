@@ -7,9 +7,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/refresh"
-	"github.com/nathanaday/claude-atlas/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/refresh"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
 )
 
 // detailWidth is the label column of the expanded block.
@@ -165,17 +165,17 @@ func problemFix(e registry.Entry) string {
 	path := home.Display(e.Path)
 	switch e.Reason {
 	case registry.ReasonV3Split:
-		return "run claude-atlas upgrade " + path
+		return "run atlas-obsidian upgrade " + path
 	case registry.ReasonMissing:
 		return strings.TrimPrefix(e.Error, "not found; ")
 	case registry.ReasonFlat:
-		return "run claude-atlas upgrade " + path
+		return "run atlas-obsidian upgrade " + path
 	case registry.ReasonNotProject:
-		return "run claude-atlas init " + path + ", or claude-atlas forget " + path
+		return "run atlas-obsidian init " + path + ", or atlas-obsidian forget " + path
 	case registry.ReasonUnreadable:
 		return "repair the identity file and press R"
 	case registry.ReasonSchema:
-		return "written by a newer claude-atlas; update the binary"
+		return "written by a newer atlas-obsidian; update the binary"
 	}
 	return e.Error
 }

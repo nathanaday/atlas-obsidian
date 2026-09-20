@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/ledger"
-	"github.com/nathanaday/claude-atlas/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/ledger"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
 )
 
 // Staging copies sources from outside the vault into inbox/. A file whose bytes are already
@@ -25,7 +25,7 @@ import (
 // MapPath is the vault-relative record of what was staged from where. It is derived state.
 const MapPath = project.MetaDir + "/ingest.json"
 
-const mapSchema = "claude-atlas.ingest-map.v1"
+const mapSchema = "atlas-obsidian.ingest-map.v1"
 
 // Staged is one file the plan will copy.
 type Staged struct {

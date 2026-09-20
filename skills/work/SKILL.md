@@ -17,7 +17,7 @@ spans sessions or needs a real spec.
 
 The change is this session's project's. When it belongs to another project the
 atlas lists, say so and offer
-`claude-atlas open-claude <project>`, because the work happens in that
+`atlas-obsidian open-claude <project>`, because the work happens in that
 project's own session.
 
 ## Orient and find the facts

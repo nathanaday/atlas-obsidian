@@ -9,10 +9,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/manage"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/manage"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
 )
 
 // EnvPlace names the project explicitly for the MCP server and the hooks. It is the
@@ -33,7 +33,7 @@ type Place struct {
 }
 
 // ErrNoPlace means the session is not in a project.
-var ErrNoPlace = errors.New("not in a claude-atlas project")
+var ErrNoPlace = errors.New("not in a atlas-obsidian project")
 
 // Resolve finds the project: the explicit path, then the environment, then the nearest
 // project at or above start. An explicit path is the work folder, or anywhere inside it.
@@ -62,7 +62,7 @@ func from(h home.Home, dir string, register bool) (*Place, error) {
 		return resolve(h, work, register)
 	}
 	if known := project.KnowledgeAbove(dir); known != "" {
-		return nil, fmt.Errorf("%w: %s is a knowledge base of 3.x; run claude-atlas upgrade %s to make it a project", ErrNoPlace, home.Display(known), home.Display(known))
+		return nil, fmt.Errorf("%w: %s is a knowledge base of 3.x; run atlas-obsidian upgrade %s to make it a project", ErrNoPlace, home.Display(known), home.Display(known))
 	}
 	return nil, fmt.Errorf("%w: none at or above %s", ErrNoPlace, home.Display(dir))
 }
@@ -76,7 +76,7 @@ func resolve(h home.Home, work string, register bool) (*Place, error) {
 	cfg, err := h.Load()
 	if err != nil {
 		if errors.Is(err, home.ErrNoAtlas) {
-			out.ConfigError = "no atlas config on this machine; run claude-atlas setup"
+			out.ConfigError = "no atlas config on this machine; run atlas-obsidian setup"
 			return out, nil
 		}
 		return nil, err

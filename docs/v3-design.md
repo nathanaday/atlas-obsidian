@@ -138,7 +138,7 @@ webapp/                                 a repository, or a folder of documents
   `atlas/` are the user's.
 - A project made by 2.2.0 or earlier sits directly in `atlas/`.
   `project.Open` refuses it with `ErrFlat`, the scan files it under
-  `ReasonFlat`, and `claude-atlas upgrade` moves `atlas/` whole into
+  `ReasonFlat`, and `atlas-obsidian upgrade` moves `atlas/` whole into
   `atlas/<name>/`. Nothing moves the user's files without that command.
 - `atlas/<name>/` is not a git repository. When the work is a repository,
   the repository tracks `atlas/` like any other folder, on the branch the
@@ -170,9 +170,9 @@ webapp/                                 a repository, or a folder of documents
 
 ```bash
 cd ~/code/webapp
-claude-atlas init                                # name: the folder's; asks for a description and a knowledge base
-claude-atlas init --name "Web App" --knowledge product-x --description "…"
-claude-atlas init --no-knowledge                 # ask nothing
+atlas-obsidian init                                # name: the folder's; asks for a description and a knowledge base
+atlas-obsidian init --name "Web App" --knowledge product-x --description "…"
+atlas-obsidian init --no-knowledge                 # ask nothing
 ```
 
 `init` writes `atlas/<name>/` with its four entries, adds the folder to the atlas
@@ -301,7 +301,7 @@ Three doors, one result: a page with status `planted`.
 1. A sentence in a project session: the `task-plant` skill calls `plant`.
 2. A note in `atlas/<name>/inbox/`: the `task-plant` skill turns each note into a
    page and removes the note.
-3. From outside the project: `claude-atlas plant PROJECT "text"`, the `p` key
+3. From outside the project: `atlas-obsidian plant PROJECT "text"`, the `p` key
    in the view, or `plant` with `project` set from a knowledge base session.
 
 `plant` takes `title`, `text`, and optionally `priority`, `phase`, `due`, and
@@ -321,7 +321,7 @@ concept page or a change to one. The offer is a `plan` the user sees and an
 
 A session finds its place by walking up from the working directory:
 
-1. `CLAUDE_ATLAS_VAULT` or an explicit `vault`, as today.
+1. `ATLAS_OBSIDIAN_VAULT` or an explicit `vault`, as today.
 2. The nearer of the nearest ancestor that holds `atlas/<name>/project.json`, a
    project session anywhere inside the work, and the nearest ancestor that
    holds `.claude-atlas.json`, a knowledge base session. A knowledge base
@@ -342,7 +342,7 @@ reported, not guessed.
 The session-start hook in a project:
 
 ```text
-claude-atlas: project webapp at ~/code/webapp (git, main)
+atlas-obsidian: project webapp at ~/code/webapp (git, main)
 Knowledge: product-x · The thermal fire-detection product line … · 140 pages · ~/Vaults/product-x
 This project has no page in product-x; the describe skill writes it.
 Search the knowledge base (the wiki-query skill) before answering from the code alone.
@@ -354,7 +354,7 @@ Open tasks: 4 (active 1, blocked 0, planned 1, planted 2) in 2 phases. Notes wai
 In a knowledge base:
 
 ```text
-claude-atlas: knowledge base product-x (generic) at ~/Vaults/product-x
+atlas-obsidian: knowledge base product-x (generic) at ~/Vaults/product-x
 Projects: webapp (~/code/webapp, 4 open tasks), firmware (~/code/fw, 0 open tasks), legacy-gateway (missing: ~/old/gateway)
 Not yet described here: firmware.
 Inbox: 2 sources waiting.
@@ -378,7 +378,7 @@ the session and the ingest skill captures it from there.
 
 ## The atlas
 
-The atlas keeps its home at `~/.claude-atlas/`, as today: `config.json` and
+The atlas keeps its home at `~/.atlas-obsidian/`, as today: `config.json` and
 the derived `state/`. It is the one place on the machine that knows where
 everything is. `config.json`, schema `claude-atlas.config.v3`:
 

@@ -1,7 +1,7 @@
-BIN := claude-atlas
+BIN := atlas-obsidian
 # The binary reports the plugin's version so `doctor` and `status` can tell when the two drift.
 VERSION ?= $(shell sed -n 's/.*"version": "\([^"]*\)".*/\1/p' .claude-plugin/plugin.json | head -1)
-LDFLAGS := -ldflags "-X github.com/nathanaday/claude-atlas/internal/cli.Version=$(VERSION)"
+LDFLAGS := -ldflags "-X github.com/nathanaday/atlas-obsidian/internal/cli.Version=$(VERSION)"
 
 .PHONY: build install test vet
 

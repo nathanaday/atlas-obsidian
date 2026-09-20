@@ -1,10 +1,10 @@
 # Usage
 
-Every command, with examples. `claude-atlas help` prints the short form.
+Every command, with examples. `atlas-obsidian help` prints the short form.
 
 ## Three layers
 
-`claude-atlas` on its own opens the whole atlas as one screen (`claude-atlas
+`atlas-obsidian` on its own opens the whole atlas as one screen (`atlas-obsidian
 view` says the same explicitly). Everything it does is also one command, and
 one tool from a Claude Code session, so scripts, muscle memory, and the
 `atlas` skills all work:
@@ -47,9 +47,9 @@ paths, so an operation never touches your code.
 
 ```bash
 cd ~/code/webapp
-claude-atlas init                                   # name: the folder's; asks for a description
-claude-atlas init --name "Web App" --description "The customer-facing web application." --mode lyt
-claude-atlas init ~/code/notes --no-git             # another folder, and no repository
+atlas-obsidian init                                   # name: the folder's; asks for a description
+atlas-obsidian init --name "Web App" --description "The customer-facing web application." --mode lyt
+atlas-obsidian init ~/code/notes --no-git             # another folder, and no repository
 ```
 
 `init` writes `atlas/<name>/` in the current folder: `project.json`, `wiki/`
@@ -75,10 +75,10 @@ should remember. `wiki-ingest` and `wiki-query` read it to judge what belongs.
 Then:
 
 ```bash
-claude-atlas edit webapp --name "Web App" --description "…" --mode lyt
-claude-atlas show webapp
-claude-atlas forget webapp                          # drop it from the config; atlas/webapp/ stays
-claude-atlas describe webapp                        # stage a snapshot for the describe skill
+atlas-obsidian edit webapp --name "Web App" --description "…" --mode lyt
+atlas-obsidian show webapp
+atlas-obsidian forget webapp                          # drop it from the config; atlas/webapp/ stays
+atlas-obsidian describe webapp                        # stage a snapshot for the describe skill
 ```
 
 Each edit writes the identity file and commits it as a `setup` operation. **A
@@ -97,7 +97,7 @@ added the same way. Until then the view shows the project as missing.
 
 **Describe the work.** The wiki knows nothing about the code until a page says
 what it is. `describe` writes a snapshot of the work into `inbox/`, then offers
-to start Claude Code with `/claude-atlas:describe`, which reads the snapshot
+to start Claude Code with `/atlas-obsidian:describe`, which reads the snapshot
 and the work and writes `wiki/entities/<name>.md`: what the project is, how it
 is built and laid out, what it has delivered, the concepts it introduces. The
 snapshot holds the work's CLAUDE.md and README, its files (folders only past
@@ -139,24 +139,24 @@ thread's id, its title, or the start of its title.
 Open a thread without ceremony, from anywhere:
 
 ```bash
-claude-atlas thread webapp new "Filter vehicle false alarms"
-claude-atlas thread webapp new "Write the fault taxonomy" --priority high --phase "Alarm quality"
-claude-atlas thread . new "Cars trip the alarm at dusk." --title "Filter vehicle false alarms"
+atlas-obsidian thread webapp new "Filter vehicle false alarms"
+atlas-obsidian thread webapp new "Write the fault taxonomy" --priority high --phase "Alarm quality"
+atlas-obsidian thread . new "Cars trip the alarm at dusk." --title "Filter vehicle false alarms"
 ```
 
 Or drop a note into the project's `inbox/`; the next session's
-`/claude-atlas:thread-stub` opens a thread from each note and removes the note.
+`/atlas-obsidian:thread-stub` opens a thread from each note and removes the note.
 
 File a document to move the thread. The text comes from `--text`, from
 `--file PATH`, or from stdin:
 
 ```bash
-claude-atlas thread webapp file "Filter vehicle" spec --file spec.md
-claude-atlas thread webapp file "Filter vehicle" plan --text "1. Mask the road. 2. Replay the July set."
-cat receipt.md | claude-atlas thread webapp file "Filter vehicle" receipt --outcome completed
-claude-atlas thread webapp close "Filter vehicle" "Shipped in 3.2; the July set replays clean."
-claude-atlas thread webapp close "Drop jQuery" "Already gone since 3.1." --killed
-claude-atlas thread webapp reopen "Drop jQuery"          # deletes the receipt
+atlas-obsidian thread webapp file "Filter vehicle" spec --file spec.md
+atlas-obsidian thread webapp file "Filter vehicle" plan --text "1. Mask the road. 2. Replay the July set."
+cat receipt.md | atlas-obsidian thread webapp file "Filter vehicle" receipt --outcome completed
+atlas-obsidian thread webapp close "Filter vehicle" "Shipped in 3.2; the July set replays clean."
+atlas-obsidian thread webapp close "Drop jQuery" "Already gone since 3.1." --killed
+atlas-obsidian thread webapp reopen "Drop jQuery"          # deletes the receipt
 ```
 
 `close` files the receipt: completed, or killed with `--killed`. A document
@@ -165,17 +165,17 @@ that exists is never filed again; edit the page.
 See what is open, read one thread, and change a card:
 
 ```bash
-claude-atlas threads webapp
-claude-atlas threads                                # every project
-claude-atlas threads webapp --all                   # the closed ones too
-claude-atlas threads webapp --stage plan
-claude-atlas threads webapp --json
-claude-atlas thread webapp show thr-20260917-3f2a   # its state and the path of each document
-claude-atlas thread webapp show "Filter vehicle" --json
-claude-atlas thread webapp set "Filter vehicle" --phase "Alarm quality" --priority high
-claude-atlas thread webapp set "Filter vehicle" --blocked "the July field data"
-claude-atlas thread webapp set "Filter vehicle" --blocked ""     # unblock
-claude-atlas thread webapp set "Filter vehicle" --title "Filter vehicles at dusk"
+atlas-obsidian threads webapp
+atlas-obsidian threads                                # every project
+atlas-obsidian threads webapp --all                   # the closed ones too
+atlas-obsidian threads webapp --stage plan
+atlas-obsidian threads webapp --json
+atlas-obsidian thread webapp show thr-20260917-3f2a   # its state and the path of each document
+atlas-obsidian thread webapp show "Filter vehicle" --json
+atlas-obsidian thread webapp set "Filter vehicle" --phase "Alarm quality" --priority high
+atlas-obsidian thread webapp set "Filter vehicle" --blocked "the July field data"
+atlas-obsidian thread webapp set "Filter vehicle" --blocked ""     # unblock
+atlas-obsidian thread webapp set "Filter vehicle" --title "Filter vehicles at dusk"
 ```
 
 A new title renames the card and every document.
@@ -185,10 +185,10 @@ goal and an order. Threads name their phase; a phase never lists its threads. A
 phase is finished when every thread in it is closed.
 
 ```bash
-claude-atlas phase webapp create "Alarm quality" --goal "False alarms under 1 per camera-day." --order 1
-claude-atlas phase webapp rename "Alarm quality" --to "Alarm precision"
-claude-atlas phase webapp reorder "Alarm precision" --order 2
-claude-atlas phase webapp remove "Alarm precision"      # refused while a thread names it
+atlas-obsidian phase webapp create "Alarm quality" --goal "False alarms under 1 per camera-day." --order 1
+atlas-obsidian phase webapp rename "Alarm quality" --to "Alarm precision"
+atlas-obsidian phase webapp reorder "Alarm precision" --order 2
+atlas-obsidian phase webapp remove "Alarm precision"      # refused while a thread names it
 ```
 
 The tools write the cards, the board, and each document's frontmatter and first
@@ -210,8 +210,8 @@ offers the wiki what the work taught. `open-claude --thread` starts the session
 in the work with the skill for the thread's next stage as the first message:
 
 ```bash
-claude-atlas open-claude webapp --thread thr-20260917-3f2a
-claude-atlas open-claude webapp --thread "Filter vehicle"    # a title prefix works
+atlas-obsidian open-claude webapp --thread thr-20260917-3f2a
+atlas-obsidian open-claude webapp --thread "Filter vehicle"    # a title prefix works
 ```
 
 `show` counts a project's threads by stage and signals the blocked ones and the
@@ -224,7 +224,7 @@ Its start says which project this is, what its wiki holds, whether a page
 describes the work, what threads are open, and what waits in the inbox:
 
 ```text
-claude-atlas: project webapp at ~/code/webapp (git, main)
+atlas-obsidian: project webapp at ~/code/webapp (git, main)
 Description: The customer-facing web application for the fire-detection product.
 Wiki: atlas/webapp/wiki · 140 pages · generic mode
 The work is described in wiki/entities/webapp.md at fc70d93, 12 commits behind. The describe skill brings the page up to date.
@@ -238,27 +238,27 @@ In the session, the skills are on the slash menu:
 
 | Skill | What it does |
 |---|---|
-| `/claude-atlas:wiki` | orient and route to the right skill |
-| `/claude-atlas:work` | take a change from a sentence to a thread with a plan, then work it |
-| `/claude-atlas:thread` | show the board by stage, change a card, create or change a phase, review the board |
-| `/claude-atlas:thread-stub` | open a thread from a sentence, from a note in `inbox/`, or in another project |
-| `/claude-atlas:thread-spec` | research, ask only what reading cannot answer, file the spec |
-| `/claude-atlas:thread-plan` | explore the code with the spec in hand, file the plan |
-| `/claude-atlas:thread-run` | do the work, commit and test along the way, write progress in the plan |
-| `/claude-atlas:thread-receipt` | close as completed or killed, file the receipt, offer the wiki what was learned |
-| `/claude-atlas:describe` | describe the work in the wiki from a snapshot, or bring its page up to date |
-| `/claude-atlas:wiki-ingest` | read the sources in the inbox and write cited pages |
-| `/claude-atlas:wiki-query` | answer from the wiki, with citations |
-| `/claude-atlas:save` | keep an answer or decision as a page |
-| `/claude-atlas:wiki-lint` | check the wiki's health |
-| `/claude-atlas:wiki-mode` | read or change the filing mode |
-| `/claude-atlas:wiki-fold` | roll up log entries |
-| `/claude-atlas:canvas` | create and update Obsidian Canvas boards |
-| `/claude-atlas:obsidian-bases` | draft Bases `.base` views |
-| `/claude-atlas:obsidian-markdown` | Obsidian syntax help |
-| `/claude-atlas:think` | a structured review before a consequential change |
-| `/claude-atlas:atlas` | every project, refresh, settings |
-| `/claude-atlas:atlas-project` | make this folder a project; rename it, change its description or mode, forget it |
+| `/atlas-obsidian:wiki` | orient and route to the right skill |
+| `/atlas-obsidian:work` | take a change from a sentence to a thread with a plan, then work it |
+| `/atlas-obsidian:thread` | show the board by stage, change a card, create or change a phase, review the board |
+| `/atlas-obsidian:thread-stub` | open a thread from a sentence, from a note in `inbox/`, or in another project |
+| `/atlas-obsidian:thread-spec` | research, ask only what reading cannot answer, file the spec |
+| `/atlas-obsidian:thread-plan` | explore the code with the spec in hand, file the plan |
+| `/atlas-obsidian:thread-run` | do the work, commit and test along the way, write progress in the plan |
+| `/atlas-obsidian:thread-receipt` | close as completed or killed, file the receipt, offer the wiki what was learned |
+| `/atlas-obsidian:describe` | describe the work in the wiki from a snapshot, or bring its page up to date |
+| `/atlas-obsidian:wiki-ingest` | read the sources in the inbox and write cited pages |
+| `/atlas-obsidian:wiki-query` | answer from the wiki, with citations |
+| `/atlas-obsidian:save` | keep an answer or decision as a page |
+| `/atlas-obsidian:wiki-lint` | check the wiki's health |
+| `/atlas-obsidian:wiki-mode` | read or change the filing mode |
+| `/atlas-obsidian:wiki-fold` | roll up log entries |
+| `/atlas-obsidian:canvas` | create and update Obsidian Canvas boards |
+| `/atlas-obsidian:obsidian-bases` | draft Bases `.base` views |
+| `/atlas-obsidian:obsidian-markdown` | Obsidian syntax help |
+| `/atlas-obsidian:think` | a structured review before a consequential change |
+| `/atlas-obsidian:atlas` | every project, refresh, settings |
+| `/atlas-obsidian:atlas-project` | make this folder a project; rename it, change its description or mode, forget it |
 
 Claude shows a preview of every change to the wiki before it applies it. Each
 applied change is one git commit. Every tool acts on this session's project;
@@ -271,7 +271,7 @@ Drop a source in the project's inbox and start Claude Code in the work:
 
 ```bash
 cp ~/Downloads/paper.pdf ~/code/webapp/atlas/webapp/inbox/
-claude-atlas open-claude webapp
+atlas-obsidian open-claude webapp
 ```
 
 The inbox takes both kinds of thing you drop in. A document is a source for
@@ -287,15 +287,15 @@ folders it staged from, and an `ingest` with no path stages what is new in every
 one of them.
 
 ```bash
-claude-atlas ingest webapp ~/Papers
-claude-atlas ingest webapp ~/Papers/paper.pdf
-claude-atlas ingest webapp                   # every folder ingested before
-claude-atlas ingest webapp ~/Papers --dry-run
-claude-atlas ingest webapp ~/Papers --no-claude
+atlas-obsidian ingest webapp ~/Papers
+atlas-obsidian ingest webapp ~/Papers/paper.pdf
+atlas-obsidian ingest webapp                   # every folder ingested before
+atlas-obsidian ingest webapp ~/Papers --dry-run
+atlas-obsidian ingest webapp ~/Papers --no-claude
 ```
 
 After staging, the command offers to start Claude Code with
-`/claude-atlas:wiki-ingest` as its first message, so the review and the apply
+`/atlas-obsidian:wiki-ingest` as its first message, so the review and the apply
 happen in the session. `--no-claude` stages and stops. Nothing is ingested
 until that session runs the skill.
 
@@ -305,16 +305,16 @@ The first time Claude Code opens a folder it asks whether you trust it, with
 ## History and undo
 
 ```bash
-claude-atlas history webapp
-claude-atlas undo webapp ingest-20260912-150405-ab12
+atlas-obsidian history webapp
+atlas-obsidian undo webapp ingest-20260912-150405-ab12
 ```
 
 Inside the work, the name can be omitted:
 
 ```bash
 cd ~/code/webapp
-claude-atlas history
-claude-atlas lint
+atlas-obsidian history
+atlas-obsidian lint
 ```
 
 `undo` puts back every page the operation wrote, as a new commit, and touches
@@ -325,9 +325,9 @@ page back would throw that change away.
 ## Health check
 
 ```bash
-claude-atlas lint webapp
-claude-atlas lint webapp --json
-claude-atlas lint webapp --strict     # exit 1 when there are findings
+atlas-obsidian lint webapp
+atlas-obsidian lint webapp --json
+atlas-obsidian lint webapp --strict     # exit 1 when there are findings
 ```
 
 Lint reads `wiki/` only. The thread documents are pages of another kind, and
@@ -347,8 +347,8 @@ Stubs: 2 pages to fill (Backpropagation, Loss Landscape). Wanted: 1 linked page 
 type usually carries, left for a session or a person to fill in.
 
 ```bash
-claude-atlas stub webapp
-claude-atlas stub webapp "Backpropagation" "Loss Landscape" --type concept
+atlas-obsidian stub webapp
+atlas-obsidian stub webapp "Backpropagation" "Loss Landscape" --type concept
 ```
 
 With no title, `stub` seeds every wanted page and every empty page a link
@@ -363,7 +363,7 @@ in `lyt` mode.
 through Maps of Content in `wiki/mocs/`.
 
 ```bash
-claude-atlas edit webapp --mode lyt
+atlas-obsidian edit webapp --mode lyt
 ```
 
 Changing the mode affects future pages only.
@@ -374,7 +374,7 @@ If an operation was interrupted, the project says so at the next session start.
 Restore it:
 
 ```bash
-claude-atlas recover webapp
+atlas-obsidian recover webapp
 ```
 
 `upgrade` brings a project or a knowledge base made by an older version to this
@@ -383,11 +383,11 @@ and it uses `git mv` where one repository holds both sides, so the history
 follows.
 
 ```bash
-claude-atlas upgrade                                 # the project or knowledge base you are in
-claude-atlas upgrade webapp
-claude-atlas upgrade ~/Vaults/papers                 # a knowledge base, by path
-claude-atlas upgrade webapp --absorb ~/Vaults/kb     # name the knowledge base to take as the wiki
-claude-atlas upgrade --all
+atlas-obsidian upgrade                                 # the project or knowledge base you are in
+atlas-obsidian upgrade webapp
+atlas-obsidian upgrade ~/Vaults/papers                 # a knowledge base, by path
+atlas-obsidian upgrade webapp --absorb ~/Vaults/kb     # name the knowledge base to take as the wiki
+atlas-obsidian upgrade --all
 ```
 
 Four cases:
@@ -423,13 +423,13 @@ argument. If Obsidian does not know the folder yet, the command offers to
 register it; Obsidian quits and relaunches so it sees the new entry.
 
 ```bash
-claude-atlas open-vault webapp
-claude-atlas open-vault
+atlas-obsidian open-vault webapp
+atlas-obsidian open-vault
 ```
 
 ## The atlas
 
-`claude-atlas` with no command, or `claude-atlas view`, is one screen: every
+`atlas-obsidian` with no command, or `atlas-obsidian view`, is one screen: every
 project, warmest first, with its path, its wiki's page count, its open thread
 count and current phase, what waits in its inbox, and a mark when the path is
 missing. Enter expands an entry in place with what `show` prints. A Problems
@@ -450,8 +450,8 @@ CLI's and the session's job.
 | `q` | quit |
 
 ```bash
-claude-atlas
-claude-atlas view
+atlas-obsidian
+atlas-obsidian view
 ```
 
 ### How the atlas finds things
@@ -464,13 +464,13 @@ it, and one started in a folder that moved heals the entry by id. Every command
 scans afresh before it acts.
 
 `refresh` runs the scan, reads each entry, and rewrites
-`~/.claude-atlas/state/registry.json`: every project with its page count, heat,
+`~/.atlas-obsidian/state/registry.json`: every project with its page count, heat,
 inbox counts, thread counts, phases, the page that describes the work, and what
 git says about it. Everything in that file is derived, so deleting it costs one
 refresh.
 
 ```bash
-claude-atlas refresh
+atlas-obsidian refresh
 ```
 
 `list` prints every project: heat, name, and path, then the folders the atlas
@@ -478,8 +478,8 @@ could not read. `show` prints everything the atlas holds about one, with the
 signals that need attention.
 
 ```bash
-claude-atlas list
-claude-atlas show webapp
+atlas-obsidian list
+atlas-obsidian show webapp
 ```
 
 A command names a project by its name, by its id or an id prefix of eight
@@ -494,7 +494,7 @@ work, `atlas/<name>/` is created inside it, and its `wiki/`, `inbox/`, `ideas/`,
 and `.raw/` move in. Nothing in it is replaced.
 
 ```bash
-claude-atlas upgrade ~/Documents/MyKnowledgeVault
+atlas-obsidian upgrade ~/Documents/MyKnowledgeVault
 ```
 
 A vault with no `wiki/` folder is a folder of notes, not a wiki: make it a
@@ -504,16 +504,16 @@ filing mode expects.
 ## Setup and health
 
 ```bash
-claude-atlas setup
-claude-atlas setup --plugin-source ~/projects/software/claude-atlas   # install the plugin from a checkout
-claude-atlas setup --no-plugin
-claude-atlas doctor
-claude-atlas info
-claude-atlas version
+atlas-obsidian setup
+atlas-obsidian setup --plugin-source ~/projects/software/atlas-obsidian   # install the plugin from a checkout
+atlas-obsidian setup --no-plugin
+atlas-obsidian doctor
+atlas-obsidian info
+atlas-obsidian version
 ```
 
 Setup shows its plan and asks before it acts: the atlas home and the plugin in
-Claude Code. It creates no project; `claude-atlas init` in your work does that.
+Claude Code. It creates no project; `atlas-obsidian init` in your work does that.
 `doctor` checks git, Claude Code, the plugin's version against the binary's, and
 every project the config lists, naming the ones whose folder is gone, whose
 wiki needs recovery, or which wait for `upgrade`.
@@ -524,20 +524,20 @@ Apply a plan file without Claude. The file holds the `plan` tool's arguments;
 `content_file` may replace `content`.
 
 ```bash
-claude-atlas apply webapp plan.json
+atlas-obsidian apply webapp plan.json
 ```
 
 ## Configuration
 
-`~/.claude-atlas/config.json`:
+`~/.atlas-obsidian/config.json`:
 
 ```json
 {
-  "schema": "claude-atlas.config.v4",
+  "schema": "atlas-obsidian.config.v4",
   "projects": ["/Users/you/code/webapp", "/Users/you/code/fw"],
   "plugin": {
-    "id": "claude-atlas@nathanaday-claude-atlas",
-    "source": "nathanaday/claude-atlas"
+    "id": "atlas-obsidian@nathanaday-atlas-obsidian",
+    "source": "nathanaday/atlas-obsidian"
   },
   "claude_code": {
     "command": "claude",
@@ -549,19 +549,19 @@ claude-atlas apply webapp plan.json
 }
 ```
 
-`claude-atlas config` prints the settings; `claude-atlas config new-days 14`
+`atlas-obsidian config` prints the settings; `atlas-obsidian config new-days 14`
 sets one and refreshes.
 
 | Setting | Effect |
 |---|---|
 | `projects` | every project's work folder. `init`, `forget`, `upgrade`, and the session hook keep this list |
 | `knowledge` | the knowledge bases of 3.x that `upgrade` has not absorbed yet. Nothing adds to it |
-| `claude_code.prompt` | a first message sent on every `open-claude`, for example `/claude-atlas:wiki` |
+| `claude_code.prompt` | a first message sent on every `open-claude`, for example `/atlas-obsidian:wiki` |
 | `claude_code.args` | flags for `claude`, such as `--model` |
 | `claude_code.session_context` | whether the session-start hook hands Claude the wiki's `hot.md` |
 | `plugin.source` | where `claude plugin marketplace add` gets the plugin: a GitHub slug or a local path |
 | `heat.new_days` | how many days after its creation a project shows as new whatever its activity; 7 by default, 0 turns it off |
-| `--home DIR`, `CLAUDE_ATLAS_HOME` | use a different home instead of `~/.claude-atlas` |
+| `--home DIR`, `ATLAS_OBSIDIAN_HOME` | use a different home instead of `~/.atlas-obsidian` |
 | `-y`, `--yes` | answer yes to every prompt |
 
 These are the only paths the atlas stores. Everything else it shows comes from

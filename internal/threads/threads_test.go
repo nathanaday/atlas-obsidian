@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
 )
 
 var now = time.Date(2026, 9, 13, 12, 0, 0, 0, time.Local)

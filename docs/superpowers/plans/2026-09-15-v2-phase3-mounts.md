@@ -22,7 +22,7 @@
 - `ingest` and `save` into a knowledge base need a project session whose mount of that knowledge base is effectively `write`; a read-only mount refuses them; a knowledge base session (no project) refuses them and names the projects that mount it. Maintenance kinds (`repair`, `fold`, `markdown`, `canvas`, `base`, `config`, `stub`) run in a knowledge base session.
 - Lint stays read-only, offline, and idempotent. In a project it treats each symlink under `kb/` as a set of link targets prefixed `kb/<name>/`; findings are about the project's own pages only. A bare link resolves in the project's own `wiki/` first, then in the mounts; a name in two mounts is ambiguous. The duplicate-basename check spans the project's wiki and its mounts, except the root pages (`index`, `log`, `hot`, `overview`) and folder index pages. A link that resolves in a mount is not a wanted page; the near-match check covers mount names and aliases.
 - The atlas tools return real paths: a mount's `path` is the knowledge base's `wiki/`, never `kb/<name>`.
-- Tests never touch a real `~/.claude-atlas`, never install a plugin, and skip when `git` is missing.
+- Tests never touch a real `~/.atlas-obsidian`, never install a plugin, and skip when `git` is missing.
 - Every task ends with `go build ./... && go vet ./... && go test ./...` passing.
 - Commits: author `nathanaday <nraday1221@gmail.com>` (`-c user.name=nathanaday -c user.email=nraday1221@gmail.com`); no `Co-Authored-By`; subject `area: what changed`. Stage files by name; never stage `.superpowers/`.
 - Comments are one-line doc comments in the style of the surrounding code. Prose follows the user's writing guide: short sentences, plain words, no metaphors.
@@ -311,7 +311,7 @@ git -c user.name=nathanaday -c user.email=nraday1221@gmail.com commit -m "ledger
 // effective access.
 type session struct {
 	target  *vault.Vault
-	project *registry.Entry // the session's project, from the working directory or CLAUDE_ATLAS_VAULT
+	project *registry.Entry // the session's project, from the working directory or ATLAS_OBSIDIAN_VAULT
 	mount   *registry.Mount // the project's mount of target, when target is a knowledge base
 }
 
@@ -326,7 +326,7 @@ func (sess *session) writable(kind txn.Kind) error
 ```
 
 Rules:
-- `plan`: `ingest` and `save` on a knowledge base need `sess.project != nil`, `sess.mount != nil`, and `sess.mount.Effective == write`; the refusals: no project → "knowledge enters through a project: <kb> is a knowledge base; run this in a project that mounts it (mounted by: a, b)" (names from `MountedBy`, or "nothing mounts it yet"); a project without a mount → "<project> does not mount <kb>; run `claude-atlas mount <project> <kb>`"; a read mount → "<project> mounts <kb> read-only". `repair`, `fold`, `markdown`, `canvas`, `base`, `stub` run in a knowledge base session or through a write mount; through a read mount they are refused too (a read mount writes nothing).
+- `plan`: `ingest` and `save` on a knowledge base need `sess.project != nil`, `sess.mount != nil`, and `sess.mount.Effective == write`; the refusals: no project → "knowledge enters through a project: <kb> is a knowledge base; run this in a project that mounts it (mounted by: a, b)" (names from `MountedBy`, or "nothing mounts it yet"); a project without a mount → "<project> does not mount <kb>; run `atlas-obsidian mount <project> <kb>`"; a read mount → "<project> mounts <kb> read-only". `repair`, `fold`, `markdown`, `canvas`, `base`, `stub` run in a knowledge base session or through a write mount; through a read mount they are refused too (a read mount writes nothing).
 - `capture`: on a project, as today. On a knowledge base: `sess.project` must exist and the mount must be write; then `capture.CaptureFrom(target, projectVault, paths, ledger.Via{ID, Name}, now)` where `projectVault` is `vault.Open(sess.project.Path)`. The description says the paths are the project's inbox files.
 - `stub`: `StubArgs.Titles[i].Target string` (a mount name; empty means the project's own wiki). Titles with a target are grouped per target and go through `txn.StubInto(project, kb, titles, defaultType, via, now)`; the mount must be write; the result lists each stub with its vault path. With no titles, `stub` stubs into the project only.
 - A `mounts` tool (read-only): for a project, each mount with `id`, `name`, `path` (the knowledge base's `wiki/`), `link` (`kb/<name>`), `access` (requested), `effective`, `scope`, `pages` (from the knowledge base's lint summary, or omitted when the knowledge base cannot be read), and `error`; for a knowledge base it errors "a knowledge base has no mounts; it is mounted by: …".
@@ -513,12 +513,12 @@ git -c user.name=nathanaday -c user.email=nraday1221@gmail.com commit -m "lint: 
 | `grant KB PROJECT --write\|--read` | `vaults.Grant`; prints the grant; refreshes |
 | `revoke KB PROJECT` | `vaults.Revoke`; refreshes |
 | `show NAME` | a project's mounts now show `kb/<name>`, effective access, and the symlink state (`ok`, `missing`, `wrong target`); a knowledge base shows `mounted by` |
-| `doctor` | for each project, `vaults.EnsureMounts` in dry-run form (report only): a missing or wrong symlink is a `Fail` step "run `claude-atlas refresh` to recreate it"; an unresolved mount stays a `Fail` as today |
+| `doctor` | for each project, `vaults.EnsureMounts` in dry-run form (report only): a missing or wrong symlink is a `Fail` step "run `atlas-obsidian refresh` to recreate it"; an unresolved mount stays a `Fail` as today |
 | `refresh` | `refresh.Registry` now calls `vaults.EnsureMounts` for every readable project and reports `created`/`removed`/`missing` steps |
 
 Every mutating command resolves `PROJECT` and `KB` through `e.entry` and refuses the wrong kind with the function's own error. The `usage` string gains the four commands.
 
-- Produces in `refresh`: `Registry` takes an extra `ensure bool` (the CLI passes `true`; tests may pass `false`); when true it runs `EnsureMounts` on each project before deriving and records `State.Mounts []registry.MountState{Name, Link, Path, OK, Error}` — hmm, keep it simpler: `EnsureMounts` results are returned to the caller as `[]MountChange{Project, Created, Removed, Missing}` and `Signals` reports a mount whose symlink is missing or wrong ("mount X: symlink missing; run claude-atlas refresh") by checking `os.Readlink(e.KbDir(m.Name))` against `m.Path` at derive time.
+- Produces in `refresh`: `Registry` takes an extra `ensure bool` (the CLI passes `true`; tests may pass `false`); when true it runs `EnsureMounts` on each project before deriving and records `State.Mounts []registry.MountState{Name, Link, Path, OK, Error}` — hmm, keep it simpler: `EnsureMounts` results are returned to the caller as `[]MountChange{Project, Created, Removed, Missing}` and `Signals` reports a mount whose symlink is missing or wrong ("mount X: symlink missing; run atlas-obsidian refresh") by checking `os.Readlink(e.KbDir(m.Name))` against `m.Path` at derive time.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -562,13 +562,13 @@ git -c user.name=nathanaday -c user.email=nraday1221@gmail.com commit -m "cli: m
 Knowledge: ai-ml (write) · Machine learning: models, training, evaluation, deployment, agents · 61 pages · kb/ai-ml
 ```
 
-(`(read)` for a read mount; an unresolved mount prints `Knowledge: gone (unresolved: no knowledge base with id …)`; a mount whose symlink is missing appends `· symlink missing; run claude-atlas refresh`), then the sentence "Search the project and its knowledge bases (the wiki-query skill) before answering from the code alone." replaces the current "Search the wiki…" clause in the repository sentence and is printed on its own line in every project session. In a knowledge base session, the first line becomes `claude-atlas knowledge base: ai-ml (generic mode, open) at PATH, mounted by cs566 (write), self-study (read).` (or `mounted by nothing yet`; `guarded` in place of `open` when guarded). The page count comes from `lint.Run(kb.Wiki()'s vault root)`'s `PagesScanned`; when the scan cannot read the knowledge base, omit the count.
+(`(read)` for a read mount; an unresolved mount prints `Knowledge: gone (unresolved: no knowledge base with id …)`; a mount whose symlink is missing appends `· symlink missing; run atlas-obsidian refresh`), then the sentence "Search the project and its knowledge bases (the wiki-query skill) before answering from the code alone." replaces the current "Search the wiki…" clause in the repository sentence and is printed on its own line in every project session. In a knowledge base session, the first line becomes `atlas-obsidian knowledge base: ai-ml (generic mode, open) at PATH, mounted by cs566 (write), self-study (read).` (or `mounted by nothing yet`; `guarded` in place of `open` when guarded). The page count comes from `lint.Run(kb.Wiki()'s vault root)`'s `PagesScanned`; when the scan cannot read the knowledge base, omit the count.
 
 The hook loads the config through `home.Resolve(env(home.EnvHome))`; with no atlas config (`home.ErrNoAtlas`) it prints no mount lines and no mounted-by clause.
 
 - [ ] **Step 1: Write the failing tests**
 
-`hooks_test.go` `TestSessionStartListsMountsAndMountedBy`: a temp home with a config, a project and a knowledge base (scope set through `vaults.EditIdentity`), mounted with `vaults.Mount`; `SessionStart` in the project prints `Knowledge: ai-ml (write) · <scope> · N pages · kb/ai-ml` and the search sentence; in the knowledge base, `mounted by V (write)`; after `vaults.EditIdentity(kb, Edit{Access: guarded})`, the project's line says `(read)` and the knowledge base's says `guarded`; with the symlink removed, the project's line ends `symlink missing; run claude-atlas refresh`.
+`hooks_test.go` `TestSessionStartListsMountsAndMountedBy`: a temp home with a config, a project and a knowledge base (scope set through `vaults.EditIdentity`), mounted with `vaults.Mount`; `SessionStart` in the project prints `Knowledge: ai-ml (write) · <scope> · N pages · kb/ai-ml` and the search sentence; in the knowledge base, `mounted by V (write)`; after `vaults.EditIdentity(kb, Edit{Access: guarded})`, the project's line says `(read)` and the knowledge base's says `guarded`; with the symlink removed, the project's line ends `symlink missing; run atlas-obsidian refresh`.
 
 - [ ] **Step 2: Run the test to verify it fails**
 

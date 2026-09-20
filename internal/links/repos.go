@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
 )
 
 // RemoteURL is the origin remote of the repository at path, or "".

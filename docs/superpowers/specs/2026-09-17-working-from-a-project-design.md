@@ -1,6 +1,6 @@
 # Working from a project: repositories in the knowledge base, and the work skill
 
-Date: 2026-09-17. Applies to claude-atlas 1.3.0; ships as 1.4.0. All four
+Date: 2026-09-17. Applies to atlas-obsidian 1.3.0; ships as 1.4.0. All four
 phases built on 2026-09-17.
 Builds on `docs/tasks-design.md` and `docs/v2-design.md`. Nothing here
 changes what a task, a mount, or a repository is.
@@ -78,11 +78,11 @@ The session-start hook prints one line per repository in a project session,
 after the mount lines, in the vault and in a repository alike:
 
 ```text
-Repository: claude-atlas · changes: commit · repos/claude-atlas (main) · described in ai-tools (wiki/entities/claude-atlas.md) at fc70d93, 12 commits behind · CLAUDE.md: repos/claude-atlas/CLAUDE.md
+Repository: atlas-obsidian · changes: commit · repos/atlas-obsidian (main) · described in ai-tools (wiki/entities/atlas-obsidian.md) at fc70d93, 12 commits behind · CLAUDE.md: repos/atlas-obsidian/CLAUDE.md
 Repository: paper · changes: pr · ~/code/paper (main) · not described in the wiki or a knowledge base
 ```
 
-`claude-atlas repos [NAME]` prints the same description on each line. The
+`atlas-obsidian repos [NAME]` prints the same description on each line. The
 repositories screen in `view` shows a short form of it under the git facts,
 from the state the last refresh derived (`State.RepoDescriptions`).
 
@@ -98,10 +98,10 @@ small enough to read and cite:
 
 ```yaml
 ---
-title: "claude-atlas at fc70d93"
+title: "atlas-obsidian at fc70d93"
 type: repo-snapshot
-repo: github.com/nathanaday/claude-atlas    # the remote, or the name when there is none
-name: claude-atlas
+repo: github.com/nathanaday/atlas-obsidian    # the remote, or the name when there is none
+name: atlas-obsidian
 commit: fc70d93a…
 branch: main
 taken: 2026-09-17
@@ -124,7 +124,7 @@ with `paths` and without `dry_run`. It writes the snapshot to
 and remembers nothing; `stage` with no paths restages folders, not
 repositories. `since` is filled from the described page's `commit`, and the
 log section is left out when that commit is HEAD or not in the history. The CLI
-counterpart is `claude-atlas ingest NAME --repo REPO`, which stages the
+counterpart is `atlas-obsidian ingest NAME --repo REPO`, which stages the
 snapshot and continues as `ingest` does. `view`'s repositories screen gets
 `i` on a row for the same thing.
 
@@ -133,12 +133,12 @@ The repository page is an entity page:
 ```yaml
 ---
 type: entity
-title: "claude-atlas"
+title: "atlas-obsidian"
 entity_type: repository
-repo: github.com/nathanaday/claude-atlas
+repo: github.com/nathanaday/atlas-obsidian
 commit: fc70d93a…
 sources:
-  - "[[claude-atlas at fc70d93]]"
+  - "[[atlas-obsidian at fc70d93]]"
 ---
 ```
 
@@ -249,7 +249,7 @@ The page gains one property and `plant` gains three arguments.
 ```yaml
 workdir: ""              # unchanged: the folder a session opens in
 repos:                   # every repository the task changes, by name
-  - claude-atlas
+  - atlas-obsidian
   - paper
 ```
 
@@ -291,7 +291,7 @@ without `plan` is refused. The CLI's `plant NAME TEXT` is unchanged.
 ## Phases
 
 1. Facts: `internal/repomap` lookup and `behind`; `repos` fields; the hook's
-   repository line; `claude-atlas repos` columns; the repositories screen.
+   repository line; `atlas-obsidian repos` columns; the repositories screen.
 2. Entry: the snapshot; `stage` with `repo`; `ingest --repo`; the `i` key;
    `entity_type: repository` in the frontmatter reference; the `repo-map`
    skill; the line in `wiki-ingest`.

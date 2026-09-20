@@ -1,10 +1,10 @@
 # The view, second design
 
-Date: 2026-09-16. Applies to claude-atlas 1.0.0; ships as 1.1.0.
+Date: 2026-09-16. Applies to atlas-obsidian 1.0.0; ships as 1.1.0.
 
 ## Goal
 
-`claude-atlas view` shows the v2 schema on screen: projects on one tab,
+`atlas-obsidian view` shows the v2 schema on screen: projects on one tab,
 knowledge bases on another, and a dashed line from every project to the
 knowledge bases it mounts. A new user who does not yet know the two kinds
 should read the screen and see how they relate: a project mounts, a

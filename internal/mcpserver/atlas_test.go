@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
 )
 
 func TestAtlasReadsWithoutWritingAndRefreshWrites(t *testing.T) {
@@ -50,7 +50,7 @@ func TestProjectInitFromAPlainFolder(t *testing.T) {
 	os.MkdirAll(work, 0o755)
 	// The session sits in the folder, with no place yet; init makes it a project.
 	c := connectIn(t, a.h, work)
-	if msg := c.call("status", nil, nil); !strings.Contains(msg, "not in a claude-atlas") {
+	if msg := c.call("status", nil, nil); !strings.Contains(msg, "not in a atlas-obsidian") {
 		t.Fatalf("no place before init: %q", msg)
 	}
 	var out ProjectToolOut

@@ -14,9 +14,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/nathanaday/claude-atlas/internal/actions"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/threads"
+	"github.com/nathanaday/atlas-obsidian/internal/actions"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
 )
 
 // Item is one entry in the view: what the scan found, with the state the last refresh
@@ -98,7 +98,7 @@ var captions = map[tab]string{
 
 // empties is what a tab says when it lists nothing.
 var empties = map[tab]string{
-	tabProjects: "no projects yet; run `claude-atlas init` in a work folder",
+	tabProjects: "no projects yet; run `atlas-obsidian init` in a work folder",
 }
 
 // boardOf is the index of the board behind a tab.

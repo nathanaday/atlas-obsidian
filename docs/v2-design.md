@@ -25,7 +25,7 @@ boundary. v2 moves shared knowledge into a vault of its own and gives a
 project a way to link into it.
 
 The atlas vault (`~/Documents/Atlas`) goes away. The atlas keeps config and
-derived state under `~/.claude-atlas/`. `view` and the CLI are the view across
+derived state under `~/.atlas-obsidian/`. `view` and the CLI are the view across
 vaults.
 
 ## One engine, two kinds
@@ -79,7 +79,7 @@ cache. `vault.RoutableTypes` takes the kind as well as the mode.
 
 ## The identity file
 
-`.claude-atlas.json`, schema `claude-atlas.vault.v2`, holds the facts that
+`.claude-atlas.json`, schema `atlas-obsidian.vault.v2`, holds the facts that
 travel with the vault. It never holds a path. A path is a fact about one
 machine and lives in the atlas config.
 
@@ -87,7 +87,7 @@ A knowledge base:
 
 ```json
 {
-  "schema": "claude-atlas.vault.v2",
+  "schema": "atlas-obsidian.vault.v2",
   "id": "6f1d2a9c-3b7e-4c1a-9f2d-8e5a1b0c7d44",
   "kind": "knowledge",
   "name": "ai-ml",
@@ -103,7 +103,7 @@ A project:
 
 ```json
 {
-  "schema": "claude-atlas.vault.v2",
+  "schema": "atlas-obsidian.vault.v2",
   "id": "b3e0f5a2-…",
   "kind": "project",
   "name": "cs566",
@@ -141,7 +141,7 @@ A project mounts a knowledge base as a symlink:
 ```
 
 - `kb/` is in the project's `.gitignore`. The symlink is local state:
-  `claude-atlas mount` creates it, and `doctor` and `refresh` recreate a
+  `atlas-obsidian mount` creates it, and `doctor` and `refresh` recreate a
   missing one from the identity file and the atlas config. A project cloned
   onto another machine gets its links back once the knowledge bases are
   registered there.
@@ -221,7 +221,7 @@ session in one project does not write a knowledge base by accident.
   mount. `plan` refuses a write into a knowledge base the project may not
   write. The `guard` hook denies Write and Edit under `kb/`, and under every
   vault's `wiki/`, `.raw/`, and identity file, as today.
-- `claude-atlas grant KB PROJECT --write|--read` and `revoke KB PROJECT|ID` edit
+- `atlas-obsidian grant KB PROJECT --write|--read` and `revoke KB PROJECT|ID` edit
   `grants`. There is no block list: `guarded` with an empty list is read-only
   for every project.
 
@@ -274,14 +274,14 @@ refuses them and names the projects that mount the knowledge base.
 ## Sessions
 
 The server and the hooks resolve the session's vault in this order: an
-explicit `vault`, `CLAUDE_ATLAS_VAULT`, the nearest identity file above the
+explicit `vault`, `ATLAS_OBSIDIAN_VAULT`, the nearest identity file above the
 working directory, then the atlas: a folder inside a project's repository
 belongs to that project. Several matches name the candidates, as today.
 
 The session-start hook prints, in a project:
 
 ```text
-claude-atlas: project cs566 (generic) at ~/Documents/Vaults/projects/cs566.
+atlas-obsidian: project cs566 (generic) at ~/Documents/Vaults/projects/cs566.
 Knowledge: ai-ml (write) · Machine learning: models, training, evaluation, deployment, agents · 61 pages · kb/ai-ml
 Search the project and its knowledge bases (the wiki-query skill) before answering from the code alone.
 Open tasks: …
@@ -295,7 +295,7 @@ reads them when it needs them.
 In a knowledge base:
 
 ```text
-claude-atlas: knowledge base ai-ml (generic, open), mounted by cs566 (write), self-study (write).
+atlas-obsidian: knowledge base ai-ml (generic, open), mounted by cs566 (write), self-study (write).
 Knowledge enters through a project. Here: lint, repair, fold, stub.
 <vault-context> the knowledge base's hot.md </vault-context>
 ```
@@ -398,7 +398,7 @@ root is named `atlas`, has no `.git`, and its parent has one (`vault.HostRepo`).
 
 ## The atlas
 
-`~/.claude-atlas/config.json`, schema `claude-atlas.config.v2`:
+`~/.atlas-obsidian/config.json`, schema `claude-atlas.config.v2`:
 
 ```json
 {
@@ -528,7 +528,7 @@ against the 1.0.0 build on a temp atlas home and a temp vaults directory.
 `--no-plugin`. `new-knowledge ai-ml`, `new-project cs566`, `mount`,
 `edit --access guarded`, and `grant --write` behaved as `docs/usage.md` says:
 effective access is the lesser of the mount and the grant, and `show`
-reported each step. One ingest ran through `claude-atlas mcp` over stdio.
+reported each step. One ingest ran through `atlas-obsidian mcp` over stdio.
 `status` named the mount. `capture` with the knowledge base as its `vault`
 took a file out of the project's inbox. `plan` and `apply` wrote a source
 page and a concept page in the knowledge base, in one commit that also
@@ -612,7 +612,7 @@ check ran at the end of phase 6 against a project with a mount.
   links.
 - A `search` tool across a project and its mounts.
 - A skill that grants access from a session.
-- `claude-atlas projects --kb NAME`: the projects that mount a knowledge base,
+- `atlas-obsidian projects --kb NAME`: the projects that mount a knowledge base,
   for a change that runs through all of them.
 - The result of the Obsidian follow-symlink check, recorded in "Mounts" above.
 - The add screen has no "in repository" option; the CLI's `new-project --in`

@@ -6,7 +6,7 @@ description: >
   the pages, and returns a structured health report. It never repairs it.
 model: sonnet
 maxTurns: 30
-tools: Read, Grep, Glob, mcp__plugin_claude-atlas_atlas__lint, mcp__plugin_claude-atlas_atlas__status
+tools: Read, Grep, Glob, mcp__plugin_atlas-obsidian_atlas__lint, mcp__plugin_atlas-obsidian_atlas__status
 ---
 
 You are a read-only wiki health verifier. The lint tool is the source of truth

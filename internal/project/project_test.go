@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
 )
 
 var now = time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
@@ -201,7 +201,7 @@ func TestOpenRefusesTheLayoutsOfEarlierVersions(t *testing.T) {
 	// An unknown schema, and a folder that is no project at all.
 	later := newWork(t, "later")
 	os.MkdirAll(filepath.Join(later, Dir, "later"), 0o755)
-	os.WriteFile(filepath.Join(later, Dir, "later", Marker), []byte(`{"schema":"claude-atlas.project.v9","id":"p3"}`), 0o644)
+	os.WriteFile(filepath.Join(later, Dir, "later", Marker), []byte(`{"schema":"atlas-obsidian.project.v9","id":"p3"}`), 0o644)
 	if _, err := Open(later); err == nil || !strings.Contains(err.Error(), "unsupported schema") {
 		t.Fatalf("v9: %v", err)
 	}
@@ -404,5 +404,42 @@ func TestDisplayPathsInErrors(t *testing.T) {
 	// full path when it need not.
 	if home.Display(filepath.Join(os.Getenv("HOME"), "code")) != "~/code" {
 		t.Skip("no HOME to shorten")
+	}
+}
+
+// A project made before the rename opens, and its schema rises on the next save.
+func TestOpenAcceptsTheSchemaWrittenBeforeTheRename(t *testing.T) {
+	work := t.TempDir()
+	dir := filepath.Join(work, Dir, "webapp")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, Marker),
+		[]byte(`{"schema":"claude-atlas.project.v4","id":"p1","name":"webapp","created":"2026-09-17"}`), 0o644)
+	p, err := Open(work)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if p.Config.Schema != Schema {
+		t.Fatalf("schema %q, want %q", p.Config.Schema, Schema)
+	}
+}
+
+// Refresh retires the snippet the tool wrote under its earlier name.
+func TestRefreshRetiresTheSnippetFromTheEarlierName(t *testing.T) {
+	settings := map[string]any{"enabledCssSnippets": []any{"claude-atlas", "mine"}}
+	if !enableSnippet(settings) {
+		t.Fatal("enableSnippet reported no change")
+	}
+	got := settings["enabledCssSnippets"].([]any)
+	want := []any{"mine", SnippetName}
+	if len(got) != len(want) {
+		t.Fatalf("enabled %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("enabled %v, want %v", got, want)
+		}
+	}
+	if enableSnippet(settings) {
+		t.Fatal("enableSnippet changed settings that are already right")
 	}
 }

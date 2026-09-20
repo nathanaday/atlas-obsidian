@@ -11,17 +11,23 @@ import (
 )
 
 const (
-	ConfigSchema   = "claude-atlas.config.v4"
-	ConfigSchemaV3 = "claude-atlas.config.v3"
-	ConfigSchemaV2 = "claude-atlas.config.v2"
-	ConfigSchemaV1 = "claude-atlas.config.v1"
-	EnvHome        = "CLAUDE_ATLAS_HOME"
-	defaultHome    = "~/.claude-atlas"
+	ConfigSchema = "atlas-obsidian.config.v4"
+	// ConfigSchemaV4Atlas is the same config under the name the tool had before it was
+	// renamed to atlas-obsidian. Load accepts it and the next Save writes ConfigSchema.
+	ConfigSchemaV4Atlas = "claude-atlas.config.v4"
+	ConfigSchemaV3      = "claude-atlas.config.v3"
+	ConfigSchemaV2      = "claude-atlas.config.v2"
+	ConfigSchemaV1      = "claude-atlas.config.v1"
+	EnvHome             = "ATLAS_OBSIDIAN_HOME"
+	defaultHome         = "~/.atlas-obsidian"
+	// atlasHome is where the atlas lived before the tool was renamed to atlas-obsidian.
+	// Resolve moves it to defaultHome once, so an existing atlas is not orphaned.
+	atlasHome = "~/.claude-atlas"
 
-	// DefaultPluginID is the claude-atlas plugin as Claude Code names it.
-	DefaultPluginID = "claude-atlas@nathanaday-claude-atlas"
+	// DefaultPluginID is the atlas-obsidian plugin as Claude Code names it.
+	DefaultPluginID = "atlas-obsidian@nathanaday-atlas-obsidian"
 	// DefaultPluginSource is what `claude plugin marketplace add` takes: this repository.
-	DefaultPluginSource = "nathanaday/claude-atlas"
+	DefaultPluginSource = "nathanaday/atlas-obsidian"
 	// DefaultNewDays is how many days after its creation a vault counts as new.
 	DefaultNewDays = 7
 )
@@ -32,7 +38,7 @@ type HeatConfig struct {
 	NewDays int `json:"new_days"`
 }
 
-// PluginConfig says where the claude-atlas plugin comes from.
+// PluginConfig says where the atlas-obsidian plugin comes from.
 type PluginConfig struct {
 	// ID is the plugin id, name@marketplace.
 	ID string `json:"id"`
@@ -145,20 +151,37 @@ type Home struct {
 	Root string
 }
 
-// Resolve picks the home: an explicit flag, then $CLAUDE_ATLAS_HOME, then ~/.claude-atlas.
+// Resolve picks the home: an explicit flag, then $ATLAS_OBSIDIAN_HOME, then ~/.atlas-obsidian.
 func Resolve(explicit string) Home {
 	value := explicit
 	if value == "" {
 		value = os.Getenv(EnvHome)
 	}
 	if value == "" {
-		value = defaultHome
+		return Home{Root: adopt(Expand(defaultHome))}
 	}
 	abs, err := filepath.Abs(Expand(value))
 	if err != nil {
 		abs = Expand(value)
 	}
 	return Home{Root: abs}
+}
+
+// adopt moves an atlas left at the old name to root, once, and reports the home to use.
+// It runs only for the default home, so a test or an explicit --home never reaches it.
+// A move that fails leaves the old atlas where it is and uses it, so nothing is lost.
+func adopt(root string) string {
+	if _, err := os.Stat(root); err == nil {
+		return root
+	}
+	old := Expand(atlasHome)
+	if _, err := os.Stat(filepath.Join(old, "config.json")); err != nil {
+		return root
+	}
+	if err := os.Rename(old, root); err != nil {
+		return old
+	}
+	return root
 }
 
 func (h Home) ConfigPath() string { return filepath.Join(h.Root, "config.json") }
@@ -189,7 +212,7 @@ func (h Home) Default() *Config {
 	}
 }
 
-var ErrNoAtlas = errors.New("no atlas here; run `claude-atlas setup` first")
+var ErrNoAtlas = errors.New("no atlas here; run `atlas-obsidian setup` first")
 
 func (h Home) Load() (*Config, error) {
 	data, err := os.ReadFile(h.ConfigPath())
@@ -205,6 +228,8 @@ func (h Home) Load() (*Config, error) {
 	}
 	switch cfg.Schema {
 	case ConfigSchema:
+	case ConfigSchemaV4Atlas:
+		cfg.Schema = ConfigSchema
 	case ConfigSchemaV3:
 		cfg.Schema = ConfigSchema
 	case ConfigSchemaV2:

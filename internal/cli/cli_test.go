@@ -2,16 +2,17 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/nathanaday/claude-atlas/internal/console"
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/console"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
 )
 
 type harness struct {
@@ -35,11 +36,32 @@ func setup(t *testing.T) *harness {
 	}
 	root := t.TempDir()
 	t.Chdir(root)
+	fakeClaudeCode(t, root)
 	h := &harness{t: t, home: filepath.Join(root, "home")}
 	if code := h.run("setup", "--no-plugin"); code != 0 {
 		t.Fatalf("setup exit %d\n%s%s", code, h.out.String(), h.err.String())
 	}
 	return h
+}
+
+// fakeClaudeCode points Claude Code's config directory at a temporary one that reports the
+// plugin as installed, so doctor reads a fixture and never the developer's own ~/.claude.
+func fakeClaudeCode(t *testing.T, root string) {
+	t.Helper()
+	dir := filepath.Join(root, "claude-code")
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	if err := os.MkdirAll(filepath.Join(dir, "plugins"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installed := fmt.Sprintf(`{"plugins":{%q:[{"scope":"user","installPath":%q,"version":""}]}}`,
+		home.DefaultPluginID, filepath.Join(dir, "plugins", "atlas-obsidian"))
+	if err := os.WriteFile(filepath.Join(dir, "plugins", "installed_plugins.json"), []byte(installed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	marketplaces := fmt.Sprintf(`{%q:{"source":{}}}`, "nathanaday-atlas-obsidian")
+	if err := os.WriteFile(filepath.Join(dir, "plugins", "known_marketplaces.json"), []byte(marketplaces), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (h *harness) config(t *testing.T) *home.Config {
@@ -78,7 +100,7 @@ func work(t *testing.T, name string, git bool) string {
 
 func TestSetupMakesTheHomeAndNothingElse(t *testing.T) {
 	h := setup(t)
-	if !strings.Contains(h.out.String(), "Setup complete.") || !strings.Contains(h.out.String(), "claude-atlas init") {
+	if !strings.Contains(h.out.String(), "Setup complete.") || !strings.Contains(h.out.String(), "atlas-obsidian init") {
 		t.Fatalf("output:\n%s", h.out.String())
 	}
 	for _, path := range []string{filepath.Join(h.home, "config.json"), filepath.Join(h.home, "state", "registry.json")} {
@@ -87,7 +109,7 @@ func TestSetupMakesTheHomeAndNothingElse(t *testing.T) {
 		}
 	}
 	cfg, _ := os.ReadFile(filepath.Join(h.home, "config.json"))
-	if !strings.Contains(string(cfg), `"schema": "claude-atlas.config.v4"`) {
+	if !strings.Contains(string(cfg), `"schema": "atlas-obsidian.config.v4"`) {
 		t.Fatalf("config.json:\n%s", cfg)
 	}
 	if code := h.run("setup", "--no-plugin"); code != 0 || !strings.Contains(h.out.String(), "keep       0 listed") {
@@ -103,7 +125,7 @@ func TestInitWritesBothHalvesAndRegistersTheProject(t *testing.T) {
 		t.Fatalf("init exit %d\n%s%s", code, h.out.String(), h.err.String())
 	}
 	out := h.out.String()
-	for _, want := range []string{"project", "webapp at", "wrote", "atlas/webapp/", "wiki/index.md", "committed", "registered", "Next:", "claude-atlas describe", "open-vault"} {
+	for _, want := range []string{"project", "webapp at", "wrote", "atlas/webapp/", "wiki/index.md", "committed", "registered", "Next:", "atlas-obsidian describe", "open-vault"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
@@ -367,7 +389,7 @@ func TestDescribeStagesASnapshot(t *testing.T) {
 	if code := h.run("init", dir); code != 0 {
 		t.Fatalf("init exit %d %s", code, h.err.String())
 	}
-	if code := h.run("describe", "webapp", "--no-claude"); code != 0 || !strings.Contains(h.out.String(), "staged") || !strings.Contains(h.out.String(), "/claude-atlas:describe") {
+	if code := h.run("describe", "webapp", "--no-claude"); code != 0 || !strings.Contains(h.out.String(), "staged") || !strings.Contains(h.out.String(), "/atlas-obsidian:describe") {
 		t.Fatalf("describe exit %d\n%s%s", code, h.out.String(), h.err.String())
 	}
 	p, _ := project.Open(dir)
@@ -501,7 +523,7 @@ func TestRefreshAndDoctorReportProblems(t *testing.T) {
 	cfg := h.config(t)
 	cfg.AddProject(stray)
 	home.Home{Root: h.home}.Save(cfg)
-	if code := h.run("doctor"); code != 1 || !strings.Contains(h.out.String(), "claude-atlas init") {
+	if code := h.run("doctor"); code != 1 || !strings.Contains(h.out.String(), "atlas-obsidian init") {
 		t.Fatalf("doctor names the stray folder exit %d:\n%s", code, h.out.String())
 	}
 	if code := h.run("forget", stray); code != 0 {
@@ -517,7 +539,7 @@ func TestRefreshAndDoctorReportProblems(t *testing.T) {
 	if code := h.run("forget", gone); code != 0 {
 		t.Fatalf("forget a gone project exit %d %s", code, h.err.String())
 	}
-	if code := h.run("info"); code != 0 || !strings.Contains(h.out.String(), "claude-atlas") || !strings.Contains(h.out.String(), "entries") {
+	if code := h.run("info"); code != 0 || !strings.Contains(h.out.String(), "atlas-obsidian") || !strings.Contains(h.out.String(), "entries") {
 		t.Fatalf("info exit %d:\n%s", code, h.out.String())
 	}
 }
@@ -548,7 +570,7 @@ func TestBareCommandExplainsWithNoAtlas(t *testing.T) {
 	if code := run([]string{"--home", h.home}, strings.NewReader(""), &out, &errOut, c); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	if !strings.Contains(out.String(), "run `claude-atlas setup`") || !strings.Contains(out.String(), "claude-atlas init") {
+	if !strings.Contains(out.String(), "run `atlas-obsidian setup`") || !strings.Contains(out.String(), "atlas-obsidian init") {
 		t.Fatalf("the bare command explains:\n%s", out.String())
 	}
 }

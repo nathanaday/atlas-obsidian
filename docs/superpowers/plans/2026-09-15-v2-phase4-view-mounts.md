@@ -18,7 +18,7 @@
 - Every identity-file change goes through `vault.UpdateConfig`. Doctor is read-only.
 - Every command that acts on a vault scans afresh (`registry.Scan`); `registry.json` is for display.
 - Dependencies: `gopkg.in/yaml.v3`, the MCP `go-sdk` v1.4.0, Bubble Tea, Bubbles, Lip Gloss. Nothing else.
-- Tests never touch a real `~/.claude-atlas`; they skip when git is missing (`gitx.Available`).
+- Tests never touch a real `~/.atlas-obsidian`; they skip when git is missing (`gitx.Available`).
 - Commits: `git -c user.name=nathanaday -c user.email=nraday1221@gmail.com commit`; no `Co-Authored-By`; subject `area: what changed`; stage by name; never stage `.superpowers/`.
 - Prose (comments, messages, docs): short plain sentences, active voice, no metaphors; never "flag" (except a CLI flag), "genuine", "honest", "shape", "load bearing", "judgement call", "earned its keep", "worth flagging". Comments are sparse.
 - Key names: `m` opens the mounts screen on either kind. Inside it: `a`, `u` (project); `w`, `r`, `x`, `a` (knowledge base); `Esc` closes. The old table rows naming `M`, `g`, `G` go.
@@ -60,8 +60,8 @@ func RevokeID(kb registry.Entry, projectID string, now time.Time) error
 
 `Revoke(kb, project, now)` becomes `RevokeID(kb, project.ID, now)` after its own kind checks (add one: `project.Kind != vault.Project` → "<name> is not a project").
 
-- Produces in `refresh.Signals`: for a knowledge base, one note per grant with `Error`: `grant <name or id>: no project with id <id>; run \`claude-atlas revoke <kb> <id>\``.
-- Produces in `cli`: `revoke KB PROJECT|ID` — when `e.entry(cfg, args[1])` fails and `args[1]` equals the `ID` of one of `kb.Grants`, call `vaults.RevokeID`; print `revoked <id> on <kb>`. `doctor`: for each knowledge base, a grant with `Error` is `console.Fail` (`<kb> · grant <name or id>`, the error plus "; run `claude-atlas revoke <kb> <id>`"); a grant on an open knowledge base (`en.Access == vault.AccessOpen`) is `console.Skip` (`<kb> · grant <name>`, "<kb> is open; the grant applies when it is guarded"). `show` prints a grant row's `Error` after the access when set.
+- Produces in `refresh.Signals`: for a knowledge base, one note per grant with `Error`: `grant <name or id>: no project with id <id>; run \`atlas-obsidian revoke <kb> <id>\``.
+- Produces in `cli`: `revoke KB PROJECT|ID` — when `e.entry(cfg, args[1])` fails and `args[1]` equals the `ID` of one of `kb.Grants`, call `vaults.RevokeID`; print `revoked <id> on <kb>`. `doctor`: for each knowledge base, a grant with `Error` is `console.Fail` (`<kb> · grant <name or id>`, the error plus "; run `atlas-obsidian revoke <kb> <id>`"); a grant on an open knowledge base (`en.Access == vault.AccessOpen`) is `console.Skip` (`<kb> · grant <name>`, "<kb> is open; the grant applies when it is guarded"). `show` prints a grant row's `Error` after the access when set.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -80,7 +80,7 @@ Expected: compile errors (`registry.Grant`, `RevokeID` undefined) or assertion f
 
 - [ ] **Step 3: Write the code**
 
-`registry.go`: the `Grant` type; `buildEntry` converts; in `resolve`, after mounts, loop each knowledge base's grants and set `Name`/`Error`. `derive.go`: the signal. `mounts.go`: `RevokeID`, and `Revoke` over it. `cli.go`: `revoke` (usage `claude-atlas revoke KB PROJECT|ID`), `doctor`, `show`. `view.go`: the detail loop over `e.Grants` reads `g.Name`, `g.Access` as before (the type changes; the fields keep their names).
+`registry.go`: the `Grant` type; `buildEntry` converts; in `resolve`, after mounts, loop each knowledge base's grants and set `Name`/`Error`. `derive.go`: the signal. `mounts.go`: `RevokeID`, and `Revoke` over it. `cli.go`: `revoke` (usage `atlas-obsidian revoke KB PROJECT|ID`), `doctor`, `show`. `view.go`: the detail loop over `e.Grants` reads `g.Name`, `g.Access` as before (the type changes; the fields keep their names).
 
 - [ ] **Step 4: Run the tests**
 

@@ -42,7 +42,7 @@ with both halves, commits them, and lists the folder in the atlas config.
 
 Report the result, then offer `describe`, which writes the page in the wiki
 that says what the work is, and say how to work: a session anywhere inside the
-work is the project's session, and `claude-atlas open-vault NAME` opens
+work is the project's session, and `atlas-obsidian open-vault NAME` opens
 `atlas/<name>/` in Obsidian.
 
 If the tool refuses, say why in the tool's words and ask again for that one
@@ -58,7 +58,7 @@ answer; do not retry with a guess.
   `atlas/<name>/` stay. Deleting `atlas/<name>/` is how a project ends, and
   that is the user's to do by hand.
 - A folder of an earlier version is refused with the command to run:
-  `claude-atlas upgrade PATH`. It absorbs a 3.x knowledge base into the
+  `atlas-obsidian upgrade PATH`. It absorbs a 3.x knowledge base into the
   project, moves the thread folders under `threads/`, and turns the task pages
   of 2.x into threads. It moves the user's files, so give it to the user to
   run rather than running it.

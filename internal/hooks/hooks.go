@@ -12,23 +12,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/capture"
-	"github.com/nathanaday/claude-atlas/internal/describe"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/links"
-	"github.com/nathanaday/claude-atlas/internal/lint"
-	"github.com/nathanaday/claude-atlas/internal/manage"
-	"github.com/nathanaday/claude-atlas/internal/place"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/threads"
-	"github.com/nathanaday/claude-atlas/internal/txn"
+	"github.com/nathanaday/atlas-obsidian/internal/capture"
+	"github.com/nathanaday/atlas-obsidian/internal/describe"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/links"
+	"github.com/nathanaday/atlas-obsidian/internal/lint"
+	"github.com/nathanaday/atlas-obsidian/internal/manage"
+	"github.com/nathanaday/atlas-obsidian/internal/place"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
+	"github.com/nathanaday/atlas-obsidian/internal/txn"
 )
 
 // MaxContextBytes bounds the hot cache text a session start may inject.
 const MaxContextBytes = 8 * 1024
 
 // Skills is the slash-menu line shown at the start of a session.
-const Skills = "/claude-atlas:wiki  wiki-ingest  wiki-query  wiki-lint  wiki-mode  wiki-fold  save  describe  work  thread  thread-stub  thread-spec  thread-plan  thread-run  thread-receipt  canvas  obsidian-markdown  obsidian-bases  think  atlas  atlas-project"
+const Skills = "/atlas-obsidian:wiki  wiki-ingest  wiki-query  wiki-lint  wiki-mode  wiki-fold  save  describe  work  thread  thread-stub  thread-spec  thread-plan  thread-run  thread-receipt  canvas  obsidian-markdown  obsidian-bases  think  atlas  atlas-project"
 
 // MaxThreadLines bounds how many open threads the session start lists.
 const MaxThreadLines = 8
@@ -68,12 +68,12 @@ func SessionStart(r io.Reader, w io.Writer, env Env, contextEnabled bool, now ti
 	if err != nil {
 		switch {
 		case errors.Is(err, project.ErrSplit), errors.Is(err, project.ErrFlat):
-			_, err := fmt.Fprintf(w, "claude-atlas: %v. The atlas tools refuse the project until then.\n", err)
+			_, err := fmt.Fprintf(w, "atlas-obsidian: %v. The atlas tools refuse the project until then.\n", err)
 			return err
 		}
 		return nil
 	}
-	switch env("CLAUDE_ATLAS_SESSION_CONTEXT") {
+	switch env("ATLAS_OBSIDIAN_SESSION_CONTEXT") {
 	case "0":
 		contextEnabled = false
 	case "1":
@@ -82,7 +82,7 @@ func SessionStart(r io.Reader, w io.Writer, env Env, contextEnabled bool, now ti
 	var b strings.Builder
 	projectLines(&b, pl, now)
 	if pending, _ := txn.Pending(pl.Project); pending != nil {
-		fmt.Fprintf(&b, "WARNING: operation %s was interrupted in %s; run `claude-atlas recover %s` before changing the wiki.\n", pending.OperationID, pl.Project.Name(), pl.Project.Root)
+		fmt.Fprintf(&b, "WARNING: operation %s was interrupted in %s; run `atlas-obsidian recover %s` before changing the wiki.\n", pending.OperationID, pl.Project.Name(), pl.Project.Root)
 	}
 	if contextEnabled {
 		if hot := hotText(pl.Project); hot != "" {
@@ -98,7 +98,7 @@ func SessionStart(r io.Reader, w io.Writer, env Env, contextEnabled bool, now ti
 // projectLines is the orientation of a session.
 func projectLines(b *strings.Builder, pl *place.Place, now time.Time) {
 	p := pl.Project
-	first := fmt.Sprintf("claude-atlas: project %s at %s", p.Name(), home.Display(p.Root))
+	first := fmt.Sprintf("atlas-obsidian: project %s at %s", p.Name(), home.Display(p.Root))
 	if fact := links.Inspect(links.Repo, p.Root); fact.OK {
 		if fact.Branch != "" {
 			first += fmt.Sprintf(" (git, %s)", fact.Branch)
@@ -217,7 +217,7 @@ func namesList(names []string) string {
 func threadLines(p *project.Project, now time.Time) string {
 	var b strings.Builder
 	if threads.Legacy(p) {
-		fmt.Fprintf(&b, "This project holds task pages from before threads; `claude-atlas upgrade %s` turns each one into a thread.\n", home.Display(p.Root))
+		fmt.Fprintf(&b, "This project holds task pages from before threads; `atlas-obsidian upgrade %s` turns each one into a thread.\n", home.Display(p.Root))
 	}
 	board, err := threads.Sync(p, now)
 	if err != nil {
@@ -333,7 +333,7 @@ func Guard(r io.Reader, w io.Writer) error {
 		stage := threads.DocStage(rel)
 		reason = fmt.Sprintf("a new %s comes from the thread tool (id, stage: %s, text), which names its thread and moves the thread to that stage; revise it with Edit afterwards", stage, stage)
 	case rel == project.Marker:
-		reason = "the project's identity file changes only through the project tool and `claude-atlas edit`"
+		reason = "the project's identity file changes only through the project tool and `atlas-obsidian edit`"
 	case strings.HasPrefix(rel, project.WikiDir+"/"):
 		reason = "wiki pages change only through the atlas MCP tools: build a plan, show the preview, then apply. Read the page with Read, then include the full new content in the plan."
 	case strings.HasPrefix(rel, project.RawDir+"/"):
@@ -347,7 +347,7 @@ func Guard(r io.Reader, w io.Writer) error {
 	out := map[string]any{"hookSpecificOutput": map[string]any{
 		"hookEventName":            "PreToolUse",
 		"permissionDecision":       "deny",
-		"permissionDecisionReason": "claude-atlas: " + reason,
+		"permissionDecisionReason": "atlas-obsidian: " + reason,
 	}}
 	return json.NewEncoder(w).Encode(out)
 }
@@ -398,6 +398,6 @@ func Stop(r io.Reader, w io.Writer, env Env) error {
 	if pending == nil {
 		return nil
 	}
-	msg := fmt.Sprintf("claude-atlas: operation %s was interrupted in %s; run `claude-atlas recover %s`.", pending.OperationID, pl.Project.Name(), pl.Project.Root)
+	msg := fmt.Sprintf("atlas-obsidian: operation %s was interrupted in %s; run `atlas-obsidian recover %s`.", pending.OperationID, pl.Project.Name(), pl.Project.Root)
 	return json.NewEncoder(w).Encode(map[string]any{"systemMessage": msg})
 }

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** The atlas learns its vaults by scanning for identity files instead of reading project pages in an Obsidian vault; config v2 holds the only stored paths; `refresh` derives `~/.claude-atlas/state/registry.json`; the CLI and the TUI run over that registry; `tree`, `pages`, the atlas-vault rendering, the link pages, and `related` are deleted.
+**Goal:** The atlas learns its vaults by scanning for identity files instead of reading project pages in an Obsidian vault; config v2 holds the only stored paths; `refresh` derives `~/.atlas-obsidian/state/registry.json`; the CLI and the TUI run over that registry; `tree`, `pages`, the atlas-vault rendering, the link pages, and `related` are deleted.
 
 **Architecture:** A new package `internal/registry` scans `vaults_dir` and the config's extra paths for identity files and builds an `Entry` per vault (identity, path, resolved mounts and repositories); `refresh` derives per-entry state and writes the registry file; `discover` finds a session's project through a repository path in the registry. A vault's own facts (name, tags, scope, access, repos) change through one function, `vault.UpdateConfig`, which rewrites the identity file and commits it as a `setup` operation. New code goes in bottom-up (registry, config fields, identity edits, derive, discovery), then the CLI and wizard switch, then the TUI, then the old packages are deleted.
 
@@ -20,7 +20,7 @@
 - `vault.Init`, `vault.Adopt`, `vault.Upgrade`, and the new `vault.UpdateConfig` are the only code that writes vault files directly. `UpdateConfig` commits the identity file as one `setup` operation.
 - The atlas never writes into a vault except through those functions. Lint and refresh stay read-only toward every vault, offline, and idempotent.
 - The TUI is a subset of the CLI: every key maps to a command; `Update` holds the logic; tests drive with `tea.KeyMsg`.
-- Tests never touch a real `~/.claude-atlas`, never install a plugin, and skip when `git` is missing.
+- Tests never touch a real `~/.atlas-obsidian`, never install a plugin, and skip when `git` is missing.
 - Every task ends with `go build ./... && go vet ./... && go test ./...` passing.
 - Commits: author `nathanaday <nraday1221@gmail.com>` (`-c user.name=nathanaday -c user.email=nraday1221@gmail.com`); no `Co-Authored-By`; subject `area: what changed`. Stage files by name; never stage `.superpowers/`.
 - Comments are one-line doc comments in the style of the surrounding code. Prose follows the user's writing guide: short sentences, plain words, no metaphors.
@@ -184,9 +184,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/vault"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/vault"
 )
 
 var now = time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
@@ -217,7 +217,7 @@ func fixture(t *testing.T) (*home.Config, map[string]*vault.Vault) {
 	cfg.Vaults = []string{filepath.Join(root, "Elsewhere", "side")}
 	old := filepath.Join(root, "Vaults", "old")
 	os.MkdirAll(filepath.Join(old, "wiki"), 0o755)
-	os.WriteFile(filepath.Join(old, vault.Marker), []byte(`{"schema":"claude-atlas.vault.v1","mode":"generic"}`), 0o644)
+	os.WriteFile(filepath.Join(old, vault.Marker), []byte(`{"schema":"atlas-obsidian.vault.v1","mode":"generic"}`), 0o644)
 	bad := filepath.Join(root, "Vaults", "bad")
 	os.MkdirAll(bad, 0o755)
 	os.WriteFile(filepath.Join(bad, vault.Marker), []byte(`{not json`), 0o644)
@@ -364,8 +364,8 @@ Expected: compile errors (`undefined: Scan`, `vault.UpdateConfig` — Task 3 pro
 
 `internal/registry/registry.go`, with these rules:
 
-- `Scan`: walk `cfg.VaultsDir` with `filepath.WalkDir`; skip a directory whose name starts with `.` or is `node_modules`; at each directory, if `vault.Marker` exists there, take it as a vault root and `SkipDir`; stop descending when `strings.Count(rel, "/") >= 5`. Then visit each path in `cfg.Vaults` (skip one already found; a missing folder is a `Problem` "not found"). For each root: `vault.ReadConfig`; when `!ok` and the marker file exists, `Problem{Path, "identity file is not JSON; run claude-atlas adopt"}` plus an `Entry{Path, Error}`; when `cfg.Schema == vault.SchemaV1`, `Problem{Path, "v1 vault; run claude-atlas adopt PATH --as knowledge|project"}` plus an `Entry{Path, Error}`; other schemas: a Problem "unsupported schema". A valid config becomes an Entry: `ID, Kind, Name (default filepath.Base), Path, Mode (default generic), Created, Tags, Scope, Access, Grants`; for a project, `Mounts` and `Repos` copied from the config, then resolved in a second pass once every entry is known.
-- Resolution pass: for each project mount, `ByID`; when found and it is a knowledge base, `Path = kb.Wiki()` and `Effective = effective(mount.Access, kbAccess(kb, project.ID))`; else `Error = "no knowledge base with id " + id`. `kbAccess`: `open` → `write`; `guarded` → the grant's access for the project id, else `read`. `effective(request, grant)`: `read` if either is `read`, else `write`. For each repo: `Path` = `RepoDir(name)` if that directory exists, else `cfg.Repos[id+"/"+name]` if set, else `Error = "no folder; link it with claude-atlas link"`. `MountedBy` on the knowledge base: one `Ref{project.ID, project.Name, Effective}` per resolved mount, in project order.
+- `Scan`: walk `cfg.VaultsDir` with `filepath.WalkDir`; skip a directory whose name starts with `.` or is `node_modules`; at each directory, if `vault.Marker` exists there, take it as a vault root and `SkipDir`; stop descending when `strings.Count(rel, "/") >= 5`. Then visit each path in `cfg.Vaults` (skip one already found; a missing folder is a `Problem` "not found"). For each root: `vault.ReadConfig`; when `!ok` and the marker file exists, `Problem{Path, "identity file is not JSON; run atlas-obsidian adopt"}` plus an `Entry{Path, Error}`; when `cfg.Schema == vault.SchemaV1`, `Problem{Path, "v1 vault; run atlas-obsidian adopt PATH --as knowledge|project"}` plus an `Entry{Path, Error}`; other schemas: a Problem "unsupported schema". A valid config becomes an Entry: `ID, Kind, Name (default filepath.Base), Path, Mode (default generic), Created, Tags, Scope, Access, Grants`; for a project, `Mounts` and `Repos` copied from the config, then resolved in a second pass once every entry is known.
+- Resolution pass: for each project mount, `ByID`; when found and it is a knowledge base, `Path = kb.Wiki()` and `Effective = effective(mount.Access, kbAccess(kb, project.ID))`; else `Error = "no knowledge base with id " + id`. `kbAccess`: `open` → `write`; `guarded` → the grant's access for the project id, else `read`. `effective(request, grant)`: `read` if either is `read`, else `write`. For each repo: `Path` = `RepoDir(name)` if that directory exists, else `cfg.Repos[id+"/"+name]` if set, else `Error = "no folder; link it with atlas-obsidian link"`. `MountedBy` on the knowledge base: one `Ref{project.ID, project.Name, Effective}` per resolved mount, in project order.
 - Entries with `Error` set are kept in `Entries` (so `list` and `doctor` show them) but excluded from `Find`, `Projects`, `Knowledge`; sorting puts them last.
 - `Find`: exact path match after `filepath.Abs(home.Expand(arg))` when the arg contains a separator or `~`; else name match (`strings.EqualFold`); else id equality or prefix when `len(arg) >= 8`. Several name matches → `fmt.Errorf("%w: %s is the name of %d vaults (%s); use the path or the id", ErrAmbiguous, ...)`.
 - `Rel`: knowledge → `"knowledge/" + Name`; project with tags → `"projects/" + Tags[0] + "/" + Name`; else `"projects/" + Name`.
@@ -707,7 +707,7 @@ func Registry(cfg *home.Config, stateDir string, today time.Time) ([]registry.En
 func Signals(e registry.Entry, today time.Time) []string
 ```
 
-`Derive`: an entry with `Error` gets `State{VaultOK: false, VaultError: e.Error}`. Otherwise: `LastOperation` from the log, `LastTouched` from the log, the wiki mtime, and each resolved repo's `links.Inspect(links.Repo, path)` `Touched()`; `Heat(daysIdle, daysOld, newDays)` with `daysOld` from `e.Created`; `OpenThreads`; lint counts into `Pages` and `Unfinished`; for a project, `Tasks` from `taskSummary` (move it to `derive.go`, returning `*registry.TaskSummary`); `PendingRecovery` from `txn.Pending`; `RepoFacts[name]` for each repo with a path. `Registry`: `registry.Scan`, `Derive` each, `registry.Write(stateDir, entries, generatedAt)`; the state dir's old per-project JSON files are removed first (`os.RemoveAll(stateDir)` then write). `Signals`: `VaultError`; pending recovery ("an operation was interrupted; run `claude-atlas recover PATH`"); a mount with `Error`; a repo with `Error` or whose facts say `!OK`; blocked and stale tasks (the two sentences from today's `Signals`). No priority, state, or review-date signals: those fields are gone.
+`Derive`: an entry with `Error` gets `State{VaultOK: false, VaultError: e.Error}`. Otherwise: `LastOperation` from the log, `LastTouched` from the log, the wiki mtime, and each resolved repo's `links.Inspect(links.Repo, path)` `Touched()`; `Heat(daysIdle, daysOld, newDays)` with `daysOld` from `e.Created`; `OpenThreads`; lint counts into `Pages` and `Unfinished`; for a project, `Tasks` from `taskSummary` (move it to `derive.go`, returning `*registry.TaskSummary`); `PendingRecovery` from `txn.Pending`; `RepoFacts[name]` for each repo with a path. `Registry`: `registry.Scan`, `Derive` each, `registry.Write(stateDir, entries, generatedAt)`; the state dir's old per-project JSON files are removed first (`os.RemoveAll(stateDir)` then write). `Signals`: `VaultError`; pending recovery ("an operation was interrupted; run `atlas-obsidian recover PATH`"); a mount with `Error`; a repo with `Error` or whose facts say `!OK`; blocked and stale tasks (the two sentences from today's `Signals`). No priority, state, or review-date signals: those fields are gone.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -728,7 +728,7 @@ func TestRegistryDerivesEveryEntry(t *testing.T) {
 		}
 	}
 	os.MkdirAll(filepath.Join(cfg.VaultsDir, "old", "wiki"), 0o755)
-	os.WriteFile(filepath.Join(cfg.VaultsDir, "old", vault.Marker), []byte(`{"schema":"claude-atlas.vault.v1"}`), 0o644)
+	os.WriteFile(filepath.Join(cfg.VaultsDir, "old", vault.Marker), []byte(`{"schema":"atlas-obsidian.vault.v1"}`), 0o644)
 	stateDir := filepath.Join(root, "state")
 	entries, ix, err := Registry(cfg, stateDir, time.Now())
 	if err != nil {
@@ -764,7 +764,7 @@ func TestRegistryDerivesEveryEntry(t *testing.T) {
 func TestSignalsOverAnEntry(t *testing.T) {
 	e := registry.Entry{Name: "p", Kind: vault.Project, Path: "/v/p",
 		Mounts: []registry.Mount{{Name: "gone", Error: "no knowledge base with id x"}},
-		Repos:  []registry.Repo{{Name: "lost", Error: "no folder; link it with claude-atlas link"}},
+		Repos:  []registry.Repo{{Name: "lost", Error: "no folder; link it with atlas-obsidian link"}},
 		State:  &registry.State{VaultOK: true, PendingRecovery: true, Tasks: &registry.TaskSummary{Open: []registry.TaskLine{{Title: "A", Status: "blocked"}, {Title: "B", Status: "active", Stale: true}}}},
 	}
 	got := strings.Join(Signals(e, time.Now()), "\n")
@@ -825,7 +825,7 @@ func Describe(candidates []Match) string
 
 `Vault`: load the config (`ErrNoAtlas` → nothing); `registry.Scan`; for each project entry and each repo with a `Path`, when `dir` is inside it, a candidate with the longest path; one candidate wins. `Repos`: `ix.ByPath(root)`; nil for a knowledge base or an unknown root.
 
-Hooks: `SessionStart`'s `via` sentence becomes "claude-atlas: this folder is the repository REPO of the project NAME, whose vault is at PATH. The atlas tools use that vault. Search the wiki (the wiki-query skill, or Grep under its wiki/) before answering from the code alone; keep a decision with the save skill." and the policy line stays, using `links.Policy(repo.Changes, repo.Remote)` and `links.PolicyText`. `Stop` unchanged.
+Hooks: `SessionStart`'s `via` sentence becomes "atlas-obsidian: this folder is the repository REPO of the project NAME, whose vault is at PATH. The atlas tools use that vault. Search the wiki (the wiki-query skill, or Grep under its wiki/) before answering from the code alone; keep a decision with the save skill." and the policy line stays, using `links.Policy(repo.Changes, repo.Remote)` and `links.PolicyText`. `Stop` unchanged.
 
 Server: `RepoInfo` built from `registry.Repo` (`Name, Path, Remote, Changes: links.Policy(...), Policy: PolicyText, Branch, Dirty` via `links.Inspect`); `status.Repository` when the session's cwd matches; the `repos` tool over `discover.Repos`.
 
@@ -898,7 +898,7 @@ The command table after this task:
 Removed: `new-vault`, `relate`, `unrelate`, `edit-link`, `links`. `usage` text updated to this table.
 
 Rules for the rewrite:
-- `e.entry(cfg, arg) (registry.Entry, error)` replaces `e.project`: `registry.Scan(cfg)` then `Find`; an `ErrAmbiguous` error is returned as is; `ErrNotFound` says "no vault named %q; see `claude-atlas list`".
+- `e.entry(cfg, arg) (registry.Entry, error)` replaces `e.project`: `registry.Scan(cfg)` then `Find`; an `ErrAmbiguous` error is returned as is; `ErrNotFound` says "no vault named %q; see `atlas-obsidian list`".
 - `e.refreshAll(cfg)` calls `refresh.Registry(cfg, e.home.StateDir(), time.Now())` and prints nothing itself; callers print `refreshed N vaults`.
 - `list` reads the registry file (`registry.Read`); when it does not exist, it runs `refresh.Registry` first. Line format: `  %-9s %-5s %-24s %s` for kind, heat (or `off`/`v1`), name, `home.Display(path)`; entries with `Error` print `  %-9s %-5s %-24s %s` with kind `?`, heat `v1` or `bad`, and the path; problems as `console.Fail` steps.
 - `show`: rows Name, Kind, Id, Path, Mode, Created; Tags or Scope and Access; each mount (`name  effective  path or error`); each repository (`name  path  changes  remote`); then the derived rows as today (Vault check, Heat, Last touched, Idle, Last operation, Pages, Unfinished, Open threads, Tasks, Refreshed) from `State`, and one `Signal` row per `refresh.Signals` line.
@@ -907,7 +907,7 @@ Rules for the rewrite:
 - `tasks` with no argument lists every project's open tasks from the scan.
 - `ingest`: `capture` staging as today over the entry's vault.
 - `open-vault` with no argument: the vault at or above the current directory (`vault.FindAbove`); "the atlas" no longer exists.
-- Wizard: no atlas vault; `home.Default(vaultsDir)`; the first vault is `new-project` at `PathFor(vaultsDir, Project, name)` with the purpose sentence gone; the closing lines name `claude-atlas new-project`, `new-knowledge`, `open-claude`, `refresh`; `plan(c, "atlas vault", …)` and `pages.Write` removed; `refresh.Registry` at the end.
+- Wizard: no atlas vault; `home.Default(vaultsDir)`; the first vault is `new-project` at `PathFor(vaultsDir, Project, name)` with the purpose sentence gone; the closing lines name `atlas-obsidian new-project`, `new-knowledge`, `open-claude`, `refresh`; `plan(c, "atlas vault", …)` and `pages.Write` removed; `refresh.Registry` at the end.
 
 - [ ] **Step 1: Rewrite the CLI tests**
 
@@ -1052,7 +1052,7 @@ git -c user.name=nathanaday -c user.email=nraday1221@gmail.com commit -m "atlas:
 
 - [ ] **Step 1: CLAUDE.md**
 
-Rewrite the opening paragraph's last sentence ("The atlas side reports on every vault from one Obsidian page") to "The atlas side lists every vault from a scan of the vaults directory and shows them in a terminal view." In "Sources of truth", the v2 row reads "(phases 1–2 built: kinds, the registry)". Replace "Three rules for the atlas" with the v2 rules 5–7 from `docs/v2-design.md` ("A knowledge base never learns who mounts it", "A project never links another project", "Ids travel; paths stay") and the sentence "`~/.claude-atlas/state/registry.json` is derived and `refresh` rebuilds it in full." In "Layout", replace the `internal/tree`, `internal/refresh`, `internal/pages`, `internal/vaults`, `internal/links`, `internal/tui` lines with what they hold now, add `internal/registry/`, and fix the paragraph about `~/.claude-atlas/` and `~/Documents` (no atlas vault; `<vaults dir>/knowledge/<name>` and `<vaults dir>/projects/<name>`). In "Constraints", delete the two bullets about `tree.UpdateFrontmatter` and `[[dir/name|name]]` links; add "A vault's own facts change only through `vault.UpdateConfig`, which commits the identity file as a `setup` operation." Delete the "Obsidian facts" bullets about properties, the graph view filter, and `graph.json`; keep the `obsidian://` bullet. Delete the "iCloud Drive facts" section (the category move is gone).
+Rewrite the opening paragraph's last sentence ("The atlas side reports on every vault from one Obsidian page") to "The atlas side lists every vault from a scan of the vaults directory and shows them in a terminal view." In "Sources of truth", the v2 row reads "(phases 1–2 built: kinds, the registry)". Replace "Three rules for the atlas" with the v2 rules 5–7 from `docs/v2-design.md` ("A knowledge base never learns who mounts it", "A project never links another project", "Ids travel; paths stay") and the sentence "`~/.atlas-obsidian/state/registry.json` is derived and `refresh` rebuilds it in full." In "Layout", replace the `internal/tree`, `internal/refresh`, `internal/pages`, `internal/vaults`, `internal/links`, `internal/tui` lines with what they hold now, add `internal/registry/`, and fix the paragraph about `~/.atlas-obsidian/` and `~/Documents` (no atlas vault; `<vaults dir>/knowledge/<name>` and `<vaults dir>/projects/<name>`). In "Constraints", delete the two bullets about `tree.UpdateFrontmatter` and `[[dir/name|name]]` links; add "A vault's own facts change only through `vault.UpdateConfig`, which commits the identity file as a `setup` operation." Delete the "Obsidian facts" bullets about properties, the graph view filter, and `graph.json`; keep the `obsidian://` bullet. Delete the "iCloud Drive facts" section (the category move is gone).
 
 - [ ] **Step 2: usage.md**
 
@@ -1060,7 +1060,7 @@ Rewrite "Two layers" (the key table), "Create a vault" (`new-project`, `new-know
 
 - [ ] **Step 3: v2-design.md and README**
 
-In `v2-design.md`, the status line: "Phases 1 and 2 are built." In "The atlas", correct anything the implementation settled differently (the five-level scan, `projects/<tag>/<name>` in the view, `PathFor`). In `README.md`, replace mentions of the atlas vault and `Overview.md` with the registry and `claude-atlas view`; keep it short.
+In `v2-design.md`, the status line: "Phases 1 and 2 are built." In "The atlas", correct anything the implementation settled differently (the five-level scan, `projects/<tag>/<name>` in the view, `PathFor`). In `README.md`, replace mentions of the atlas vault and `Overview.md` with the registry and `atlas-obsidian view`; keep it short.
 
 - [ ] **Step 4: Commit**
 

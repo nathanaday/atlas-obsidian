@@ -7,15 +7,15 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/project"
-	"github.com/nathanaday/claude-atlas/internal/registry"
-	"github.com/nathanaday/claude-atlas/internal/threads"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
 )
 
 // The migration to 4.0, where a project holds its own wiki. It moves the user's files, so
-// nothing here runs without `claude-atlas upgrade`, and every case either does the whole
+// nothing here runs without `atlas-obsidian upgrade`, and every case either does the whole
 // move or refuses and says why.
 
 // Upgrade is what one upgrade did or would do.
@@ -87,7 +87,9 @@ func planProject(cfg *home.Config, up *Upgrade, work string) (*Upgrade, error) {
 			up.Did = append(up.Did, "absorb the knowledge base "+v3.Knowledge.Name+" from "+home.Display(found))
 		}
 	}
-	if isV3 {
+	// A project of this version whose identity file still carries the schema name the tool
+	// used before the rename is raised too, so the old name does not outlive the upgrade.
+	if isV3 || (p != nil && p.Config.Schema != project.Schema) {
 		up.Did = append(up.Did, "raise the identity file to "+project.Schema)
 	}
 	if p != nil {
@@ -99,6 +101,9 @@ func planProject(cfg *home.Config, up *Upgrade, work string) (*Upgrade, error) {
 		}
 		if threads.Legacy(p) {
 			up.Did = append(up.Did, "turn the task pages of 2.x into threads")
+		}
+		if project.HasAtlasSnippet(p) {
+			up.Did = append(up.Did, "retire the CSS snippet written under the tool's earlier name")
 		}
 	}
 	return up, nil
@@ -184,7 +189,7 @@ func RunUpgrade(h home.Home, cfg *home.Config, up *Upgrade, absorb string, now t
 			up.Did = append(up.Did, "dropped "+home.Display(up.Absorb)+" from the atlas config")
 		}
 	}
-	if isV3 {
+	if isV3 || p.Config.Schema != project.Schema {
 		if err := p.RaiseSchema(mode, description); err != nil {
 			return err
 		}

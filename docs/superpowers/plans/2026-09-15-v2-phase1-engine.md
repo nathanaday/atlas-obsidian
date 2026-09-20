@@ -17,7 +17,7 @@
 - A knowledge base has no `inbox/`, `ideas/`, `wiki/tasks/`, task ledger, `wiki/questions/`, or `wiki/sessions/`. A project has all of them.
 - Every write path goes through `txn.Prepare` and `txn.Apply`. `vault.Init`, `vault.Adopt`, and `vault.Upgrade` are the only code that writes vault files directly.
 - Lint and refresh stay read-only toward every vault, offline, and idempotent. A new vault of either kind in either mode lints clean (`lint.TestNewVaultHasNoFindings`).
-- Tests never touch a real `~/.claude-atlas`, never install a plugin, and skip when `git` is missing.
+- Tests never touch a real `~/.atlas-obsidian`, never install a plugin, and skip when `git` is missing.
 - No backward compatibility with v1 vaults: `vault.Open` refuses schema v1 and points at `adopt`. Existing vaults on the author's machine migrate by hand in phase 7.
 - Every task ends with `go build ./... && go vet ./... && go test ./...` passing.
 - Commits: author `nathanaday <nraday1221@gmail.com>` (pass `-c user.name=nathanaday -c user.email=nraday1221@gmail.com` to `git commit`); no `Co-Authored-By` line. Subject style: `area: what changed`, lower case, no period.
@@ -55,7 +55,7 @@
 
 **Interfaces:**
 - Produces, in package `vault`:
-  - `const Schema = "claude-atlas.vault.v2"`, `const SchemaV1 = "claude-atlas.vault.v1"`
+  - `const Schema = "atlas-obsidian.vault.v2"`, `const SchemaV1 = "atlas-obsidian.vault.v1"`
   - `type Kind string`; `const Knowledge Kind = "knowledge"`, `Project Kind = "project"`; `var Kinds = []Kind{Knowledge, Project}`; `func ParseKind(s string) (Kind, error)`
   - `const AccessOpen = "open"`, `AccessGuarded = "guarded"`, `AccessRead = "read"`, `AccessWrite = "write"`
   - `type Grant struct{ ID, Name, Access string }`, `type Mount struct{ ID, Name, Access string }`, `type Repo struct{ Name, Remote, Changes string }`
@@ -151,7 +151,7 @@ func TestIdentityFile(t *testing.T) {
 		t.Fatalf("kind is required: %v", err)
 	}
 	old := t.TempDir()
-	os.WriteFile(filepath.Join(old, Marker), []byte(`{"schema":"claude-atlas.vault.v1","mode":"generic","created":"2026-09-12"}`), 0o644)
+	os.WriteFile(filepath.Join(old, Marker), []byte(`{"schema":"atlas-obsidian.vault.v1","mode":"generic","created":"2026-09-12"}`), 0o644)
 	if _, err := Open(old); !errors.Is(err, ErrV1) || !strings.Contains(err.Error(), "adopt") {
 		t.Fatalf("v1 open: %v", err)
 	}
@@ -174,9 +174,9 @@ Expected: compile errors: `undefined: Options`, `undefined: Knowledge`, `undefin
 In `internal/vault/vault.go`, change the schema constants:
 
 ```go
-	Schema       = "claude-atlas.vault.v2"
+	Schema       = "atlas-obsidian.vault.v2"
 	// SchemaV1 is the identity file older versions wrote; adopt rewrites it.
-	SchemaV1 = "claude-atlas.vault.v1"
+	SchemaV1 = "atlas-obsidian.vault.v1"
 ```
 
 Replace the `Config` type and `Encode` with:
@@ -302,7 +302,7 @@ In `Open`, replace everything from `if cfg.Schema != Schema {` through the mode 
 	switch cfg.Schema {
 	case Schema:
 	case SchemaV1:
-		return nil, fmt.Errorf("%w: %s was made by claude-atlas v1; run `claude-atlas adopt %s --as knowledge` or `--as project`", ErrV1, abs, abs)
+		return nil, fmt.Errorf("%w: %s was made by atlas-obsidian v1; run `atlas-obsidian adopt %s --as knowledge` or `--as project`", ErrV1, abs, abs)
 	default:
 		return nil, fmt.Errorf("%s: unsupported schema %q", marker, cfg.Schema)
 	}
@@ -310,7 +310,7 @@ In `Open`, replace everything from `if cfg.Schema != Schema {` through the mode 
 		return nil, fmt.Errorf("%s: %w", marker, err)
 	}
 	if cfg.ID == "" {
-		return nil, fmt.Errorf("%s has no id; run `claude-atlas adopt %s`", marker, abs)
+		return nil, fmt.Errorf("%s has no id; run `atlas-obsidian adopt %s`", marker, abs)
 	}
 	if cfg.Name == "" {
 		cfg.Name = filepath.Base(abs)
@@ -433,7 +433,7 @@ func adoptConfig(root string, existing Config, hasMarker bool, opts Options, now
 }
 
 // Adopt turns an existing directory, an Obsidian vault, a claude-obsidian vault, or a v1
-// vault into a claude-atlas vault of a kind. It adds only what is missing and commits a
+// vault into a atlas-obsidian vault of a kind. It adds only what is missing and commits a
 // baseline that includes every file already there. It never replaces or removes a file,
 // except that a v1 identity file is rewritten and files an older version put at other
 // paths are moved.
@@ -453,7 +453,7 @@ func Adopt(root string, opts Options, now time.Time) (*AdoptResult, error) {
 		return nil, fmt.Errorf("%s is not a directory", abs)
 	}
 	if !IsAdoptable(abs) {
-		return nil, fmt.Errorf("%s is not a vault: it has no .obsidian/, wiki/, or vault identity file; create one with `claude-atlas new-vault`", abs)
+		return nil, fmt.Errorf("%s is not a vault: it has no .obsidian/, wiki/, or vault identity file; create one with `atlas-obsidian new-vault`", abs)
 	}
 	existing, hasMarker := ReadConfig(abs)
 	res := &AdoptResult{Root: abs, WasLegacy: IsLegacy(abs), AlreadyAdopted: hasMarker && existing.Schema == Schema, FromV1: hasMarker && existing.Schema != Schema}
@@ -531,7 +531,7 @@ func Create(path string, opts vault.Options, c *console.Console, confirm bool) (
 	}
 	if confirm {
 		files := append(vault.TemplateFiles(), vault.Marker, vault.LedgerPath)
-		c.Say("claude-atlas will create the %s %s (%s mode) with %d files and a git repository:", opts.Kind, home.Display(path), opts.Mode, len(files))
+		c.Say("atlas-obsidian will create the %s %s (%s mode) with %d files and a git repository:", opts.Kind, home.Display(path), opts.Mode, len(files))
 		for _, item := range files {
 			c.Say("    %s", item)
 		}
@@ -564,7 +564,7 @@ Test call sites: in each file listed under **Files**, replace `vault.Init(<root>
 Hand-written identity files: in `internal/discover/discover_test.go:27`, `internal/tui/editor_test.go:25`, and `internal/refresh/refresh_test.go:25`, replace the JSON string with:
 
 ```
-{"schema":"claude-atlas.vault.v2","id":"00000000-0000-4000-8000-000000000001","kind":"project","name":"v","mode":"generic","created":"2026-09-12"}
+{"schema":"atlas-obsidian.vault.v2","id":"00000000-0000-4000-8000-000000000001","kind":"project","name":"v","mode":"generic","created":"2026-09-12"}
 ```
 
 (keep whatever `created` value the test had if it asserts on it). `internal/vaults/manage_test.go:167` writes `{}` to mark a folder as a vault for `CheckMove`; leave it.
@@ -636,7 +636,7 @@ func TestInitLayoutByKind(t *testing.T) {
 	if _, err := Init(p, Options{Kind: Project}, now); err != nil {
 		t.Fatal(err)
 	}
-	for _, rel := range []string{"inbox/.gitkeep", "inbox/tasks/.gitkeep", "ideas/.gitkeep", TasksIndex, TaskLedgerPath, LedgerPath, ".obsidian/snippets/claude-atlas.css"} {
+	for _, rel := range []string{"inbox/.gitkeep", "inbox/tasks/.gitkeep", "ideas/.gitkeep", TasksIndex, TaskLedgerPath, LedgerPath, ".obsidian/snippets/atlas-obsidian.css"} {
 		if _, err := os.Stat(filepath.Join(p, filepath.FromSlash(rel))); err != nil {
 			t.Errorf("a project lacks %s", rel)
 		}
@@ -865,7 +865,7 @@ func TestAdoptAsKnowledgeRemovesTaskScaffolding(t *testing.T) {
 	if _, err := Init(root, Options{Kind: Project}, now); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(root, Marker), []byte(`{"schema":"claude-atlas.vault.v1","mode":"lyt","created":"2026-09-01"}`), 0o644)
+	os.WriteFile(filepath.Join(root, Marker), []byte(`{"schema":"atlas-obsidian.vault.v1","mode":"lyt","created":"2026-09-01"}`), 0o644)
 	os.WriteFile(filepath.Join(root, "wiki", "tasks", "Do it.md"), []byte("---\ntype: task\ntitle: Do it\n---\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "inbox", "tasks", "note.md"), []byte("later\n"), 0o644)
 	repo := gitx.Repo{Dir: root}
@@ -905,7 +905,7 @@ func TestAdoptAsKnowledgeRemovesTaskScaffolding(t *testing.T) {
 	if _, err := Init(withSources, Options{Kind: Project}, now); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(withSources, Marker), []byte(`{"schema":"claude-atlas.vault.v1","mode":"generic","created":"2026-09-01"}`), 0o644)
+	os.WriteFile(filepath.Join(withSources, Marker), []byte(`{"schema":"atlas-obsidian.vault.v1","mode":"generic","created":"2026-09-01"}`), 0o644)
 	os.WriteFile(filepath.Join(withSources, "inbox", "paper.pdf"), []byte("%PDF"), 0o644)
 	if _, err := Adopt(withSources, Options{Kind: Knowledge}, now); err == nil || !strings.Contains(err.Error(), "inbox/ holds 1 file") {
 		t.Fatalf("an inbox with sources stops the removal: %v", err)
@@ -1231,11 +1231,11 @@ Add to `internal/lint/lint_test.go`:
 func TestKindErrors(t *testing.T) {
 	asOf := time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
 	kb := fixture(t, map[string]string{
-		".claude-atlas.json":                 `{"schema":"claude-atlas.vault.v2","id":"1","kind":"knowledge","name":"kb","mode":"generic","created":"2026-09-14","mounts":[{"id":"2","name":"p","access":"write"}]}`,
+		".claude-atlas.json":                 `{"schema":"atlas-obsidian.vault.v2","id":"1","kind":"knowledge","name":"kb","mode":"generic","created":"2026-09-14","mounts":[{"id":"2","name":"p","access":"write"}]}`,
 		"wiki/index.md":                      mkpage("Index", "# Index\n"),
 		"inbox/paper.md":                     "x",
 		"wiki/tasks/tasks.md":                mkpage("Tasks", "# Tasks\n"),
-		"wiki/meta/ledgers/task-ledger.json": `{"schema":"claude-atlas.task-ledger.v1","tasks":[]}`,
+		"wiki/meta/ledgers/task-ledger.json": `{"schema":"atlas-obsidian.task-ledger.v1","tasks":[]}`,
 	})
 	r, err := Run(kb, Options{AsOf: asOf})
 	if err != nil {
@@ -1252,7 +1252,7 @@ func TestKindErrors(t *testing.T) {
 		t.Fatalf("summary %+v\n%s", r.Summary, r.Markdown())
 	}
 	project := fixture(t, map[string]string{
-		".claude-atlas.json": `{"schema":"claude-atlas.vault.v2","id":"2","kind":"project","name":"p","mode":"generic","created":"2026-09-14","scope":"x"}`,
+		".claude-atlas.json": `{"schema":"atlas-obsidian.vault.v2","id":"2","kind":"project","name":"p","mode":"generic","created":"2026-09-14","scope":"x"}`,
 		"wiki/index.md":      mkpage("Index", "# Index\n"),
 	})
 	r, _ = Run(project, Options{AsOf: asOf})
@@ -1526,11 +1526,11 @@ git -c user.name=nathanaday -c user.email=nraday1221@gmail.com commit -m "mcpser
 
 **Interfaces:**
 - Consumes: `vault.Kind`, `Kind.Noun`.
-- Produces: `const KnowledgeSkills`; the first line reads `claude-atlas project: NAME (MODE mode) at PATH` or `claude-atlas knowledge base: NAME (MODE mode) at PATH`; a knowledge base session gets the maintenance line and no task lines.
+- Produces: `const KnowledgeSkills`; the first line reads `atlas-obsidian project: NAME (MODE mode) at PATH` or `atlas-obsidian knowledge base: NAME (MODE mode) at PATH`; a knowledge base session gets the maintenance line and no task lines.
 
 - [ ] **Step 1: Write the failing tests**
 
-In `internal/hooks/hooks_test.go`, in `TestSessionStart`, replace `"claude-atlas vault: v (generic mode)"` with `"claude-atlas project: v (generic mode)"` and, further down, `!strings.Contains(out.String(), "claude-atlas vault")` with `!strings.Contains(out.String(), "claude-atlas project")`. Search the file for any other `"claude-atlas vault"` and change it the same way.
+In `internal/hooks/hooks_test.go`, in `TestSessionStart`, replace `"atlas-obsidian vault: v (generic mode)"` with `"atlas-obsidian project: v (generic mode)"` and, further down, `!strings.Contains(out.String(), "atlas-obsidian vault")` with `!strings.Contains(out.String(), "atlas-obsidian project")`. Search the file for any other `"atlas-obsidian vault"` and change it the same way.
 
 Add:
 
@@ -1548,7 +1548,7 @@ func TestSessionStartInAKnowledgeBase(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, want := range []string{"claude-atlas knowledge base: ai-ml (generic mode)", "Knowledge enters through a project", "<vault-context>", KnowledgeSkills} {
+	for _, want := range []string{"atlas-obsidian knowledge base: ai-ml (generic mode)", "Knowledge enters through a project", "<vault-context>", KnowledgeSkills} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in:\n%s", want, text)
 		}
@@ -1564,7 +1564,7 @@ func TestSessionStartInAKnowledgeBase(t *testing.T) {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `go test ./internal/hooks/`
-Expected: FAIL: `missing "claude-atlas project: v (generic mode)"` and `undefined: KnowledgeSkills`.
+Expected: FAIL: `missing "atlas-obsidian project: v (generic mode)"` and `undefined: KnowledgeSkills`.
 
 - [ ] **Step 3: Print by kind**
 
@@ -1573,7 +1573,7 @@ In `internal/hooks/hooks.go`, after `Skills`, add:
 ```go
 // KnowledgeSkills is the slash-menu line for a knowledge base, where knowledge enters
 // through a project and the work here is upkeep.
-const KnowledgeSkills = "/claude-atlas:wiki  wiki-query  wiki-lint  wiki-fold  wiki-mode  canvas  obsidian-markdown  obsidian-bases  think"
+const KnowledgeSkills = "/atlas-obsidian:wiki  wiki-query  wiki-lint  wiki-fold  wiki-mode  canvas  obsidian-markdown  obsidian-bases  think"
 ```
 
 In `SessionStart`, replace the block from `var b strings.Builder` through `b.WriteString("Change wiki pages only through the atlas MCP tools (plan, then apply). Skills: " + Skills + "\n")` with:
@@ -1582,9 +1582,9 @@ In `SessionStart`, replace the block from `var b strings.Builder` through `b.Wri
 	var b strings.Builder
 	noun := v.Config.Kind.Noun()
 	if via != "" {
-		fmt.Fprintf(&b, "claude-atlas: this folder is linked to the project %s, whose vault is the %s %s (%s mode) at %s. The atlas tools use that vault. Search the wiki (the wiki-query skill, or Grep under its wiki/) before answering from the code alone; keep a decision with the save skill.\n", via, noun, v.Name(), v.Config.Mode, v.Root)
+		fmt.Fprintf(&b, "atlas-obsidian: this folder is linked to the project %s, whose vault is the %s %s (%s mode) at %s. The atlas tools use that vault. Search the wiki (the wiki-query skill, or Grep under its wiki/) before answering from the code alone; keep a decision with the save skill.\n", via, noun, v.Name(), v.Config.Mode, v.Root)
 	} else {
-		fmt.Fprintf(&b, "claude-atlas %s: %s (%s mode) at %s\n", noun, v.Name(), v.Config.Mode, v.Root)
+		fmt.Fprintf(&b, "atlas-obsidian %s: %s (%s mode) at %s\n", noun, v.Name(), v.Config.Mode, v.Root)
 	}
 	if policy != "" {
 		b.WriteString(policy + "\n")
@@ -1627,11 +1627,11 @@ git -c user.name=nathanaday -c user.email=nraday1221@gmail.com commit -m "hooks:
 
 **Interfaces:**
 - Consumes: `vault.Options`, `vault.ParseKind`, `vaults.Create(path, vault.Options, ...)`, `AdoptResult.Kind`, `AdoptResult.Removed`.
-- Produces: `claude-atlas new-vault NAME --kind knowledge|project` (default `project`); `claude-atlas adopt PATH --as knowledge|project` (default: the vault's kind, else `project`). The interactive screens create projects until phase 4.
+- Produces: `atlas-obsidian new-vault NAME --kind knowledge|project` (default `project`); `atlas-obsidian adopt PATH --as knowledge|project` (default: the vault's kind, else `project`). The interactive screens create projects until phase 4.
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `internal/cli/cli_test.go` (add `"github.com/nathanaday/claude-atlas/internal/vault"` to the imports):
+Add to `internal/cli/cli_test.go` (add `"github.com/nathanaday/atlas-obsidian/internal/vault"` to the imports):
 
 ```go
 func TestNewVaultKindAndAdoptAs(t *testing.T) {
@@ -1701,7 +1701,7 @@ In `newVault`, after `mode := modeFlag(fs)`, add `kind := kindFlag(fs, "kind", "
 	}
 ```
 
-Change the two calls: `return e.adoptPath(*from, *opts, vault.Options{Kind: k, Mode: m, Name: opts.Name})` and `return e.createVault(positional[0], *opts, vault.Options{Kind: k, Mode: m, Name: opts.Name})`. Update the usage string to `usage: claude-atlas new-vault [NAME | --from PATH] [--kind project|knowledge] [--name N] [--category DIR] [--purpose TEXT] [--priority P] [--mode generic|lyt]`.
+Change the two calls: `return e.adoptPath(*from, *opts, vault.Options{Kind: k, Mode: m, Name: opts.Name})` and `return e.createVault(positional[0], *opts, vault.Options{Kind: k, Mode: m, Name: opts.Name})`. Update the usage string to `usage: atlas-obsidian new-vault [NAME | --from PATH] [--kind project|knowledge] [--name N] [--category DIR] [--purpose TEXT] [--priority P] [--mode generic|lyt]`.
 
 In `adopt`, after `mode := ...`, add `as := kindFlag(fs, "as", "adopt as a project or a knowledge base; a vault that already has a kind keeps it; default project")`. After the mode parse, add:
 
@@ -1720,7 +1720,7 @@ Change `adoptPath` to `func (e *env) adoptPath(path string, opts vaults.Register
 	c := e.console
 	switch {
 	case res.AlreadyAdopted && res.Commit == "":
-		c.Step(console.Skip, "adopt", "already a claude-atlas "+res.Kind.Noun())
+		c.Step(console.Skip, "adopt", "already a atlas-obsidian "+res.Kind.Noun())
 	case res.WasLegacy:
 		c.Step(console.OK, "adopted", fmt.Sprintf("claude-obsidian vault as %s; %s", res.Kind.Noun(), setupChanges(res.Added, res.Moved)))
 	case res.FromV1:
@@ -1738,7 +1738,7 @@ Change `createVault` to `func (e *env) createVault(arg string, opts vaults.Regis
 - [ ] **Step 4: Run the tests**
 
 Run: `go build ./... && go vet ./... && go test ./...`
-Expected: all pass. If `TestVaultCommands` asserts the old "adopted" wording ("already a claude-atlas vault"), update it to "already a claude-atlas project".
+Expected: all pass. If `TestVaultCommands` asserts the old "adopted" wording ("already a atlas-obsidian vault"), update it to "already a atlas-obsidian project".
 
 - [ ] **Step 5: Record the change in CLAUDE.md**
 

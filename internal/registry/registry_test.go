@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/gitx"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/gitx"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
 )
 
 var now = time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
@@ -70,7 +70,7 @@ func fixture(t *testing.T) (*home.Config, map[string]*project.Project, string) {
 	})
 	bad("Bad/later", func(dir string) {
 		os.MkdirAll(filepath.Join(dir, project.Dir, "later"), 0o755)
-		os.WriteFile(filepath.Join(dir, project.Dir, "later", project.Marker), []byte(`{"schema":"claude-atlas.project.v9","id":"later"}`), 0o644)
+		os.WriteFile(filepath.Join(dir, project.Dir, "later", project.Marker), []byte(`{"schema":"atlas-obsidian.project.v9","id":"later"}`), 0o644)
 	})
 	kb := filepath.Join(root, "Vaults", "notes")
 	os.MkdirAll(kb, 0o755)
@@ -147,7 +147,7 @@ func TestScanNamesEveryFolderItCannotUse(t *testing.T) {
 	}
 	// A 3.x knowledge base's message names the command that makes it a project.
 	e := ix.ByPath(kb)
-	if e == nil || !strings.Contains(e.Error, "claude-atlas upgrade") {
+	if e == nil || !strings.Contains(e.Error, "atlas-obsidian upgrade") {
 		t.Fatalf("the knowledge base: %+v", e)
 	}
 	// A project the atlas cannot read has a path, an error, and a reason, and nothing else.
@@ -211,7 +211,7 @@ func TestStateFileRoundTrips(t *testing.T) {
 		t.Fatalf("round trip %v %s %+v", err, generated, entries)
 	}
 	data, _ := os.ReadFile(File(dir))
-	if !strings.Contains(string(data), `"schema": "claude-atlas.registry.v4"`) {
+	if !strings.Contains(string(data), `"schema": "atlas-obsidian.registry.v4"`) {
 		t.Fatalf("file:\n%s", data)
 	}
 	os.WriteFile(File(dir), []byte(`{"schema":"claude-atlas.registry.v3","entries":[]}`), 0o644)
@@ -290,5 +290,23 @@ func TestDescriptionSummaryAndUnfinished(t *testing.T) {
 	u := Unfinished{Stubs: &one, DeadLinks: &two}
 	if u.Text() != "1 stubs · 2 dead links" || *u.Total() != 3 || (Unfinished{}).Total() != nil {
 		t.Fatalf("unfinished %q %v", u.Text(), u.Total())
+	}
+}
+
+// The scan reads a project made before the rename as an ordinary entry, not a problem.
+func TestScanAcceptsTheSchemaWrittenBeforeTheRename(t *testing.T) {
+	work := t.TempDir()
+	dir := filepath.Join(work, project.Dir, "webapp")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, project.Marker),
+		[]byte(`{"schema":"claude-atlas.project.v4","id":"p1","name":"webapp","created":"2026-09-17"}`), 0o644)
+	cfg := &home.Config{}
+	cfg.AddProject(work)
+	ix, err := Scan(cfg)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(ix.Entries) != 1 || ix.Entries[0].Error != "" {
+		t.Fatalf("entries %+v", ix.Entries)
 	}
 }

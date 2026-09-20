@@ -1,4 +1,4 @@
-module github.com/nathanaday/claude-atlas
+module github.com/nathanaday/atlas-obsidian
 
 go 1.24.2
 

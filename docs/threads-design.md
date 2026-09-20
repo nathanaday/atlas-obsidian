@@ -74,7 +74,7 @@ atlas/<name>/
 ├── phases/<Title>.md
 ├── inbox/                    notes that wait to become threads
 └── .obsidian/
-    ├── snippets/claude-atlas.css   one callout color and icon per stage
+    ├── snippets/atlas-obsidian.css   one callout color and icon per stage
     ├── appearance.json             enables the snippet
     └── .gitignore                  workspace*.json
 ```
@@ -196,14 +196,14 @@ own.
 ## The CLI
 
 ```bash
-claude-atlas threads [PROJECT] [--all] [--stage S] [--json]
-claude-atlas thread PROJECT new TEXT... [--title T] [--priority P] [--phase NAME]
-claude-atlas thread PROJECT show ID [--json]
-claude-atlas thread PROJECT file ID STAGE [--text T | --file PATH] [--outcome completed|killed]
-claude-atlas thread PROJECT close ID TEXT... [--killed]
-claude-atlas thread PROJECT set ID [--title T] [--priority P] [--phase NAME] [--blocked TEXT]
-claude-atlas thread PROJECT reopen ID
-claude-atlas open-claude NAME --thread ID
+atlas-obsidian threads [PROJECT] [--all] [--stage S] [--json]
+atlas-obsidian thread PROJECT new TEXT... [--title T] [--priority P] [--phase NAME]
+atlas-obsidian thread PROJECT show ID [--json]
+atlas-obsidian thread PROJECT file ID STAGE [--text T | --file PATH] [--outcome completed|killed]
+atlas-obsidian thread PROJECT close ID TEXT... [--killed]
+atlas-obsidian thread PROJECT set ID [--title T] [--priority P] [--phase NAME] [--blocked TEXT]
+atlas-obsidian thread PROJECT reopen ID
+atlas-obsidian open-claude NAME --thread ID
 ```
 
 `PROJECT` is a name, a path, or `.`. `ID` is a thread's id, its title, or
@@ -259,7 +259,7 @@ Left:
 
 ## Migration
 
-`claude-atlas upgrade [NAME | --all]` turns each task page of 2.x into a
+`atlas-obsidian upgrade [NAME | --all]` turns each task page of 2.x into a
 thread (`threads.Migrate`): Idea becomes the stub, Plan and Progress the
 plan, Outcome the receipt. `done` becomes `completed`, `cancelled` becomes
 `killed`, and a `blocked` task is a blocked thread. `task-20260917-3f2a`

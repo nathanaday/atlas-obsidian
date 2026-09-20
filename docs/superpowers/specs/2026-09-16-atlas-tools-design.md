@@ -1,6 +1,6 @@
 # Atlas tools: configuring the atlas from Claude Code
 
-Date: 2026-09-16. Applies to claude-atlas 1.2.0; ships as 1.3.0.
+Date: 2026-09-16. Applies to atlas-obsidian 1.2.0; ships as 1.3.0.
 Builds on `docs/v2-design.md` and the clusters design. Nothing here changes
 what a vault, a mount, a grant, a cluster, or a repository is.
 
@@ -12,7 +12,7 @@ mount and grant, add a cluster member, link a repository, set a change
 policy, stage files into an inbox, change a setting. The user asks in words;
 a skill asks what it needs, states the change, and calls a tool.
 
-The point is the guided flow. `claude-atlas new-project` asks the same
+The point is the guided flow. `atlas-obsidian new-project` asks the same
 questions the view asks. A skill can suggest: which knowledge bases to mount
 from their scopes, a scope sentence for a new knowledge base, the repository
 the user is sitting in. The CLI stays the complete surface and the reference;
@@ -89,7 +89,7 @@ returns: { vaults: Entry[], problems: Problem[],
 scope, access, grants, members, clusters, mounts with `effective`, repos with
 their change policy, host, `mounted_by`, and for a vault the atlas cannot
 read, `error` and `reason`. Without `refresh` the tool scans and derives and
-writes nothing. With `refresh: true` it runs what `claude-atlas refresh` runs:
+writes nothing. With `refresh: true` it runs what `atlas-obsidian refresh` runs:
 rewrites `registry.json`, recreates `kb/` symlinks, adopts repositories
 waiting under `repos/`, and reports what it adopted in `changes`.
 
@@ -193,7 +193,7 @@ identity file changes are `setup` commits in the vault's own git.
 One write does widen access: the `mount` tool's `grant` action can give the
 session's own project write access to a guarded knowledge base. It moves a
 capability the session already had rather than adding one, because a session
-with Bash could always run `claude-atlas grant`. The skills' state-then-confirm
+with Bash could always run `atlas-obsidian grant`. The skills' state-then-confirm
 gate is what holds it: a grant is stated in one line and waits for yes, like
 every other write.
 
@@ -238,7 +238,7 @@ Create a project, or change one. In order:
 
 Then one line that states the whole change, yes, `vault create`, then `mount`
 and `repo` as chosen. Report the path and how to start a session there
-(`claude-atlas open-claude NAME`, or `cd` and `claude`). Also: rename, retag,
+(`atlas-obsidian open-claude NAME`, or `cd` and `claude`). Also: rename, retag,
 forget, through `vault edit` and `vault forget`.
 
 ### `atlas-knowledge`
@@ -270,7 +270,7 @@ against `commit` and the atlas default, and what the session hook and the
 - `wiki`: "no vault here" hands off to `atlas-project` or `atlas-knowledge`
   instead of naming terminal commands.
 - `wiki-ingest`: the read-only-mount case hands off to `atlas-mount`; the
-  two `claude-atlas` commands it names today go. A source outside the vault
+  two `atlas-obsidian` commands it names today go. A source outside the vault
   goes through `stage`, so "ask the user to save the page into `inbox/`"
   becomes "stage it".
 - The session-start hook is unchanged.

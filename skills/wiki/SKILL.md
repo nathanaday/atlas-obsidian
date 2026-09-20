@@ -1,6 +1,6 @@
 ---
 name: wiki
-description: "Orient in a claude-atlas session and route work to the right skill. Use for /wiki, set up wiki, project status, what is in this wiki, which skill should I use, make this a project, Obsidian vault, second brain, persistent wiki, wiki setup."
+description: "Orient in a atlas-obsidian session and route work to the right skill. Use for /wiki, set up wiki, project status, what is in this wiki, which skill should I use, make this a project, Obsidian vault, second brain, persistent wiki, wiki setup."
 ---
 
 # Orientation
@@ -22,7 +22,7 @@ The folder is an Obsidian vault the user opens, and `project.json` says what it
 is. The wiki commits into the repository that holds the work, scoped to the
 wiki's own paths, so an operation never touches the code.
 
-The atlas MCP server (tools named `mcp__plugin_claude-atlas_atlas__<tool>`,
+The atlas MCP server (tools named `mcp__plugin_atlas-obsidian_atlas__<tool>`,
 called `status`, `plan`, `apply`, and so on below) is the only write path
 into the wiki.
 
@@ -32,15 +32,15 @@ Call `status` first. It reports the project's id, name, description, and path,
 its mode, what git says about the work, the page that describes the work, its
 thread counts by stage, its wiki's page count and git state, what waits in the
 inbox, and warnings. The session hook's first line already names the place:
-`claude-atlas: project …`.
+`atlas-obsidian: project …`.
 
 If `status` fails because the session is in no project, hand off:
 `atlas-project` makes the current folder a project, and `atlas` shows what
 exists. A folder of an earlier version says so and names
-`claude-atlas upgrade`.
+`atlas-obsidian upgrade`.
 
 Do not create wiki files yourself. If `status` warns that an operation was
-interrupted, tell the user to run `claude-atlas recover` before anything else.
+interrupted, tell the user to run `atlas-obsidian recover` before anything else.
 
 ## Never write wiki pages directly
 
@@ -104,7 +104,7 @@ Every new canonical page joins `wiki/index.md` (generic mode) or a MOC (lyt
 mode) in the same plan. Update `wiki/overview.md` only when the stable
 high-level picture changed. Keep `wiki/hot.md` under 500 words.
 
-An operation can be undone with the `undo` tool or `claude-atlas undo`; say so
+An operation can be undone with the `undo` tool or `atlas-obsidian undo`; say so
 when a user hesitates rather than skipping a review.
 
 ## Conditional references

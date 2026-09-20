@@ -5,12 +5,12 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/nathanaday/claude-atlas/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
 )
 
 // LaunchConfig is the claude_code section of config.json: Command (normally "claude"),
 // Args placed before the prompt, an optional Prompt sent as the first message (for
-// example "/claude-atlas:wiki"), and SessionContext, which lets the plugin's SessionStart
+// example "/atlas-obsidian:wiki"), and SessionContext, which lets the plugin's SessionStart
 // hook hand Claude the vault's hot.md.
 type LaunchConfig = home.LaunchConfig
 
@@ -20,15 +20,15 @@ var ErrNoClaude = errors.New("the `claude` command is not on PATH")
 // server and hooks; EnvSessionContext turns the session-start context on ("1") or off
 // ("0") for this launch.
 const (
-	EnvVault          = "CLAUDE_ATLAS_VAULT"
-	EnvSessionContext = "CLAUDE_ATLAS_SESSION_CONTEXT"
+	EnvVault          = "ATLAS_OBSIDIAN_VAULT"
+	EnvSessionContext = "ATLAS_OBSIDIAN_SESSION_CONTEXT"
 )
 
 // IngestPrompt is the first message that starts an ingest of the inbox.
-const IngestPrompt = "/claude-atlas:wiki-ingest"
+const IngestPrompt = "/atlas-obsidian:wiki-ingest"
 
 // DescribePrompt is the first message that writes the page describing a project.
-const DescribePrompt = "/claude-atlas:describe"
+const DescribePrompt = "/atlas-obsidian:describe"
 
 // ThreadPrompt is the first message that continues a thread: the skill that files the
 // document after the thread's stage, or runs its plan.
@@ -37,7 +37,7 @@ func ThreadPrompt(stage, threadID string) string {
 	if skill == "" {
 		skill = "thread"
 	}
-	return "/claude-atlas:" + skill + " " + threadID
+	return "/atlas-obsidian:" + skill + " " + threadID
 }
 
 // LaunchCommand builds the process that runs Claude Code in a knowledge base or a

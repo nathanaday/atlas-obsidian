@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nathanaday/claude-atlas/internal/console"
-	"github.com/nathanaday/claude-atlas/internal/home"
-	"github.com/nathanaday/claude-atlas/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/console"
+	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/project"
 )
 
 var ErrCancelled = errors.New("cancelled")
@@ -64,7 +64,7 @@ func preview(c *console.Console, work string, opts project.Options) error {
 	}
 	folder := project.Dir + "/" + project.FolderName(name)
 	files := append(project.TemplateFiles(), project.Marker, project.LedgerPath)
-	c.Say("claude-atlas will make %s a project (%s mode), as %s/ with %d files %s:", home.Display(work), opts.Mode, folder, len(files), repoNote(work, opts))
+	c.Say("atlas-obsidian will make %s a project (%s mode), as %s/ with %d files %s:", home.Display(work), opts.Mode, folder, len(files), repoNote(work, opts))
 	for _, item := range files {
 		c.Say("    %s/%s", folder, item)
 	}

@@ -13,15 +13,31 @@ import (
 	"time"
 )
 
-const Schema = "claude-atlas.source-ledger.v1"
+const Schema = "atlas-obsidian.source-ledger.v1"
 
 // VaultPath is where a vault keeps its source ledger, relative to the vault root. It is
 // vault.LedgerPath; the constant lives here so this package can reach a mounted knowledge
 // base's ledger without importing vault, which imports this one.
 const VaultPath = "wiki/meta/ledgers/source-ledger.json"
 
-// LegacySchema is claude-obsidian's; its records read the same way.
-const LegacySchema = "claude-obsidian.source-ledger.v1"
+// LegacySchemas are the names earlier versions wrote, before claude-obsidian became
+// claude-atlas and claude-atlas became atlas-obsidian. Their records read the same way.
+var LegacySchemas = []string{
+	"claude-atlas.source-ledger.v1",
+	"claude-obsidian.source-ledger.v1",
+}
+
+func knownSchema(schema string) bool {
+	if schema == Schema {
+		return true
+	}
+	for _, legacy := range LegacySchemas {
+		if schema == legacy {
+			return true
+		}
+	}
+	return false
+}
 
 var Authorities = []string{"official", "primary", "secondary", "community", "synthetic", "unknown"}
 
@@ -85,7 +101,7 @@ func Parse(data []byte) (*Ledger, error) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("source ledger: %w", err)
 	}
-	if raw.Schema != Schema && raw.Schema != LegacySchema {
+	if !knownSchema(raw.Schema) {
 		return nil, fmt.Errorf("source ledger: unsupported schema %q", raw.Schema)
 	}
 	l := &Ledger{Schema: Schema, GeneratedAt: raw.GeneratedAt, Sources: map[string]Source{}}

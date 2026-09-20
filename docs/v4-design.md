@@ -75,11 +75,11 @@ groups threads.
 
 ### The identity file
 
-`atlas/<name>/project.json`, schema `claude-atlas.project.v4`:
+`atlas/<name>/project.json`, schema `atlas-obsidian.project.v4`:
 
 ```json
 {
-  "schema": "claude-atlas.project.v4",
+  "schema": "atlas-obsidian.project.v4",
   "id": "b3e0f5a2-9c14-4d6e-8a7b-2f1e0c9d8b7a",
   "name": "webapp",
   "description": "The customer-facing web application for the fire-detection product. Its wiki holds the alarm pipeline, the false-alarm sources, and the field tests they come from.",
@@ -157,14 +157,14 @@ rule in code that moves a file on its own.
 
 One kind of session. `place.Resolve` walks up from the working directory to
 the nearest `atlas/<name>/project.json`, after an explicit path and
-`CLAUDE_ATLAS_VAULT`. There is no second marker to compare distances with,
+`ATLAS_OBSIDIAN_VAULT`. There is no second marker to compare distances with,
 no `KnowledgeError`, and no knowledge base to resolve through the registry.
 A session anywhere inside the work is the project's session.
 
 The session-start hook:
 
 ```text
-claude-atlas: project webapp at ~/code/webapp (git, main)
+atlas-obsidian: project webapp at ~/code/webapp (git, main)
 Wiki: 140 pages · generic · last operation ingest 2026-09-18
 Search the wiki (the wiki-query skill) before answering from the code alone.
 Change wiki pages only through plan, then apply.
@@ -182,11 +182,11 @@ writes it" stays: a project still describes its own work in its own wiki.
 ## The atlas
 
 The atlas is the list of projects on the machine and nothing else.
-`config.json`, schema `claude-atlas.config.v4`:
+`config.json`, schema `atlas-obsidian.config.v4`:
 
 ```json
 {
-  "schema": "claude-atlas.config.v4",
+  "schema": "atlas-obsidian.config.v4",
   "projects": ["~/code/webapp", "~/code/fw", "~/Documents/thesis"],
   "plugin": {}, "claude_code": {}, "heat": {}
 }
@@ -286,7 +286,7 @@ becomes `edit --mode`.
 
 ## Migration
 
-`claude-atlas upgrade` is one command with one report and no surprises. It
+`atlas-obsidian upgrade` is one command with one report and no surprises. It
 refuses rather than guesses, and it moves files with `git mv` when one
 repository holds both sides, so the history follows.
 

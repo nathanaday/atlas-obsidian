@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, the Claude Code plugin format (skills, agents, hooks), Markdown.
 
-**Spec:** `docs/v2-design.md` — "Skills", "Sessions", "Knowledge enters through a project", "Tools", "Lint", "Phases" item 6, "Left for later". The drift audit: `/private/tmp/claude-501/-Users-nathanaday-SoftwareProjects-claude-atlas/fbe99cf6-28f0-4b4e-accf-32fed6c08c49/scratchpad/phase6-audit.md` (line numbers are from `main` after phase 3; re-find each item by its text).
+**Spec:** `docs/v2-design.md` — "Skills", "Sessions", "Knowledge enters through a project", "Tools", "Lint", "Phases" item 6, "Left for later". The drift audit: `/private/tmp/claude-501/-Users-nathanaday-SoftwareProjects-atlas-obsidian/fbe99cf6-28f0-4b4e-accf-32fed6c08c49/scratchpad/phase6-audit.md` (line numbers are from `main` after phase 3; re-find each item by its text).
 
 ## Global Constraints
 
@@ -16,7 +16,7 @@
 - The plugin's installed copy changes only when `.claude-plugin/plugin.json` and `marketplace.json` go up; both say `1.0.0` at the end of this phase, and the README badge with them. `make install` stamps the binary from `plugin.json`.
 - Every write path goes through `txn.Prepare`/`Apply`; lint is read-only; the hook is read-only.
 - Dependencies: `gopkg.in/yaml.v3`, the MCP `go-sdk` v1.4.0, Bubble Tea, Bubbles, Lip Gloss. Nothing else.
-- Tests never touch a real `~/.claude-atlas`, never install a plugin, skip when git is missing.
+- Tests never touch a real `~/.atlas-obsidian`, never install a plugin, skip when git is missing.
 - Commits: `git -c user.name=nathanaday -c user.email=nraday1221@gmail.com commit`; no `Co-Authored-By`; subject `area: what changed`; stage by name; never stage `.superpowers/`.
 - Prose (skills, docs, comments, messages): short plain sentences, active voice, the same term for the same thing (a knowledge base is *mounted*; a repository is *linked*; the *host repository* is the one a project lives in), no metaphors; never "flag" (except a CLI flag), "genuine", "honest", "shape", "load bearing", "judgement call", "earned its keep", "worth flagging". Skills are instructions to Claude: imperative, one action per sentence.
 
@@ -73,9 +73,9 @@ git -c user.name=nathanaday -c user.email=nraday1221@gmail.com commit -m "hooks:
 **Content requirements** (each is a fact from the spec or the code; the audit gives the current lines):
 
 `skills/wiki/SKILL.md`:
-- "Find the vault": the session hook's first line names the kind (`claude-atlas project: …` or `claude-atlas knowledge base: … mounted by …`); the `status` tool returns `kind`, `id`, and for a project `mounts`, for a knowledge base `access` and `mounted_by`.
+- "Find the vault": the session hook's first line names the kind (`atlas-obsidian project: …` or `atlas-obsidian knowledge base: … mounted by …`); the `status` tool returns `kind`, `id`, and for a project `mounts`, for a knowledge base `access` and `mounted_by`.
 - The layout paragraph: a project has `inbox/`, `inbox/tasks/`, `ideas/`, `wiki/tasks/`, `wiki/questions/`, `wiki/sessions/`, `kb/<name>` (a mounted knowledge base's `wiki/`, read through the symlink), `repos/`; a knowledge base has `wiki/` with sources, entities, concepts only.
-- "Route the request": two tables or one table with a kind column. In a project: ingest, save, query, tasks, mode, fold, lint, canvas, bases, think as today, plus "mount, unmount, grant, revoke: the CLI (`claude-atlas mount …`), not a tool". In a knowledge base session: maintenance only — lint, repair, fold, stub, mode, canvas, bases; ingest and save are refused ("knowledge enters through a project that mounts it: run this in <one of the projects the hook named>"); the skill says which projects mount it (the hook's first line).
+- "Route the request": two tables or one table with a kind column. In a project: ingest, save, query, tasks, mode, fold, lint, canvas, bases, think as today, plus "mount, unmount, grant, revoke: the CLI (`atlas-obsidian mount …`), not a tool". In a knowledge base session: maintenance only — lint, repair, fold, stub, mode, canvas, bases; ingest and save are refused ("knowledge enters through a project that mounts it: run this in <one of the projects the hook named>"); the skill says which projects mount it (the hook's first line).
 - The search sentence matches the hook: "Search the project and its knowledge bases (the wiki-query skill) before answering from the code alone."
 - "Conditional references" adds `references/mounts.md` ("when the project mounts a knowledge base, or the session is in a knowledge base").
 - Never write under `kb/` (the guard denies it); write a knowledge base page through `plan` with `vault: <its root>` from the project session.
@@ -140,7 +140,7 @@ git -c user.name=nathanaday -c user.email=nraday1221@gmail.com commit -m "skills
 **Content requirements:**
 - `wiki-query`: in a project, read the project's `wiki/` and every mount's (`kb/<name>/`, or the real path from the `mounts` tool); a citation names the vault with the page (`[[Page#Heading]]` in the project; `[[kb/<name>/concepts/Page#Heading]]` or "in <knowledge base>: [[Page]]" for a mount — choose one form and use it throughout); in a knowledge base session, read only that vault.
 - `save`: a project session only (in a knowledge base session, stop and name the projects that mount it); a decision that belongs to a knowledge base goes through `plan` with `vault: <kb root>` when the mount is effectively `write`; a `route` `match` in a mount means append there, not create in the project.
-- `wiki-lint`: the category table gains `kind_errors`, `task_errors`, `mount_errors` (one line each; read `internal/lint/lint.go`'s Markdown section headings for the names); lint runs per vault; in a project, a link that resolves through a mount is not wanted and a name in the project and a mount is a duplicate; a `mount_errors` entry means "run `claude-atlas refresh`"; the `stub` tool with `titles[].target` seeds a wanted page in a mount; the counts line at session start (Task 1) points here.
+- `wiki-lint`: the category table gains `kind_errors`, `task_errors`, `mount_errors` (one line each; read `internal/lint/lint.go`'s Markdown section headings for the names); lint runs per vault; in a project, a link that resolves through a mount is not wanted and a name in the project and a mount is a duplicate; a `mount_errors` entry means "run `atlas-obsidian refresh`"; the `stub` tool with `titles[].target` seeds a wanted page in a mount; the counts line at session start (Task 1) points here.
 - The five task skills: one sentence each near the top: "Tasks live in a project. In a knowledge base session this skill does not apply; the hook's first line names the projects that mount it."
 
 - [ ] **Step 1: Read the audit's sections for these files.**
@@ -200,14 +200,14 @@ git -c user.name=nathanaday -c user.email=nraday1221@gmail.com commit -m "lint, 
 - `docs/core-design.md`: `new-vault` → `new-project`/`new-knowledge`; the sentence about `~/Documents/Atlas` goes; `About`/`Reference` templates go; the reserved-paths list gains `kb/` and `repos/`; a two-line note at the top: "v2 (`v2-design.md`) supersedes what this document says about the atlas and about a single vault kind; the engine rules below stand."
 - `docs/atlas-design.md`: the status line says the document is historical: "Superseded by `v2-design.md`. Kept for the reasoning behind the first atlas; nothing below describes the code now." No other edits.
 - `docs/tasks-design.md`: no change beyond its status line if it already says which sections are superseded (check).
-- `docs/usage.md`: a "Stubs and wanted pages" subsection (the `claude-atlas stub VAULT [TITLE...] [--type T]` command, the `stub` tool, `titles[].target`, the counts line at session start); the command table has `stub`.
+- `docs/usage.md`: a "Stubs and wanted pages" subsection (the `atlas-obsidian stub VAULT [TITLE...] [--type T]` command, the `stub` tool, `titles[].target`, the counts line at session start); the command table has `stub`.
 - `CLAUDE.md`: the sources-of-truth v2 row "(phases 1–6 built)"; the "Build and test" section's version note says 1.0.0 is the first v2 release; the skills' contracts row unchanged.
 - `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`: `1.0.0` (three places).
 - `docs/v2-design.md`: status "Phases 1–6 are built. Phase 7 (migration by hand) is not."; "Left for later" drops the `wiki-lint` category line (done) and the counts-line item (done).
 
 - [ ] **Step 1: Read the audit's sections for these files.**
 - [ ] **Step 2: Write the changes**; `grep -rn "0\.7\.0" --include='*.json' --include='*.md' . | grep -v superpowers` shows nothing afterwards; `grep -rn "new-vault\|Overview.md\|Tree.md\|About.md\|Reference.md" README.md docs/core-design.md docs/usage.md CLAUDE.md` shows nothing.
-- [ ] **Step 3: `make build`** succeeds and `build/claude-atlas version` (or `--version`; check `cli.go`) prints `1.0.0`.
+- [ ] **Step 3: `make build`** succeeds and `build/atlas-obsidian version` (or `--version`; check `cli.go`) prints `1.0.0`.
 - [ ] **Step 4: Commit**
 
 ```bash
@@ -222,14 +222,14 @@ git -c user.name=nathanaday -c user.email=nraday1221@gmail.com commit -m "docs: 
 **Files:**
 - Modify: `docs/v2-design.md` (the "Migration" section's check record)
 
-**The check** (run with `make build`, `CLAUDE_ATLAS_HOME` pointed at a temp folder — confirm the variable's name in `internal/home/home.go` (`home.EnvHome`) — and a temp vaults directory; never the real `~/.claude-atlas`):
+**The check** (run with `make build`, `ATLAS_OBSIDIAN_HOME` pointed at a temp folder — confirm the variable's name in `internal/home/home.go` (`home.EnvHome`) — and a temp vaults directory; never the real `~/.atlas-obsidian`):
 
 1. `setup` non-interactively if it supports it (read `wizard`), else write the config by hand with `vaults_dir` set.
 2. `new-knowledge ai-ml --scope "Machine learning"`; `new-project cs566 --tags usc`; `mount cs566 ai-ml`; `show cs566` lists the mount `write`; `edit ai-ml --access guarded`; `show cs566` says `read`; `grant ai-ml cs566 --write`; `show cs566` says `write`.
-3. In `ai-ml`, an operation through the MCP server: start `build/claude-atlas mcp` as a subprocess from `cs566`'s root and drive it with a small Go program or the SDK's stdio client (write it under the workspace, not the repo) — or, if that costs more than an hour, use the in-process tests as the evidence and say so. The steps: `status` in `cs566` shows the mount; `capture` with `vault: <ai-ml root>` of a file placed in `cs566/inbox/`; `plan` kind `ingest` into `ai-ml` with one source page and one concept page; `apply`; `lint` in `cs566` after adding a project page that links the concept — no wanted page; `stub` with a `target`; `route` for the concept's title shows `mounts[0].match`.
+3. In `ai-ml`, an operation through the MCP server: start `build/atlas-obsidian mcp` as a subprocess from `cs566`'s root and drive it with a small Go program or the SDK's stdio client (write it under the workspace, not the repo) — or, if that costs more than an hour, use the in-process tests as the evidence and say so. The steps: `status` in `cs566` shows the mount; `capture` with `vault: <ai-ml root>` of a file placed in `cs566/inbox/`; `plan` kind `ingest` into `ai-ml` with one source page and one concept page; `apply`; `lint` in `cs566` after adding a project page that links the concept — no wanted page; `stub` with a `target`; `route` for the concept's title shows `mounts[0].match`.
 4. `refresh` after deleting the symlink recreates it; `doctor` exits 0.
 5. `new-project notes --in <a scratch git repository>`; `show notes` lists the host; `repos notes`; a `plan`/`apply` through the server in that project commits with the pathspec (`git log --stat` in the host shows only `atlas/` paths).
-6. `claude -p` inside `cs566` with `--plugin-dir <checkout>` and `--allowedTools "mcp__plugin_claude-atlas_atlas__*,Read,Grep,Glob,Skill"`, asking it to run the wiki-lint skill and report the counts, if `claude` is on PATH and non-interactive use works; otherwise record "not run".
+6. `claude -p` inside `cs566` with `--plugin-dir <checkout>` and `--allowedTools "mcp__plugin_atlas-obsidian_atlas__*,Read,Grep,Glob,Skill"`, asking it to run the wiki-lint skill and report the counts, if `claude` is on PATH and non-interactive use works; otherwise record "not run".
 7. The Obsidian follow-symlink check stays manual; record "not yet run" if the user has not run it.
 
 - [ ] **Step 1: Run the check**, saving the transcript to the plan's workspace (`.superpowers/sdd/<plan>/e2e-transcript.md`).
