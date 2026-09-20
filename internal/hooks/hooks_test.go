@@ -109,8 +109,6 @@ func TestSessionStartInAProject(t *testing.T) {
 	os.WriteFile(p.Path("inbox/idea.md"), []byte("An idea."), 0o644)
 	os.WriteFile(p.Path("inbox/paper.pdf"), []byte("%PDF"), 0o644)
 	os.WriteFile(p.Path(project.SpecsDir+"/broken.md"), []byte("x"), 0o644)
-	os.MkdirAll(p.Path(project.LegacyTasksDir), 0o755)
-	os.WriteFile(p.Path(project.LegacyTasksDir+"/Old.md"), []byte("---\ntype: task\n---\n"), 0o644)
 	head, _ := p.Work().Head()
 	os.MkdirAll(p.Path("wiki/entities"), 0o755)
 	os.WriteFile(p.Path("wiki/entities/code.md"), []byte("---\ntitle: code\ntype: entity\nentity_type: project\nproject: "+p.Config.ID+"\ncommit: "+head+"\nstatus: developing\ncreated: 2026-09-17\nupdated: 2026-09-17\ntags:\n  - entity\n---\n\n# code\n"), 0o644)
@@ -124,7 +122,6 @@ func TestSessionStartInAProject(t *testing.T) {
 		" · Alpha · high · updated " + now.Format("2006-01-02") + "\n",
 		"Inbox: 1 source for the wiki-ingest skill, 1 note for the thread-stub skill.",
 		"Not readable: threads/specs/broken.md (",
-		"task pages from before threads; `atlas-obsidian upgrade",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in:\n%s", want, text)
@@ -196,32 +193,6 @@ func TestSessionStartHealsTheConfig(t *testing.T) {
 	os.WriteFile(filepath.Join(copied, project.Dir, "code", project.Marker), data, 0o644)
 	if text := run(t, copied, e, false, now); !strings.Contains(text, "The atlas config listed this project at another path; it now points here.") {
 		t.Errorf("missing the moved line:\n%s", text)
-	}
-}
-
-func TestSessionStartNamesTheLayoutsOfEarlierVersions(t *testing.T) {
-	// A 3.x project, whose knowledge base sits outside it.
-	split := t.TempDir()
-	os.MkdirAll(filepath.Join(split, project.Dir, "old"), 0o755)
-	os.WriteFile(filepath.Join(split, project.Dir, "old", project.Marker),
-		[]byte(`{"schema":"claude-atlas.project.v3","id":"p1","name":"old","knowledge":{"id":"k1","name":"notes"}}`), 0o644)
-	text := run(t, split, env(t, nil), true, time.Now())
-	if !strings.Contains(text, "3.x project") || !strings.Contains(text, "atlas-obsidian upgrade") {
-		t.Errorf("a 3.x project:\n%s", text)
-	}
-	// The flat layout of 2.2.0.
-	flat := t.TempDir()
-	os.MkdirAll(filepath.Join(flat, project.Dir), 0o755)
-	os.WriteFile(filepath.Join(flat, project.Dir, project.Marker), []byte(`{"schema":"`+project.Schema+`","id":"f","name":"flat"}`), 0o644)
-	if text := run(t, flat, env(t, nil), true, time.Now()); !strings.Contains(text, "sits directly in atlas/; run atlas-obsidian upgrade") {
-		t.Errorf("a flat project:\n%s", text)
-	}
-	// A 3.x knowledge base.
-	kb := t.TempDir()
-	os.MkdirAll(filepath.Join(kb, "wiki"), 0o755)
-	os.WriteFile(filepath.Join(kb, project.KnowledgeMarker), []byte(`{"schema":"claude-atlas.vault.v3","id":"k1","kind":"knowledge","name":"notes"}`), 0o644)
-	if text := run(t, filepath.Join(kb, "wiki"), env(t, nil), true, time.Now()); text != "" {
-		t.Errorf("a knowledge base is not a place, and the hook stays silent:\n%s", text)
 	}
 }
 

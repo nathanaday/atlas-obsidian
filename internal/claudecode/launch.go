@@ -16,7 +16,7 @@ type LaunchConfig = home.LaunchConfig
 
 var ErrNoClaude = errors.New("the `claude` command is not on PATH")
 
-// EnvVault names the place, a knowledge base or a project's work folder, for the MCP
+// EnvVault names the project's work folder for the MCP
 // server and hooks; EnvSessionContext turns the session-start context on ("1") or off
 // ("0") for this launch.
 const (
@@ -40,9 +40,8 @@ func ThreadPrompt(stage, threadID string) string {
 	return "/atlas-obsidian:" + skill + " " + threadID
 }
 
-// LaunchCommand builds the process that runs Claude Code in a knowledge base or a
-// project's work folder, with the place selected explicitly so the plugin never has to
-// guess. prompt is the first message; empty means the configured one, if any.
+// LaunchCommand builds the process that runs Claude Code in a project's work folder, with
+// the place selected explicitly so the plugin never has to guess. prompt is the first message; empty means the configured one, if any.
 func LaunchCommand(cfg LaunchConfig, place, prompt string) (*exec.Cmd, error) {
 	return LaunchIn(cfg, place, place, prompt)
 }

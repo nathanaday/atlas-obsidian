@@ -76,7 +76,7 @@ func TestAllReturnsTheIndex(t *testing.T) {
 
 func TestEntriesRebuildsAStaleRegistry(t *testing.T) {
 	h, cfg := oneProject(t)
-	for _, stale := range []string{`{"schema":"claude-atlas.registry.v1","entries":[]}`, `not json`} {
+	for _, stale := range []string{`{"schema":"atlas-obsidian.registry.v0","entries":[]}`, `not json`} {
 		os.MkdirAll(h.StateDir(), 0o755)
 		if err := os.WriteFile(registry.File(h.StateDir()), []byte(stale), 0o644); err != nil {
 			t.Fatal(err)

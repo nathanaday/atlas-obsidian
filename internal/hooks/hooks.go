@@ -4,7 +4,6 @@ package hooks
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -66,11 +65,6 @@ func SessionStart(r io.Reader, w io.Writer, env Env, contextEnabled bool, now ti
 	in := readInput(r)
 	pl, err := findPlace(in, env, true)
 	if err != nil {
-		switch {
-		case errors.Is(err, project.ErrSplit), errors.Is(err, project.ErrFlat):
-			_, err := fmt.Fprintf(w, "atlas-obsidian: %v. The atlas tools refuse the project until then.\n", err)
-			return err
-		}
 		return nil
 	}
 	switch env("ATLAS_OBSIDIAN_SESSION_CONTEXT") {
@@ -216,9 +210,6 @@ func namesList(names []string) string {
 // threads: counts by stage, then the threads themselves, the furthest stage first.
 func threadLines(p *project.Project, now time.Time) string {
 	var b strings.Builder
-	if threads.Legacy(p) {
-		fmt.Fprintf(&b, "This project holds task pages from before threads; `atlas-obsidian upgrade %s` turns each one into a thread.\n", home.Display(p.Root))
-	}
 	board, err := threads.Sync(p, now)
 	if err != nil {
 		return b.String()

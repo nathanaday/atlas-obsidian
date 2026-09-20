@@ -61,9 +61,6 @@ func from(h home.Home, dir string, register bool) (*Place, error) {
 	if work := project.FindAbove(dir); work != "" {
 		return resolve(h, work, register)
 	}
-	if known := project.KnowledgeAbove(dir); known != "" {
-		return nil, fmt.Errorf("%w: %s is a knowledge base of 3.x; run atlas-obsidian upgrade %s to make it a project", ErrNoPlace, home.Display(known), home.Display(known))
-	}
 	return nil, fmt.Errorf("%w: none at or above %s", ErrNoPlace, home.Display(dir))
 }
 

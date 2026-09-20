@@ -108,23 +108,17 @@ func TestEditProjectRenamesTheFolderAndKeepsTheConfigEntry(t *testing.T) {
 	}
 }
 
-func TestForgetDropsAProjectAndALeftoverKnowledgeBase(t *testing.T) {
+func TestForgetDropsAProject(t *testing.T) {
 	h, cfg := atlas(t)
 	dir := work(t, "webapp")
 	if _, err := Init(h, cfg, dir, project.Options{}, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	kb := work(t, "notes")
-	cfg.AddKnowledge(kb)
-	h.Save(cfg)
 	if err := Forget(h, cfg, dir); err != nil {
 		t.Fatal(err)
 	}
-	if err := Forget(h, cfg, kb); err != nil {
-		t.Fatal(err)
-	}
 	saved, _ := h.Load()
-	if len(saved.Projects) != 0 || len(saved.Knowledge) != 0 {
+	if len(saved.Projects) != 0 {
 		t.Fatalf("config %+v", saved)
 	}
 	if !project.IsProject(dir) {

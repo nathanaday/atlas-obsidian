@@ -1,6 +1,6 @@
 // Package lint checks a vault's wiki without changing it: link resolution, orphans,
 // frontmatter, empty sections, index freshness, and ledger consistency. The report is
-// deterministic for a given tree and audit date. Ported from claude-obsidian's engine.
+// deterministic for a given tree and audit date.
 package lint
 
 import (
@@ -119,7 +119,6 @@ type Report struct {
 	StaleIndexEntries  []LinkFinding        `json:"stale_index_entries"`
 	ReadErrors         []PathFinding        `json:"read_errors"`
 	LedgerErrors       []PathFinding        `json:"ledger_errors"`
-	KindErrors         []PathFinding        `json:"kind_errors"`
 	WantedPages        []WantedPage         `json:"wanted_pages"`
 	Stubs              []Stub               `json:"stubs"`
 }
@@ -187,34 +186,6 @@ var folderIndexes = map[string]bool{project.CanvasIndex: true}
 // duplicateExempt reports whether a basename repeats by design: _index pages do.
 func duplicateExempt(rel string) bool {
 	return strings.ToLower(strings.TrimSuffix(path.Base(rel), path.Ext(rel))) == "_index"
-}
-
-// layoutErrors checks the folder against the current layout: the identity file is a
-// project's, and the folders earlier versions left behind are gone. A folder without a
-// readable identity file is not checked.
-func layoutErrors(root string) []PathFinding {
-	cfg, ok := project.ReadMarker(root)
-	if !ok {
-		return nil
-	}
-	var out []PathFinding
-	if cfg.Schema == project.SchemaV3 {
-		out = append(out, PathFinding{Path: project.Marker, Message: "a 3.x project, whose knowledge base sits outside it; run `atlas-obsidian upgrade` to absorb it"})
-	}
-	// The stage folders sat beside threads/ until 4.0.0, and a knowledge base held the
-	// typed folders of v2.
-	moved := []string{"stubs", "specs", "plans", "receipts", "phases"}
-	for _, rel := range moved {
-		if info, err := os.Lstat(filepath.Join(root, rel)); err == nil && info.IsDir() {
-			out = append(out, PathFinding{Path: rel, Message: "a thread folder of 3.x; the stage folders sit under threads/ now, so run `atlas-obsidian upgrade`"})
-		}
-	}
-	for _, rel := range []string{"tasks", "wiki/tasks", "wiki/questions", "wiki/sessions", "kb", "repos"} {
-		if info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(rel))); err == nil && info.IsDir() {
-			out = append(out, PathFinding{Path: rel, Message: "a folder of an earlier version; run `atlas-obsidian upgrade`, then move what is left under wiki/ or threads/"})
-		}
-	}
-	return out
 }
 
 // Run lints the vault at root.
@@ -404,7 +375,6 @@ func Run(root string, opts Options) (*Report, error) {
 	}
 
 	report.LedgerErrors = ledgerErrors(root, opts.Overlay, present, asOf)
-	report.KindErrors = layoutErrors(root)
 
 	sortFindings(report)
 	report.Summary = Summary{PagesScanned: len(pages), LinksScanned: links, WantedPages: len(report.WantedPages), Stubs: len(report.Stubs), CategoryCounts: map[string]int{
@@ -418,7 +388,6 @@ func Run(root string, opts Options) (*Report, error) {
 		"stale_index_entries": len(report.StaleIndexEntries),
 		"read_errors":         len(report.ReadErrors),
 		"ledger_errors":       len(report.LedgerErrors),
-		"kind_errors":         len(report.KindErrors),
 	}}
 	for _, n := range report.Summary.CategoryCounts {
 		report.Summary.IssuesFound += n
@@ -1066,7 +1035,6 @@ func sortFindings(r *Report) {
 		return a.Line < b.Line
 	})
 	sort.SliceStable(r.ReadErrors, func(i, j int) bool { return pathLess(r.ReadErrors[i].Path, r.ReadErrors[j].Path) })
-	sort.SliceStable(r.KindErrors, func(i, j int) bool { return pathLess(r.KindErrors[i].Path, r.KindErrors[j].Path) })
 	// A wanted title and a stub path are each unique, and pathLess breaks a case-insensitive
 	// tie on the exact string, so the map order these come from never reaches the report.
 	sort.SliceStable(r.WantedPages, func(i, j int) bool { return pathLess(r.WantedPages[i].Title, r.WantedPages[j].Title) })
@@ -1114,9 +1082,6 @@ func (r *Report) fillEmpty() {
 	}
 	if r.LedgerErrors == nil {
 		r.LedgerErrors = []PathFinding{}
-	}
-	if r.KindErrors == nil {
-		r.KindErrors = []PathFinding{}
 	}
 	if r.WantedPages == nil {
 		r.WantedPages = []WantedPage{}
@@ -1181,10 +1146,6 @@ func (r *Report) Markdown() string {
 	section("Ledger", len(r.LedgerErrors))
 	for _, f := range r.LedgerErrors {
 		fmt.Fprintf(&b, "- %s\n", f.Message)
-	}
-	section("Kind", len(r.KindErrors))
-	for _, f := range r.KindErrors {
-		fmt.Fprintf(&b, "- `%s`: %s\n", f.Path, f.Message)
 	}
 	section("Wanted pages", len(r.WantedPages))
 	if len(r.WantedPages) > 0 {

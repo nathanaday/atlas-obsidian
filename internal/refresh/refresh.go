@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nathanaday/atlas-obsidian/internal/links"
-	"github.com/nathanaday/atlas-obsidian/internal/project"
 )
 
 const (
@@ -69,34 +68,6 @@ func NewestLogDate(vault string) (time.Time, bool) {
 	}
 	return newest, found
 }
-
-// CreatedDate is the day the vault was created: the identity file's date, or for a
-// claude-obsidian vault the `created:` field its template wrote into wiki/index.md.
-func CreatedDate(root string) (time.Time, bool) {
-	if v, err := project.Open(root); err == nil && v.Config.Created != "" {
-		if t, ok := parseDate(v.Config.Created); ok {
-			return t, true
-		}
-	}
-	for _, name := range []string{"index.md", "overview.md", "log.md"} {
-		data, err := os.ReadFile(filepath.Join(root, "wiki", name))
-		if err != nil {
-			continue
-		}
-		front, _, ok, err := project.SplitFrontmatter(string(data))
-		if err != nil || !ok {
-			continue
-		}
-		if m := createdLine.FindStringSubmatch(front); m != nil {
-			if t, ok := parseDate(m[1]); ok {
-				return t, true
-			}
-		}
-	}
-	return time.Time{}, false
-}
-
-var createdLine = regexp.MustCompile(`(?m)^created:\s*(\d{4}-\d{2}-\d{2})`)
 
 // NewestWikiMtime is the latest modification date of any file under wiki/.
 func NewestWikiMtime(vault string) (time.Time, bool) {

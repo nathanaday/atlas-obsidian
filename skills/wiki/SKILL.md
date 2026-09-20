@@ -36,8 +36,7 @@ inbox, and warnings. The session hook's first line already names the place:
 
 If `status` fails because the session is in no project, hand off:
 `atlas-project` makes the current folder a project, and `atlas` shows what
-exists. A folder of an earlier version says so and names
-`atlas-obsidian upgrade`.
+exists.
 
 Do not create wiki files yourself. If `status` warns that an operation was
 interrupted, tell the user to run `atlas-obsidian recover` before anything else.

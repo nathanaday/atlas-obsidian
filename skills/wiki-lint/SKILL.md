@@ -25,7 +25,6 @@ report lists, with exact paths and lines:
 | `stale_index_entries` | index links that do not resolve |
 | `read_errors` | pages that could not be parsed, including invalid frontmatter YAML |
 | `ledger_errors` | source records whose files or pages are missing |
-| `kind_errors` | a folder from a v2 project vault, such as `wiki/tasks/`: move its pages under `wiki/` or remove it |
 
 Report only what the tool found. It does not judge prose, style, or
 contradictions. A project's thread pages are not linted here; the `threads`

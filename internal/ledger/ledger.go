@@ -20,25 +20,6 @@ const Schema = "atlas-obsidian.source-ledger.v1"
 // base's ledger without importing vault, which imports this one.
 const VaultPath = "wiki/meta/ledgers/source-ledger.json"
 
-// LegacySchemas are the names earlier versions wrote, before claude-obsidian became
-// claude-atlas and claude-atlas became atlas-obsidian. Their records read the same way.
-var LegacySchemas = []string{
-	"claude-atlas.source-ledger.v1",
-	"claude-obsidian.source-ledger.v1",
-}
-
-func knownSchema(schema string) bool {
-	if schema == Schema {
-		return true
-	}
-	for _, legacy := range LegacySchemas {
-		if schema == legacy {
-			return true
-		}
-	}
-	return false
-}
-
 var Authorities = []string{"official", "primary", "secondary", "community", "synthetic", "unknown"}
 
 // Origin says where a source came from.
@@ -47,7 +28,7 @@ type Origin struct {
 	Locator string `json:"locator"` // vault-relative path for file; the URL for url
 }
 
-// Via names the project a source came through into a knowledge base. Provenance, not a link.
+// Via names the project a source came through into the wiki. Provenance, not a link.
 type Via struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -85,7 +66,7 @@ func Empty(now time.Time) *Ledger {
 func timestamp(now time.Time) string { return now.UTC().Format("2006-01-02T15:04:05Z") }
 
 // ID is the stable identity of a source: `src-` plus the first 20 hex digits of
-// sha256(kind, locator, content hash). It matches claude-obsidian's formula.
+// sha256(kind, locator, content hash).
 func ID(kind, locator, contentSHA256 string) string {
 	sum := sha256.Sum256([]byte(strings.ToLower(kind) + "\x00" + locator + "\x00" + strings.ToLower(contentSHA256)))
 	return "src-" + hex.EncodeToString(sum[:])[:20]
@@ -101,7 +82,7 @@ func Parse(data []byte) (*Ledger, error) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("source ledger: %w", err)
 	}
-	if !knownSchema(raw.Schema) {
+	if raw.Schema != Schema {
 		return nil, fmt.Errorf("source ledger: unsupported schema %q", raw.Schema)
 	}
 	l := &Ledger{Schema: Schema, GeneratedAt: raw.GeneratedAt, Sources: map[string]Source{}}

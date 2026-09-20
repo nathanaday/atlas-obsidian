@@ -1,6 +1,8 @@
 # Atlas v4: one project, with its wiki inside it
 
 Status: designed and built 2026-09-19. The plugin and the binary are 4.0.0.
+The migration this document specifies ran once and was removed in 5.1.0, with
+every other path back to an earlier version; see "Migration" below.
 
 This document replaces the two-entity model of `v3-design.md`: the separate
 knowledge base, `link`, `unlink`, and every rule that begins "a project uses
@@ -95,9 +97,7 @@ groups threads.
 - `scope` is gone, folded into `description`. Two prose fields close in
   meaning made the user answer the same question twice. One field says what
   the work is and what its wiki should remember; `wiki-ingest` and
-  `wiki-query` read it where they read the scope today. `upgrade` joins the
-  project's description and the knowledge base's scope into it, so no text
-  is lost.
+  `wiki-query` read it where they read the scope today.
 - The file holds no path, as before. The atlas config holds every path.
 - The project folder is `links.CleanName` of the name. A rename moves the
   folder and refuses when the new one is taken, as in 3.0.0.
@@ -192,15 +192,11 @@ The atlas is the list of projects on the machine and nothing else.
 }
 ```
 
-- `knowledge` is gone. A v3 config loads and every path in `knowledge` is
-  reported by `doctor` as a knowledge base that `upgrade` has not absorbed
-  yet.
+- `knowledge` is gone.
 - `registry.Scan` reads `atlas/<name>/project.json` under every path in
   `projects` and nothing else. One kind, so `registry.Kind`,
-  `ReasonNotVault`, `ReasonV2Project`, and `ReasonNotProject` collapse to
-  `ReasonUnreadable`, `ReasonSchema`, `ReasonMissing`, `ReasonFlat`, and
-  `ReasonV3Split`, the new code for a v3 project that still names a
-  knowledge base.
+  `ReasonNotVault` and `ReasonV2Project` collapse to `ReasonUnreadable`,
+  `ReasonSchema`, `ReasonMissing`, and `ReasonNotProject`.
 - An entry carries the project's path, its name, its description, its mode,
   its page count, its inbox counts, its thread counts by stage, its phases,
   its last operation, and whether it has a page for itself.
@@ -252,8 +248,6 @@ new page of a type lands.
 | Command | Does |
 |---|---|
 | `init [PATH] [--name] [--description] [--mode] [--no-git]` | make a folder a project: `atlas/<name>/` with its wiki, its threads, and a first commit |
-| `adopt PATH` | make an existing Obsidian or claude-obsidian vault a project: move its `wiki/`, `inbox/`, `ideas/`, and `.raw/` into `atlas/<name>/` |
-| `upgrade [NAME \| --all] [--absorb PATH]` | 3.x to 4.0: absorb the knowledge base, move the thread folders under `threads/` |
 | `edit NAME [--name] [--description] [--mode]` | the identity file, as one `config` operation |
 | `forget NAME` | drop it from the config; the folder stays |
 | `describe NAME` | stage the snapshot; the skill writes the page |
@@ -286,35 +280,11 @@ becomes `edit --mode`.
 
 ## Migration
 
-`atlas-obsidian upgrade` is one command with one report and no surprises. It
-refuses rather than guesses, and it moves files with `git mv` when one
-repository holds both sides, so the history follows.
-
-Four cases:
-
-1. **The knowledge base is inside the work.** `git mv` its `wiki/`,
-   `.raw/`, `inbox/`, and `ideas/` into `atlas/<name>/`, join its scope into
-   the project's description, take its mode, delete its identity file, and
-   drop its entry from the config. Its folder is removed when nothing but the
-   atlas's own files is left in it, and named when anything of the user's is.
-2. **The knowledge base is elsewhere and serves this project alone.** The
-   same, by copy, then the old folder is left on disk untouched and named in
-   the report. The user deletes it.
-3. **One knowledge base serves several projects.** Refused, with the list of
-   projects. `upgrade NAME --absorb PATH` absorbs it into the one project the
-   user names, by copy; the others get an empty wiki and keep their threads.
-   Nothing is deleted.
-4. **A knowledge base no project uses.** `upgrade` makes its folder a
-   project: `atlas/<name>/` inside it, with `wiki/`, `inbox/`, `ideas/`, and
-   `.raw/` moved in by `git mv`, and the scope as the description.
-
-In every case the thread folders move under `threads/`, every document's
-first callout and every card is rewritten by `Sync`, and the CSS snippet is
-rewritten for the new folder colors.
-
-A project the user has not upgraded is refused by `project.Open` with
-`ErrSplit`, scanned as `ReasonV3Split`, and named by the hook, `status`, and
-`doctor` with the command to run. Nothing moves the user's files without it.
+`atlas-obsidian upgrade` moved a 3.x project to this layout in four cases,
+absorbing the knowledge base and moving the thread folders under `threads/`.
+It ran once, on the author's own projects, and 5.1.0 removed it along with
+every other path back to an earlier version. This version reads `atlas/<name>/`
+as it is described here and nothing else.
 
 ## Rules
 
@@ -361,7 +331,7 @@ the halves have different rules, which is the point of the line between them.
    every tool's `vault` argument becomes `project`.
 7. **The hooks.** One session-start, the guard over the new paths, `touched`,
    `stop`.
-8. **The CLI.** The table above, and `upgrade` with its four cases.
+8. **The CLI.** The table above.
 9. **The view.** One list, five keys; delete the tabs.
 10. **The words.** Skills, agents, `README.md`, `CLAUDE.md`, `docs/usage.md`.
     Plugin and binary to 4.0.0.
@@ -377,14 +347,13 @@ the halves have different rules, which is the point of the line between them.
 | Where the wiki's history lives | the repository that holds the work, scoped to the engine's paths |
 | What a branch does to the wiki | pages follow the branch, like every other file in the work |
 | The thread folders | under `threads/`, with the cards and the board |
-| `scope` | folded into `description`; `upgrade` joins them |
+| `scope` | folded into `description` |
 | `mode` | stays, in `project.json` |
 | The inbox | one, with a hint per item and no folder rule |
 | `link`, `unlink`, many knowledge bases per project | gone with the split |
 | Sharing knowledge between projects | left for later, over projects that each hold a wiki |
 | The `vault` and `mode` tools | folded into `project` |
-| Migration | `upgrade`, four cases, `git mv` where one repository holds both, a refusal where one knowledge base serves several projects |
-| A project the user has not upgraded | refused by name with the command to run; nothing moves on its own |
+| Migration | `upgrade`, four cases; ran once and removed in 5.1.0 |
 
 ## Left for later
 

@@ -109,7 +109,7 @@ func TestSetupMakesTheHomeAndNothingElse(t *testing.T) {
 		}
 	}
 	cfg, _ := os.ReadFile(filepath.Join(h.home, "config.json"))
-	if !strings.Contains(string(cfg), `"schema": "atlas-obsidian.config.v4"`) {
+	if !strings.Contains(string(cfg), `"schema": "atlas-obsidian.config.v1"`) {
 		t.Fatalf("config.json:\n%s", cfg)
 	}
 	if code := h.run("setup", "--no-plugin"); code != 0 || !strings.Contains(h.out.String(), "keep       0 listed") {
@@ -402,112 +402,6 @@ func TestDescribeStagesASnapshot(t *testing.T) {
 	}
 }
 
-func TestUpgradeAbsorbsAKnowledgeBaseAndTurnsTasksIntoThreads(t *testing.T) {
-	h := setup(t)
-	dir := work(t, "webapp", true)
-	// A 3.x project with a knowledge base inside the work, and one task page.
-	atlas := filepath.Join(dir, project.Dir, "webapp")
-	os.MkdirAll(filepath.Join(atlas, "tasks"), 0o755)
-	os.MkdirAll(filepath.Join(atlas, "threads"), 0o755)
-	os.WriteFile(filepath.Join(atlas, project.Marker),
-		[]byte(`{"schema":"claude-atlas.project.v3","id":"p1","name":"webapp","description":"The work.","knowledge":{"id":"k1","name":"kb"},"created":"2026-09-17"}`), 0o644)
-	os.WriteFile(filepath.Join(atlas, "tasks", "Fix it.md"),
-		[]byte("---\ntype: task\ntitle: \"Fix it\"\nstatus: planned\npriority: normal\ncreated: 2026-09-01\nupdated: 2026-09-02\ntask_id: task-20260901-ab12\n---\n\n## Idea\n\nDo it.\n\n## Plan\n\n1. Go.\n"), 0o644)
-	kb := filepath.Join(dir, "kb")
-	os.MkdirAll(filepath.Join(kb, "wiki", "concepts"), 0o755)
-	os.WriteFile(filepath.Join(kb, project.KnowledgeMarker),
-		[]byte(`{"schema":"claude-atlas.vault.v3","id":"k1","kind":"knowledge","name":"kb","mode":"lyt","created":"2026-09-14","scope":"The domain."}`), 0o644)
-	os.WriteFile(filepath.Join(kb, "wiki", "concepts", "Alarm.md"), []byte("---\ntitle: Alarm\ntype: concept\nstatus: seed\ncreated: 2026-09-14\nupdated: 2026-09-14\ntags: []\n---\n\n# Alarm\n"), 0o644)
-	repo := gitx.Repo{Dir: dir}
-	repo.AddAll()
-	repo.Commit("chore: before the upgrade")
-	cfg := h.config(t)
-	cfg.AddProject(dir)
-	cfg.AddKnowledge(kb)
-	home.Home{Root: h.home}.Save(cfg)
-
-	// Every command refuses the project until it is upgraded.
-	if code := h.run("threads", "webapp"); code == 0 {
-		t.Fatalf("a 3.x project is refused:\n%s%s", h.out.String(), h.err.String())
-	}
-	if code := h.run("upgrade", "webapp"); code != 0 {
-		t.Fatalf("upgrade exit %d\n%s%s", code, h.out.String(), h.err.String())
-	}
-	out := h.out.String()
-	for _, want := range []string{"absorb the knowledge base kb", "raise the identity file", "turn the task pages", "wiki/ (moved)", "turned 1 task into thread"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("missing %q in:\n%s", want, out)
-		}
-	}
-	p, err := project.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(p.Path("wiki/concepts/Alarm.md")); err != nil {
-		t.Fatal("the wiki is the project's now")
-	}
-	if p.Config.Mode != project.LYT || !strings.Contains(p.Config.Description, "The domain.") {
-		t.Fatalf("identity %+v", p.Config)
-	}
-	if code := h.run("threads", "webapp"); code != 0 || !strings.Contains(h.out.String(), "thr-20260901-ab12") {
-		t.Fatalf("the task is a thread:\n%s", h.out.String())
-	}
-	if code := h.run("upgrade", "webapp"); code != 0 || !strings.Contains(h.out.String(), "current") {
-		t.Fatalf("a second upgrade exit %d\n%s", code, h.out.String())
-	}
-	if len(h.config(t).Knowledge) != 0 {
-		t.Fatal("the knowledge base is out of the config")
-	}
-}
-
-func TestUpgradeMakesALoneKnowledgeBaseAProject(t *testing.T) {
-	h := setup(t)
-	kb := work(t, "papers", true)
-	os.MkdirAll(filepath.Join(kb, "wiki"), 0o755)
-	os.WriteFile(filepath.Join(kb, project.KnowledgeMarker),
-		[]byte(`{"schema":"claude-atlas.vault.v3","id":"k2","kind":"knowledge","name":"papers","mode":"generic","created":"2026-09-14","scope":"Everything I read."}`), 0o644)
-	os.WriteFile(filepath.Join(kb, "wiki", "index.md"), []byte("---\ntitle: Index\ntype: meta\nstatus: evergreen\ncreated: 2026-09-14\nupdated: 2026-09-14\ntags: []\n---\n\n# Index\n"), 0o644)
-	repo := gitx.Repo{Dir: kb}
-	repo.AddAll()
-	repo.Commit("chore: the vault")
-	cfg := h.config(t)
-	cfg.AddKnowledge(kb)
-	home.Home{Root: h.home}.Save(cfg)
-	h.run("refresh")
-	if code := h.run("list"); code != 0 || !strings.Contains(h.out.String(), "3.x") {
-		t.Fatalf("list names it as a problem:\n%s", h.out.String())
-	}
-	if code := h.run("upgrade", kb); code != 0 || !strings.Contains(h.out.String(), "make this folder a project") {
-		t.Fatalf("upgrade exit %d\n%s%s", code, h.out.String(), h.err.String())
-	}
-	p, err := project.Open(kb)
-	if err != nil || p.Name() != "papers" || p.Config.Description != "Everything I read." {
-		t.Fatalf("project %+v %v", p, err)
-	}
-	if _, err := os.Stat(p.Path("wiki/index.md")); err != nil {
-		t.Fatal("the wiki moved into the project's folder")
-	}
-}
-
-func TestUpgradeAll(t *testing.T) {
-	h := setup(t)
-	flat := work(t, "old", true)
-	os.MkdirAll(filepath.Join(flat, project.Dir), 0o755)
-	os.WriteFile(filepath.Join(flat, project.Dir, project.Marker),
-		[]byte(`{"schema":"claude-atlas.project.v3","id":"p9","name":"old","created":"2026-09-16"}`), 0o644)
-	(gitx.Repo{Dir: flat}).AddAll()
-	(gitx.Repo{Dir: flat}).Commit("chore: flat")
-	cfg := h.config(t)
-	cfg.AddProject(flat)
-	home.Home{Root: h.home}.Save(cfg)
-	if code := h.run("upgrade", "--all"); code != 0 {
-		t.Fatalf("upgrade --all exit %d\n%s%s", code, h.out.String(), h.err.String())
-	}
-	if _, err := project.Open(flat); err != nil {
-		t.Fatalf("the flat project moved: %v", err)
-	}
-}
-
 func TestRefreshAndDoctorReportProblems(t *testing.T) {
 	h := setup(t)
 	dir := work(t, "webapp", true)
@@ -599,7 +493,7 @@ func TestListRebuildsAStaleRegistry(t *testing.T) {
 	dir := work(t, "webapp", true)
 	h.run("init", dir)
 	file := filepath.Join(h.home, "state", "registry.json")
-	os.WriteFile(file, []byte(`{"schema":"claude-atlas.registry.v1","entries":[]}`), 0o644)
+	os.WriteFile(file, []byte(`{"schema":"atlas-obsidian.registry.v0","entries":[]}`), 0o644)
 	if code := h.run("list"); code != 0 || !strings.Contains(h.out.String(), "webapp") {
 		t.Fatalf("list exit %d:\n%s%s", code, h.out.String(), h.err.String())
 	}

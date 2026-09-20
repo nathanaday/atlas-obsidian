@@ -224,9 +224,6 @@ func (s *Server) status(ctx context.Context, req *mcp.CallToolRequest, a Empty) 
 	if ops, err := txn.History(p, 1, false); err == nil && len(ops) > 0 {
 		out.LastOperation = &ops[0]
 	}
-	if threads.Legacy(p) {
-		out.Warnings = append(out.Warnings, "this project holds task pages from before threads; `atlas-obsidian upgrade` turns each one into a thread")
-	}
 	if board, err := threads.Load(p); err == nil {
 		pt := &ProjectThreads{Counts: board.Counts(now), Phases: []string{}}
 		pt.Counts.Notes = out.InboxNotes

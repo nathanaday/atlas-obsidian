@@ -56,37 +56,6 @@ const Snippet = ".obsidian/snippets/atlas-obsidian.css"
 // SnippetName is the snippet's name in Obsidian's settings.
 const SnippetName = "atlas-obsidian"
 
-// atlasSnippet and atlasSnippetName are the snippet under the name the tool had before it
-// was renamed to atlas-obsidian. Refresh deletes the file and turns the name off, so a
-// project carried over does not keep two copies of the same rules.
-const (
-	atlasSnippet     = ".obsidian/snippets/claude-atlas.css"
-	atlasSnippetName = "claude-atlas"
-)
-
-// HasAtlasSnippet reports whether a project still carries the CSS snippet the tool wrote
-// under its earlier name, as the file or as a name Obsidian still has turned on. Refresh
-// retires both, so upgrade names this as a step it would take.
-func HasAtlasSnippet(p *Project) bool {
-	if _, err := os.Stat(p.Path(atlasSnippet)); err == nil {
-		return true
-	}
-	settings, found, err := readSettings(p.Atlas(), AppearanceFile)
-	if err != nil || !found {
-		return false
-	}
-	list, ok := settings["enabledCssSnippets"].([]any)
-	if !ok {
-		return false
-	}
-	for _, item := range list {
-		if item == atlasSnippetName {
-			return true
-		}
-	}
-	return false
-}
-
 // settingsMerges are the Obsidian settings files an existing folder keeps, with the change
 // each one needs.
 var settingsMerges = map[string]func(settings map[string]any) bool{
@@ -156,25 +125,12 @@ func enableSnippet(settings map[string]any) bool {
 	if list, ok := settings["enabledCssSnippets"].([]any); ok {
 		enabled = list
 	}
-	kept := make([]any, 0, len(enabled)+1)
-	var on, dropped bool
 	for _, item := range enabled {
-		switch item {
-		case SnippetName:
-			on = true
-		case atlasSnippetName:
-			dropped = true
-			continue
+		if item == SnippetName {
+			return false
 		}
-		kept = append(kept, item)
 	}
-	if on && !dropped {
-		return false
-	}
-	if !on {
-		kept = append(kept, SnippetName)
-	}
-	settings["enabledCssSnippets"] = kept
+	settings["enabledCssSnippets"] = append(enabled, SnippetName)
 	return true
 }
 
@@ -229,7 +185,7 @@ func mergeGitignore(root string, template []byte) error {
 // project's folder.
 func writeMissing(root string, cfg Config, now time.Time, overwrite bool) ([]string, error) {
 	// A settings file the merge cannot read stops the pass before it writes anything, so a
-	// refused upgrade leaves the folder as it was.
+	// refused refresh leaves the folder as it was.
 	if !overwrite {
 		if err := checkSettings(root); err != nil {
 			return nil, err
@@ -281,11 +237,6 @@ func writeMissing(root string, cfg Config, now time.Time, overwrite bool) ([]str
 		if err := put(rel, data); err != nil {
 			return nil, err
 		}
-	}
-	if err := os.Remove(filepath.Join(root, filepath.FromSlash(atlasSnippet))); err == nil {
-		written = append(written, atlasSnippet)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
 	}
 	if err := put(Marker, cfg.Encode()); err != nil {
 		return nil, err
@@ -441,23 +392,16 @@ func Init(work string, opts Options, now time.Time) (*InitResult, error) {
 	return res, nil
 }
 
-// UpgradeResult reports what Upgrade changed; an empty result means the project was current.
-type UpgradeResult struct {
+// RefreshResult reports what Refresh added; an empty result means the project had every
+// template file already.
+type RefreshResult struct {
 	Added []string
-	// Moved are the paths that moved, "from -> to", relative to the work folder.
-	Moved []string
-	// Absorbed is the folder of the knowledge base that became this project's wiki.
-	Absorbed string
-	// Schema is set when the identity file was raised to the current schema.
-	Schema bool
-	// Flat is set when the project moved out of the flat atlas/ layout of 2.2.0.
-	Flat bool
 }
 
 // Refresh adds the template files a project lacks and rewrites the CSS snippet, as one
-// setup commit. A project made by this version gains nothing.
-func Refresh(p *Project, now time.Time) (*UpgradeResult, error) {
-	res := &UpgradeResult{}
+// setup commit. A project whose template is complete gains nothing.
+func Refresh(p *Project, now time.Time) (*RefreshResult, error) {
+	res := &RefreshResult{}
 	if err := p.EnsureFolders(); err != nil {
 		return res, err
 	}
@@ -490,51 +434,6 @@ func Refresh(p *Project, now time.Time) (*UpgradeResult, error) {
 		return res, err
 	}
 	return res, nil
-}
-
-// MoveFlat moves a project in the flat layout, atlas/project.json, into atlas/<name>/,
-// with everything else atlas/ held. It reports whether it moved anything; a project in the
-// current layout is left as it is.
-func MoveFlat(work string) (bool, error) {
-	abs, err := filepath.Abs(work)
-	if err != nil {
-		return false, err
-	}
-	if _, err := Locate(abs); !errors.Is(err, ErrFlat) {
-		return false, err
-	}
-	atlas := filepath.Join(abs, Dir)
-	cfg, err := readConfig(filepath.Join(atlas, Marker))
-	if err != nil {
-		return false, err
-	}
-	name := strings.TrimSpace(cfg.Name)
-	if name == "" {
-		name = filepath.Base(abs)
-	}
-	folder := FolderName(name)
-	if folder == "" {
-		return false, fmt.Errorf("%q leaves no usable folder name; set a name in %s first", name, filepath.Join(atlas, Marker))
-	}
-	// atlas/ moves aside whole and comes back as atlas/<name>/, so a project whose name
-	// matches one of its own folders (stubs, inbox) moves as cleanly as any other.
-	aside := filepath.Join(abs, "."+Dir+"-upgrade")
-	if _, err := os.Lstat(aside); err == nil {
-		return false, fmt.Errorf("%s exists; move it aside and run upgrade again", aside)
-	}
-	if err := os.Rename(atlas, aside); err != nil {
-		return false, err
-	}
-	if err := os.Mkdir(atlas, 0o755); err != nil {
-		os.Rename(aside, atlas)
-		return false, err
-	}
-	if err := os.Rename(aside, filepath.Join(atlas, folder)); err != nil {
-		os.Remove(atlas)
-		os.Rename(aside, atlas)
-		return false, err
-	}
-	return true, nil
 }
 
 // UpdateConfig rewrites the identity file through change and commits it as one setup

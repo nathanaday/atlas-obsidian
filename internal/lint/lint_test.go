@@ -353,53 +353,6 @@ func TestNewProjectHasNoFindings(t *testing.T) {
 	}
 }
 
-func TestLayoutErrors(t *testing.T) {
-	asOf := time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
-	folder := fixture(t, map[string]string{
-		"project.json":        `{"schema":"claude-atlas.project.v3","id":"1","name":"webapp","created":"2026-09-14"}`,
-		"wiki/index.md":       mkpage("Index", "# Index\n"),
-		"inbox/paper.md":      "x",
-		"ideas/note.md":       "x",
-		"stubs/A.md":          mkpage("A", "# A\n"),
-		"wiki/tasks/tasks.md": mkpage("Tasks", "# Tasks\n"),
-		"wiki/questions/Q.md": mkpage("Q", "# Q\n"),
-		"kb/x/index.md":       "x",
-		"repos/x/README.md":   "x",
-	})
-	r, err := Run(folder, Options{AsOf: asOf})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got []string
-	for _, f := range r.KindErrors {
-		got = append(got, f.Path)
-	}
-	if strings.Join(got, ",") != "kb,project.json,repos,stubs,wiki/questions,wiki/tasks" {
-		t.Fatalf("layout errors %v", got)
-	}
-	if !strings.Contains(r.KindErrors[1].Message, "atlas-obsidian upgrade") {
-		t.Fatalf("the 3.x identity file names the command: %+v", r.KindErrors[1])
-	}
-	if r.Summary.CategoryCounts["kind_errors"] != 6 || r.Version != 3 || !strings.Contains(r.Markdown(), "## Kind (6)") {
-		t.Fatalf("summary %+v\n%s", r.Summary, r.Markdown())
-	}
-	for _, gone := range []string{"mount_errors", "task_errors"} {
-		if _, ok := r.Summary.CategoryCounts[gone]; ok {
-			t.Fatalf("no %s category", gone)
-		}
-	}
-	plain := fixture(t, map[string]string{
-		"wiki/index.md":   mkpage("Index", "# Index\n"),
-		"wiki/tasks/x.md": mkpage("x", "# x\n"),
-	})
-	r, _ = Run(plain, Options{AsOf: asOf})
-	if len(r.KindErrors) != 0 {
-		t.Fatalf("no identity file, no layout checks: %+v", r.KindErrors)
-	}
-}
-
-// A wiki page's bare link never means one of a thread's documents, which repeat one file
-// name by design.
 func TestALinkPrefersTheWiki(t *testing.T) {
 	root := fixture(t, map[string]string{
 		"wiki/index.md":          mkpage("Index", "# Index\n\n- [[Alpha]]\n"),

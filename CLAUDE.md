@@ -11,14 +11,10 @@ Read `README.md` first. This file holds what the code and README do not say.
 
 | Thing | Location |
 |---|---|
-| v4: one entity. A project holds its wiki and its threads in one folder (built; 4.0.0) | `docs/v4-design.md` |
-| Threads: a project's state as stub, spec, plan, receipt documents (built; 3.0.0); their folders moved under `threads/` in v4 | `docs/threads-design.md` |
-| v3: a project is an `atlas/<name>/` folder in the work with a separate knowledge base (superseded by `v4-design.md`) | `docs/v3-design.md` |
-| v2: knowledge bases, projects, mounts, access (superseded) | `docs/v2-design.md` |
+| The current design: one entity. A project holds its wiki and its threads in one folder | `docs/v4-design.md` |
+| Threads: a project's state as stub, spec, plan, receipt documents | `docs/threads-design.md` |
 | Core design and the reasons behind it: the engine, one operation one commit | `docs/core-design.md` |
-| The atlas side before v2 (superseded) | `docs/atlas-design.md` |
-| Tasks (superseded by `threads-design.md`) | `docs/tasks-design.md` |
-| Original brainstorm (not a contract) | `docs/spec.md` |
+| History, not contracts: the designs this one replaced | `docs/v3-design.md`, `docs/v2-design.md`, `docs/atlas-design.md`, `docs/tasks-design.md`, `docs/stubs-design.md`, `docs/spec.md`, `docs/superpowers/` |
 | The skills' contracts | `skills/<name>/SKILL.md` and `skills/wiki/references/` |
 
 ## Why the project exists
@@ -126,21 +122,21 @@ cmd/atlas-obsidian/       main
 internal/cli/           argument parsing and one method per subcommand
 internal/actions/       every atlas action as one struct of functions, and Bind, the one place it is built
 internal/wizard/        the setup flow
-internal/project/       the one entity: atlas/<name>/project.json, the layout of both halves, templates/, Init, Open, Locate, FindAbove, Save, UpdateConfig, the engine's git scope, mode routing, page skeletons, and the migration from 3.x (upgrade.go)
+internal/project/       the one entity: atlas/<name>/project.json, the layout of both halves, templates/, Init, Open, Locate, FindAbove, Save, UpdateConfig, the engine's git scope, mode routing, page skeletons
 internal/place/         where a session is: the project, from anywhere inside the work, and the config heal
 internal/gitx/          the git commands the core needs
 internal/txn/           plans, preview, apply, recovery, undo, history
-internal/threads/       threads over plain files: cards, stage documents, phases, Sync (the generated cards, callouts, and board), Migrate from 2.x tasks
+internal/threads/       threads over plain files: cards, stage documents, phases, Sync (the generated cards, callouts, and board)
 internal/describe/      the page in the wiki that describes the work, how far the work moved since, and the snapshot a page cites; reads only, capture writes the snapshot
 internal/capture/       inbox listing with a hint per file, staging into inbox/ (files, and the work's snapshot), capture into .raw/captured/
 internal/ledger/        the source ledger
-internal/lint/          the health check (ported from claude-obsidian's engine)
+internal/lint/          the health check
 internal/mcpserver/     the tools, thin over the packages above
 internal/hooks/         session-start (the project, its wiki, the page that describes the work, the open threads, the inbox, and hot.md), guard, touched, stop
 internal/claudecode/    Claude Code's plugin registry, `claude plugin`, launching claude in the work
 internal/registry/      the scan of the projects the config lists, the entries, the registry state file
 internal/refresh/       derive one entry's state, rewrite the registry, list an entry's signals
-internal/manage/        init, edit, forget, and register a project; the upgrade from 3.x, case by case (upgrade.go)
+internal/manage/        init, edit, forget, and register a project
 internal/links/         the facts git reports about a folder, and CleanName
 internal/tui/           Bubble Tea screens: the view (one list of projects, a Problems tab while there is one, expand in place, open and launch keys)
 internal/obsidian/      Obsidian's vault registry, obsidian:// URIs, restart
@@ -152,14 +148,11 @@ internal/console/       prompts and step lines
 are the user's and live wherever the user puts them. The atlas has no default
 location and never searches the disk: the config lists every project's work
 folder under `projects` (`manage.Init`, `manage.Forget`) and nothing else.
-`config.knowledge` survives from 3.x and holds the knowledge bases `upgrade`
-has not absorbed yet; nothing adds to it. A project never goes inside another,
-and a folder that carries a 3.x knowledge base's identity file is refused with
-the upgrade command (`project.CheckNew`). A session heals its own entry by id
+A project never goes inside another (`project.CheckNew`). A session heals its own entry by id
 when its folder moved or the config does not list it
 (`manage.RegisterProject`).
 
-## The rename, and what still answers to the old name
+## The rename
 
 5.0.0 renamed everything a user sees: the binary, the module path, the plugin
 (`atlas-obsidian@nathanaday-atlas-obsidian`), the marketplace, the skills
@@ -169,29 +162,9 @@ the home (`~/.atlas-obsidian`), and the environment variables
 inside the work stays `atlas/<name>/`: it names a place in the user's
 repository, not the tool.
 
-What a user already has on disk still reads:
-
-- `project.Current` accepts `claude-atlas.project.v4` beside
-  `atlas-obsidian.project.v4`, and every schema check goes through it
-  (`project.Open`, `registry.Scan`, `project.OpenV3`). The next `Save`
-  raises the schema. Nothing else may compare `cfg.Schema` to `Schema` directly.
-- `home.Load` accepts `claude-atlas.config.v4`; `ledger.LegacySchemas` holds the
-  claude-atlas and claude-obsidian ledger names.
-- `home.Load` also points a config that names the old plugin
-  (`claude-atlas@nathanaday-claude-atlas`) at `DefaultPluginID`, and the old
-  slug at `DefaultPluginSource`, so `setup` and `doctor` ask about the plugin
-  this version installs. A source the user set to a local checkout is left
-  alone.
-- `home.Resolve` moves `~/.claude-atlas` to `~/.atlas-obsidian` once, and only
-  when it falls through to the default home, so a test or `--home` never
-  triggers it (`home.adopt`). A move that fails keeps using the old home.
-- `Refresh` deletes `.obsidian/snippets/claude-atlas.css` and drops
-  `claude-atlas` from `enabledCssSnippets`, so an upgraded project does not
-  carry two copies of the same rules.
-- Untouched, because they name files earlier versions wrote:
-  `.claude-atlas.json` (the 3.x knowledge base marker),
-  `claude-atlas.project.v3`, `claude-atlas.vault.v3`, and
-  `claude-atlas.config.v1|v2|v3`.
+5.1.0 removed every path back to an earlier version. Nothing reads a
+claude-atlas or claude-obsidian name any more, and the schemas restarted at
+`.v1`. See "Versions" below.
 
 ## Constraints
 
@@ -208,9 +181,9 @@ What a user already has on disk still reads:
   `$ATLAS_OBSIDIAN_BIN`. `plugin.json` and `marketplace.json` carry the version
   the binary should match; `status` and `doctor` warn on a mismatch.
 - Every write into the wiki goes through `txn.Prepare` and `txn.Apply`.
-  `project.Init`, `project.Refresh`, `project.UpdateConfig`, and the upgrade
-  functions are the only code that writes the project's own files directly, and
-  only before or outside an operation. The template includes the CSS snippet
+  `project.Init`, `project.Refresh`, and `project.UpdateConfig` are the only
+  code that writes the project's own files directly, and only before or outside
+  an operation. The template includes the CSS snippet
   and an appearance file that enables it; a later `Refresh` rewrites the
   snippet and merges the settings, so a user who turned it off keeps it off.
 - A project's identity is `atlas/<name>/project.json` (`project.Config`:
@@ -221,23 +194,12 @@ What a user already has on disk still reads:
   `links.CleanName` of the project's name; `Save` moves it when the name
   changes, and a taken folder refuses the save. `project.Locate` finds the
   folder as the one child of `atlas/` that holds `project.json`, and refuses
-  two. `Open` refuses a 3.x identity file with `project.ErrSplit` and the flat
-  layout of 2.2.0 with `project.ErrFlat`; only `atlas-obsidian upgrade` moves
-  anything. `project.Init` also runs `git init` in a work folder that is in no
+  two. `Open` refuses any schema but `project.Schema`. `project.Init` also runs `git init` in a work folder that is in no
   repository (on `main`), unless the caller asks for none, because the wiki
   needs a history. A session heals the config (`manage.RegisterProject`): an
   unknown project is added, one whose id sits at another path is moved, and one
   listed at a path that is gone is taken for the moved one only when it is the
   only one gone.
-- The migration is `manage.PlanUpgrade` and `manage.RunUpgrade`, over
-  `project.Absorb`, `project.MoveStages`, `project.OpenV3`, and
-  `project.MoveFlat`. It moves the user's files, so it plans first, prints
-  every step, and asks; `git mv` where one repository holds both sides, a copy
-  otherwise; and it refuses a knowledge base several projects used, naming
-  them. `--absorb PATH` names the knowledge base to take. Every case ends in
-  `finish`, which moves the stage folders, migrates the task pages, refreshes
-  the template, syncs the generated pages, and commits the whole move as one
-  `setup` commit scoped to the two folders it touched.
 - The threads have no engine. `threads` reads and writes plain files.
   `Load` reads the cards and the documents and derives each thread's stage;
   a page it cannot use is a `Problem`, never an error. `Start`, `File`,
@@ -270,10 +232,7 @@ What a user already has on disk still reads:
   wiki page first (`preferWiki`), because a thread's documents repeat one file
   name by design. A folder's index page takes the folder's name
   (`wiki/canvases/canvases.md`), so no page shares the basename of
-  `wiki/index.md`. Lint's `kind_errors` names a 3.x identity file and the
-  folders an earlier version left behind (`stubs`, `specs`, `plans`,
-  `receipts`, `phases`, `tasks`, `wiki/tasks`, `wiki/questions`,
-  `wiki/sessions`, `kb`, `repos`).
+  `wiki/index.md`.
 - The wiki commits into the git repository that holds the work
   (`p.Repo()` over `gitx.At`, scoped to the project's folder), and an
   operation runs through `p.Engine()`, the same repository narrowed to
@@ -287,15 +246,12 @@ What a user already has on disk still reads:
   commit's parent (`gitx.RestoreFrom`).
 - The server and the hooks resolve the session through `place.Resolve`: an
   explicit path, `ATLAS_OBSIDIAN_PROJECT`, then the nearest
-  `atlas/<name>/project.json` at or above the working directory. A folder that
-  carries a 3.x knowledge base's identity file is named with the upgrade
-  command instead (`project.KnowledgeAbove`).
+  `atlas/<name>/project.json` at or above the working directory.
 - The scan is the truth. `registry.Scan` reads `atlas/<name>/project.json`
-  under every path in `config.projects`, and nothing else; a path left in
-  `config.knowledge` becomes a problem with `ReasonV3Split`. An entry the atlas
+  under every path in `config.projects`, and nothing else. An entry the atlas
   knows but cannot read becomes an entry with a `Path`, an `Error`, and a
-  `Reason` code (`ReasonFlat`, `ReasonV3Split`, `ReasonUnreadable`,
-  `ReasonSchema`, `ReasonMissing`, `ReasonNotProject`); `list` and `doctor`
+  `Reason` code (`ReasonUnreadable`, `ReasonSchema`, `ReasonMissing`,
+  `ReasonNotProject`); `list` and `doctor`
   decide on the code, and the view files it under `problems`. Every command
   that acts on an entry scans afresh; `registry.json` is for display only.
 - The page that describes the work is an entity page in the project's own wiki
@@ -363,20 +319,29 @@ with `claude --plugin-dir .` from inside a project. End-to-end by hand:
 `claude -p "..."` inside a project with
 `--allowedTools "mcp__plugin_atlas-obsidian_atlas__*,Read,Grep,Glob,Skill"`.
 
-1.0.0 is the first v2 release; 1.1.0 is the view with tabs; 1.2.0 is
-clusters; 1.3.0 is the atlas tools and skills; 1.4.0 is repositories in the
-knowledge base; 1.4.1 is the same release, republished so the plugin cache
-took the whole of it. 2.0.0 is v3: a project is an `atlas/` folder in the
-work, one knowledge base per project, phases, and no mounts, clusters,
-grants, or linked repositories. 2.1.0 lists every knowledge base in the
-config and drops the vaults directory and `relocate`; `init` makes the work
-a git repository. 3.0.0 puts a project in `atlas/<name>/` and replaces tasks
-with threads; `upgrade` moves a 2.x project over. 4.0.0 is v4: one entity. The
-wiki moves into `atlas/<name>/wiki/`, the stage folders move under `threads/`,
-the `vault` and `mode` tools fold into `project`, linking is gone, and
-`upgrade` absorbs a 3.x knowledge base into the project that used it. 5.0.0
-renames the tool from claude-atlas to atlas-obsidian, because `atlas` alone
-collides with two widely installed CLIs.
+## Versions
+
+5.1.0 is the clean start. It removed the migration commands, every schema an
+earlier version wrote, and every folder and file name those versions used. The
+schemas restarted at `.v1`:
+
+| File | Schema |
+|---|---|
+| `atlas/<name>/project.json` | `atlas-obsidian.project.v1` |
+| `~/.atlas-obsidian/config.json` | `atlas-obsidian.config.v1` |
+| `~/.atlas-obsidian/state/registry.json` | `atlas-obsidian.registry.v1` |
+| the source ledger | `atlas-obsidian.source-ledger.v1` |
+
+Every one of these is read exactly, and an unknown schema is refused by name.
+Nothing converts a file; `upgrade`, `manage.PlanUpgrade`, `threads.Migrate`,
+`project.Absorb`, `project.MoveFlat`, and `home.adopt` are gone, and so are the
+lint findings and registry reasons that named an earlier layout
+(`kind_errors`, `ReasonFlat`, `ReasonV3Split`).
+
+The binary and the plugin keep the 5.x numbering so `claude plugin update`
+still sees a version going up. The design record of how the layout arrived
+here is in `docs/v4-design.md`; the designs it replaced are history, listed
+under "Sources of truth".
 
 ## Open questions
 

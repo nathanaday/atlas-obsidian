@@ -74,17 +74,6 @@ func TestResolveFindsTheProjectFromAnywhereInsideTheWork(t *testing.T) {
 	}
 }
 
-func TestResolveNamesAKnowledgeBaseOfAnEarlierVersion(t *testing.T) {
-	h, _, _ := atlas(t)
-	kb := filepath.Join(t.TempDir(), "notes")
-	os.MkdirAll(filepath.Join(kb, "wiki"), 0o755)
-	os.WriteFile(filepath.Join(kb, project.KnowledgeMarker), []byte(`{"schema":"claude-atlas.vault.v3","id":"k1","kind":"knowledge","name":"notes"}`), 0o644)
-	_, err := Resolve(h, "", "", filepath.Join(kb, "wiki"), false)
-	if !errors.Is(err, ErrNoPlace) || !strings.Contains(err.Error(), "upgrade") {
-		t.Fatalf("a 3.x knowledge base: %v", err)
-	}
-}
-
 func TestResolveWithoutAnAtlasConfig(t *testing.T) {
 	_, _, work := atlas(t)
 	nowhere := home.Home{Root: filepath.Join(t.TempDir(), "no-atlas")}
@@ -145,16 +134,5 @@ func TestResolveHealsTheConfig(t *testing.T) {
 	}
 	if pl, err := Resolve(h, "", "", moved, true); err != nil || pl.Heal != manage.HealNone {
 		t.Fatalf("a second session heals nothing: %+v %v", pl, err)
-	}
-}
-
-func TestResolveRefusesAProjectOfAnEarlierVersion(t *testing.T) {
-	h, _, _ := atlas(t)
-	old := filepath.Join(t.TempDir(), "old")
-	os.MkdirAll(filepath.Join(old, project.Dir, "old"), 0o755)
-	os.WriteFile(filepath.Join(old, project.Dir, "old", project.Marker),
-		[]byte(`{"schema":"claude-atlas.project.v3","id":"p1","name":"old","knowledge":{"id":"k1","name":"notes"}}`), 0o644)
-	if _, err := Resolve(h, "", "", old, true); !errors.Is(err, project.ErrSplit) {
-		t.Fatalf("a 3.x project: %v", err)
 	}
 }

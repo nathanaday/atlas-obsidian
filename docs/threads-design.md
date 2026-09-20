@@ -184,7 +184,7 @@ valid outcome, a card with no documents, a phase that names no page.
 
 | Tool | Does |
 |---|---|
-| `threads` | reads the board of a project: counts by stage, phases, open and closed threads with the absolute path of each document, inbox notes, problems. `id` narrows to one thread. In a knowledge base session with no `project`, every project that uses it. |
+| `threads` | reads the board of a project: counts by stage, phases, open and closed threads with the absolute path of each document, inbox notes, problems. `id` narrows to one thread. |
 | `thread` | without `id`, opens a thread from `text` (the stub). With `id` and `stage`, files that stage's document from `text`; a receipt takes `outcome`. With `id` and `priority`, `phase`, `blocked`, or `title`, changes the card. With `id` alone, marks it touched. `reopen` deletes the receipt. |
 | `phase` | as before: create, rename, reorder, remove. |
 
@@ -222,10 +222,10 @@ the model's judgment.
 |---|---|
 | `thread` | the board, one thread, quick card changes, phases, a review of the whole board, routing |
 | `thread-stub` | opens a thread from a sentence or an inbox note, in the user's words, with no questions |
-| `thread-spec` | reads the stub, the code, and the knowledge base; decides what it can; asks only what it cannot; files the spec |
+| `thread-spec` | reads the stub, the code, and the wiki; decides what it can; asks only what it cannot; files the spec |
 | `thread-plan` | explores the code with the spec in hand, as in plan mode, and files what it found |
 | `thread-run` | works the plan in slices, commits, tests, writes progress in the plan document |
-| `thread-receipt` | checks that the tests pass, files the receipt, offers the knowledge base what the work taught |
+| `thread-receipt` | checks that the tests pass, files the receipt, offers the wiki what the work taught |
 | `work` | the short road: one sentence to a thread with a plan, then the work |
 
 ### What the skills take from superpowers, and what they leave
@@ -259,14 +259,9 @@ Left:
 
 ## Migration
 
-`atlas-obsidian upgrade [NAME | --all]` turns each task page of 2.x into a
-thread (`threads.Migrate`): Idea becomes the stub, Plan and Progress the
-plan, Outcome the receipt. `done` becomes `completed`, `cancelled` becomes
-`killed`, and a `blocked` task is a blocked thread. `task-20260917-3f2a`
-becomes `thr-20260917-3f2a`. A page it cannot read stays in `tasks/` and is
-named. The command also writes the CSS snippet. Until it runs, the hook and
-`status` say that the project holds task pages. Nothing moves the user's
-files without that command.
+`atlas-obsidian upgrade` turned the task pages of 2.x into threads. It ran
+once and was removed in 5.1.0, with every other path back to an earlier
+version.
 
 ## Decisions
 
@@ -284,7 +279,7 @@ files without that command.
 | Who writes a new document | the `thread` tool, from the model's `text`; Edit revises it |
 | Colors and icons | Obsidian callouts, from a CSS snippet in the project folder's own `.obsidian/` |
 | Tools | two, `threads` and `thread`, plus `phase` |
-| The knowledge base term "Active Threads" in `wiki/hot.md` | the atlas shows it as "Hot topics", so "thread" means one thing |
+| The wiki term "Active Threads" in `wiki/hot.md` | the atlas shows it as "Hot topics", so "thread" means one thing |
 
 ## Left for later
 

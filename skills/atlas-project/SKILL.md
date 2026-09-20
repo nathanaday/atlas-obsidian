@@ -57,12 +57,6 @@ answer; do not retry with a guess.
 - Forget: `project` with `action: forget`. The work folder and its
   `atlas/<name>/` stay. Deleting `atlas/<name>/` is how a project ends, and
   that is the user's to do by hand.
-- A folder of an earlier version is refused with the command to run:
-  `atlas-obsidian upgrade PATH`. It absorbs a 3.x knowledge base into the
-  project, moves the thread folders under `threads/`, and turns the task pages
-  of 2.x into threads. It moves the user's files, so give it to the user to
-  run rather than running it.
-
 `work` names another project by name; this session's project is implied. Every
 question comes before the tool call, and the tool call comes after a yes. Never
 make the folder or its files yourself.

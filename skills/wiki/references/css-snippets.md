@@ -6,15 +6,14 @@ Apply during scaffold. This makes the file explorer color-coded by folder type a
 
 ## The vault's snippet
 
-Every atlas-obsidian vault carries `.obsidian/snippets/atlas-obsidian.css`, enabled in
-`.obsidian/appearance.json`, and `atlas-obsidian upgrade` adds both to older vaults.
-It gives one color to each kind of place: the wiki and each of its folders,
+Every atlas-obsidian project carries `.obsidian/snippets/atlas-obsidian.css`, enabled
+in `.obsidian/appearance.json`. It gives one color to each kind of place: the wiki and each of its folders,
 `inbox/`, and `ideas/`, so the kinds of place show in the file explorer. It also
 defines the four custom callouts below. Do not create a second snippet for the
 same folders; to change a color, edit the variables at the top of that file.
 
 If the file explorer shows no colors, tell the user: Settings > Appearance > CSS
-snippets, toggle `atlas-obsidian` on, or reload Obsidian (Cmd+R) after an upgrade.
+snippets, toggle `atlas-obsidian` on, or reload Obsidian (Cmd+R).
 
 ## Graph View Groups
 

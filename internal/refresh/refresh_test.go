@@ -53,22 +53,6 @@ func TestHeat(t *testing.T) {
 
 func p(v int) *int { return &v }
 
-func TestCreatedDateComesFromTheIndexPage(t *testing.T) {
-	_, atlas := fakeProject(t, "", "", map[string]string{
-		"index.md":    "---\ntitle: Wiki Index\ncreated: 2026-09-01\nupdated: 2026-09-10\n---\n",
-		"overview.md": "---\ncreated: 2020-01-01\n---\n",
-	})
-	got, ok := CreatedDate(atlas)
-	if !ok || got.Format("2006-01-02") != "2026-09-01" {
-		t.Fatalf("got %v %v", got, ok)
-	}
-	if _, bare := fakeProject(t, "", "", nil); true {
-		if _, ok := CreatedDate(bare); ok {
-			t.Fatal("no created field should report none")
-		}
-	}
-}
-
 func TestNewestLogDate(t *testing.T) {
 	_, atlas := fakeProject(t, "# Log\n\n## 2026-09-04 — a\n\n## 2026-09-10 — b\n\n## not-a-date\n", "", nil)
 	got, ok := NewestLogDate(atlas)
@@ -234,11 +218,10 @@ func TestAFreshProjectIsNewAndGoesColdWithoutWork(t *testing.T) {
 func TestRegistryDerivesEveryEntry(t *testing.T) {
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.Local)
 	cfg, _, _ := projectFixture(t, now)
-	// A 3.x knowledge base the config still lists is an entry the scan cannot use.
+	// A registered folder that is not a project is an entry the scan cannot use.
 	old := filepath.Join(t.TempDir(), "old")
 	os.MkdirAll(old, 0o755)
-	os.WriteFile(filepath.Join(old, project.KnowledgeMarker), []byte(`{"schema":"claude-atlas.vault.v3","id":"k1","kind":"knowledge","name":"old"}`), 0o644)
-	cfg.AddKnowledge(old)
+	cfg.AddProject(old)
 	root := t.TempDir()
 	stateDir := filepath.Join(root, "state")
 	entries, ix, err := Registry(home.Home{Root: filepath.Join(root, "home")}, cfg, stateDir, now)
@@ -250,8 +233,8 @@ func TestRegistryDerivesEveryEntry(t *testing.T) {
 	}
 	for _, e := range entries {
 		if e.Error != "" {
-			if e.State == nil || e.State.OK || !strings.Contains(e.State.Error, "3.x") {
-				t.Errorf("the leftover knowledge base %+v", e)
+			if e.State == nil || e.State.OK || e.State.Error == "" {
+				t.Errorf("the folder that is no project %+v", e)
 			}
 			continue
 		}

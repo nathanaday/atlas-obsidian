@@ -52,8 +52,6 @@ Getting started:
                             inside your work, with its wiki and its threads
                             --name N, --description TEXT, --mode generic|lyt;
                             a folder in no git repository becomes one unless --no-git
-  upgrade [NAME|--all]      bring a project or a knowledge base of an earlier version to this one
-                            --absorb PATH names the knowledge base to take as the wiki
 
 Projects (PROJECT is a name, a path, or nothing for the project you are in):
   list                      every project
@@ -194,8 +192,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.undo(rest[1:])
 	case "recover":
 		code, err = e.recover(rest[1:])
-	case "upgrade":
-		code, err = e.upgrade(rest[1:])
 	case "config":
 		code, err = e.config(rest[1:])
 	case "apply":
@@ -403,8 +399,7 @@ func cwd() string { return place.Cwd() }
 
 // projectArg resolves a project for the thread and project commands: nothing means the
 // project at or above the current directory; a path opens that folder; a name goes
-// through the registry. It returns the registry entry when the atlas knows it, so a
-// command can reach the project's knowledge base.
+// through the registry. It returns the registry entry when the atlas knows it.
 func (e *env) projectArg(arg string) (*project.Project, *registry.Entry, error) {
 	var work string
 	switch {
@@ -449,40 +444,6 @@ func (e *env) projectArg(arg string) (*project.Project, *registry.Entry, error) 
 		return nil, nil, err
 	}
 	return p, entry, nil
-}
-
-// upgradeArg is the folder `upgrade` acts on: nothing means the nearest project or
-// knowledge base at or above the current directory; a path is taken as it is; a name goes
-// through the atlas, an entry it could not read included.
-func (e *env) upgradeArg(arg string) (string, error) {
-	if arg == "" {
-		if work := project.FindAbove(cwd()); work != "" {
-			return work, nil
-		}
-		if known := project.KnowledgeAbove(cwd()); known != "" {
-			return known, nil
-		}
-		return "", errors.New("the current directory is not inside a project or a knowledge base; name one or give a path")
-	}
-	if abs, err := filepath.Abs(home.Expand(arg)); err == nil && (project.IsProject(abs) || project.IsKnowledge(abs)) {
-		return abs, nil
-	}
-	cfg, err := e.home.Load()
-	if err != nil {
-		return "", err
-	}
-	ix, err := registry.Scan(cfg)
-	if err != nil {
-		return "", err
-	}
-	if bad := badEntry(ix, arg); bad != nil {
-		return bad.Path, nil
-	}
-	found, err := ix.Find(arg)
-	if err != nil {
-		return "", err
-	}
-	return found.Path, nil
 }
 
 // vaultArg resolves the project a wiki command acts on: a name, a path, or the current
@@ -615,15 +576,6 @@ func (e *env) initProject(args []string) (int, error) {
 	sayCommands(c, next)
 	c.Say("")
 	return 0, nil
-}
-
-// namesOf lists paths as the user reads them.
-func namesOf(paths []string) string {
-	out := make([]string, 0, len(paths))
-	for _, p := range paths {
-		out = append(out, home.Display(p))
-	}
-	return strings.Join(out, ", ")
 }
 
 // sayCommands prints commands with their comments in one column.
@@ -1383,10 +1335,6 @@ func (e *env) list(args []string) (int, error) {
 // unreadable is the one word for an entry the atlas knows but could not read.
 func unreadable(en registry.Entry) string {
 	switch en.Reason {
-	case registry.ReasonV3Split:
-		return "3.x"
-	case registry.ReasonFlat:
-		return "flat"
 	case registry.ReasonMissing:
 		return "missing"
 	case registry.ReasonNotProject:
@@ -1723,113 +1671,6 @@ func (e *env) stub(args []string) (int, error) {
 	return 0, nil
 }
 
-func (e *env) upgrade(args []string) (int, error) {
-	fs := newFlags("upgrade", e.stderr)
-	all := fs.Bool("all", false, "every project and every knowledge base the atlas knows")
-	absorb := fs.String("absorb", "", "the folder of the knowledge base to take as this project's wiki")
-	positional, err := parse(fs, args)
-	if err != nil {
-		return 2, nil
-	}
-	if len(positional) > 1 || (*all && (len(positional) > 0 || *absorb != "")) {
-		return 2, errors.New("usage: atlas-obsidian upgrade [NAME] [--absorb PATH], or atlas-obsidian upgrade --all")
-	}
-	cfg, err := e.home.Load()
-	if err != nil {
-		return 1, err
-	}
-	var targets []string
-	if *all {
-		targets = manage.UpgradeTargets(cfg)
-	} else {
-		target, err := e.upgradeArg(first(positional))
-		if err != nil {
-			return 1, err
-		}
-		targets = []string{target}
-	}
-	c := e.console
-	now := time.Now()
-	var plans []*manage.Upgrade
-	for _, target := range targets {
-		up, err := manage.PlanUpgrade(cfg, target, now)
-		if err != nil {
-			if *all {
-				c.Step(console.Skip, home.Display(target), err.Error())
-				continue
-			}
-			return 1, err
-		}
-		plans = append(plans, up)
-	}
-	// A knowledge base every one of whose projects is also a target is absorbed by them, so
-	// the refusal it plans is not the user's to act on.
-	targeted := map[string]bool{}
-	for _, up := range plans {
-		targeted[up.Path] = true
-	}
-	absorbed := func(up *manage.Upgrade) bool {
-		if len(up.Users) == 0 {
-			return false
-		}
-		for _, user := range up.Users {
-			if abs, err := filepath.Abs(home.Expand(user)); err != nil || !targeted[abs] {
-				return false
-			}
-		}
-		return true
-	}
-	todo := 0
-	for _, up := range plans {
-		switch {
-		case absorbed(up):
-			c.Step(console.Skip, up.Name, "absorbed by "+namesOf(up.Users))
-		case up.Refuse != "":
-			c.Step(console.Fail, up.Name, up.Refuse)
-		case len(up.Did) == 0:
-			c.Step(console.Skip, up.Name, "current")
-		default:
-			c.Step(console.OK, up.Name, home.Display(up.Path))
-			for _, one := range up.Did {
-				c.Say("      %s", one)
-			}
-			todo++
-		}
-	}
-	if todo == 0 {
-		return 0, nil
-	}
-	c.Say("")
-	c.Say("  The wiki and the threads move inside your work, with git mv where one repository holds both.")
-	ok, err := c.Confirm(fmt.Sprintf("Upgrade %d folder%s?", todo, plural(todo)), true)
-	if err != nil {
-		return 1, err
-	}
-	if !ok {
-		return 1, manage.ErrCancelled
-	}
-	c.Say("")
-	for _, up := range plans {
-		if up.Refuse != "" || len(up.Did) == 0 {
-			continue
-		}
-		if err := manage.RunUpgrade(e.home, cfg, up, *absorb, now); err != nil {
-			return 1, fmt.Errorf("%s: %w", up.Name, err)
-		}
-		c.Step(console.OK, up.Name, strings.Join(up.Did, "; "))
-		for _, pr := range up.Problems {
-			c.Step(console.Fail, pr.Path, pr.Reason+"; it stays where it is")
-		}
-	}
-	entries, _, err := e.refreshAll(cfg)
-	if err != nil {
-		return 1, err
-	}
-	c.Step(console.OK, "refreshed", refreshed(entries))
-	c.Say("  The folder colors come from .obsidian/snippets/atlas-obsidian.css in each project's folder; reload Obsidian (Cmd+R) to see them.")
-	return 0, nil
-}
-
 func (e *env) undo(args []string) (int, error) {
 	if len(args) != 2 {
 		return 2, errors.New("usage: atlas-obsidian undo PROJECT OPERATION")
@@ -2014,7 +1855,6 @@ func (e *env) config(args []string) (int, error) {
 	if len(args) == 0 {
 		row := func(label, value string) { c.Say("  %-18s %s", label, value) }
 		row("new-days", fmt.Sprintf("%d  (an entry is new for this many days after its creation; 0 turns it off)", cfg.NewDays()))
-		row("knowledge bases", fmt.Sprintf("%d registered", len(cfg.Knowledge)))
 		row("projects", fmt.Sprintf("%d registered", len(cfg.Projects)))
 		row("claude command", cfg.ClaudeCode.Command)
 		row("plugin source", cfg.Plugin.Source)

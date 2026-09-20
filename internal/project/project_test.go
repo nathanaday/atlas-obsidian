@@ -68,12 +68,6 @@ func TestInitWritesBothHalvesAndCommitsThem(t *testing.T) {
 			t.Errorf("a new project lacks the folder %s", dir)
 		}
 	}
-	// Nothing of the two-entity layout is left.
-	for _, rel := range []string{KnowledgeMarker, "stubs", "specs", "plans", "receipts", "phases", "wiki/questions", "kb", "repos"} {
-		if _, err := os.Stat(p.Path(rel)); err == nil {
-			t.Errorf("a new project has %s", rel)
-		}
-	}
 	cfg, ok := ReadMarker(p.Atlas())
 	if !ok || cfg.Schema != Schema || cfg.ID == "" || cfg.Name != "webapp" || cfg.Mode != Generic || cfg.Description != "The app." || cfg.Created != "2026-09-19" {
 		t.Fatalf("identity %+v", cfg)
@@ -133,12 +127,6 @@ func TestInitRefusals(t *testing.T) {
 	if _, err := Init(filepath.Join(t.TempDir(), "gone"), Options{}, now); err == nil {
 		t.Fatal("a folder that is not there")
 	}
-	// A 3.x knowledge base is not a folder to init; upgrade absorbs it.
-	kb := newWork(t, "notes")
-	os.WriteFile(filepath.Join(kb, KnowledgeMarker), []byte(`{"schema":"claude-atlas.vault.v3","id":"k1","kind":"knowledge","name":"notes"}`), 0o644)
-	if _, err := Init(kb, Options{}, now); err == nil || !strings.Contains(err.Error(), "upgrade") {
-		t.Fatalf("a 3.x knowledge base: %v", err)
-	}
 	// A folder the repository ignores could not be committed.
 	host := newWork(t, "host")
 	repo := gitx.Repo{Dir: host}
@@ -174,30 +162,8 @@ func TestInitWithoutGitLeavesNoHistory(t *testing.T) {
 	}
 }
 
-func TestOpenRefusesTheLayoutsOfEarlierVersions(t *testing.T) {
+func TestOpenRefusesAnUnsupportedSchema(t *testing.T) {
 	needGit(t)
-	// A 3.x project, which named a knowledge base of its own.
-	work := newWork(t, "webapp")
-	os.MkdirAll(filepath.Join(work, Dir, "webapp"), 0o755)
-	os.WriteFile(filepath.Join(work, Dir, "webapp", Marker),
-		[]byte(`{"schema":"claude-atlas.project.v3","id":"p1","name":"webapp","knowledge":{"id":"k1","name":"notes"}}`), 0o644)
-	if !IsProject(work) {
-		t.Fatal("a 3.x project is still a project on disk")
-	}
-	_, err := Open(work)
-	if !errors.Is(err, ErrSplit) || !strings.Contains(err.Error(), "upgrade") {
-		t.Fatalf("v3: %v", err)
-	}
-	if v3, ok := ReadV3(work); !ok || v3.Knowledge == nil || v3.Knowledge.ID != "k1" {
-		t.Fatalf("ReadV3 %+v %v", v3, ok)
-	}
-	// The flat layout of 2.2.0 and earlier.
-	flat := newWork(t, "flat")
-	os.MkdirAll(filepath.Join(flat, Dir), 0o755)
-	os.WriteFile(filepath.Join(flat, Dir, Marker), []byte(`{"schema":"claude-atlas.project.v3","id":"p2","name":"flat"}`), 0o644)
-	if _, err := Open(flat); !errors.Is(err, ErrFlat) {
-		t.Fatalf("flat: %v", err)
-	}
 	// An unknown schema, and a folder that is no project at all.
 	later := newWork(t, "later")
 	os.MkdirAll(filepath.Join(later, Dir, "later"), 0o755)
@@ -231,7 +197,7 @@ func TestLocateRefusesTwoProjectsAndReadsPastAFileNamedAtlas(t *testing.T) {
 	}
 }
 
-func TestFindAboveAndKnowledgeAbove(t *testing.T) {
+func TestFindAbove(t *testing.T) {
 	p := newProject(t)
 	deep := filepath.Join(p.Root, "src", "deep")
 	os.MkdirAll(deep, 0o755)
@@ -243,11 +209,6 @@ func TestFindAboveAndKnowledgeAbove(t *testing.T) {
 	}
 	if FindAbove(t.TempDir()) != "" {
 		t.Fatal("nothing above")
-	}
-	kb := newWork(t, "notes")
-	os.WriteFile(filepath.Join(kb, KnowledgeMarker), []byte("{}"), 0o644)
-	if KnowledgeAbove(filepath.Join(kb, "wiki")) != kb || KnowledgeAbove(p.Root) != "" {
-		t.Fatal("KnowledgeAbove")
 	}
 }
 
@@ -408,38 +369,3 @@ func TestDisplayPathsInErrors(t *testing.T) {
 }
 
 // A project made before the rename opens, and its schema rises on the next save.
-func TestOpenAcceptsTheSchemaWrittenBeforeTheRename(t *testing.T) {
-	work := t.TempDir()
-	dir := filepath.Join(work, Dir, "webapp")
-	os.MkdirAll(dir, 0o755)
-	os.WriteFile(filepath.Join(dir, Marker),
-		[]byte(`{"schema":"claude-atlas.project.v4","id":"p1","name":"webapp","created":"2026-09-17"}`), 0o644)
-	p, err := Open(work)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	if p.Config.Schema != Schema {
-		t.Fatalf("schema %q, want %q", p.Config.Schema, Schema)
-	}
-}
-
-// Refresh retires the snippet the tool wrote under its earlier name.
-func TestRefreshRetiresTheSnippetFromTheEarlierName(t *testing.T) {
-	settings := map[string]any{"enabledCssSnippets": []any{"claude-atlas", "mine"}}
-	if !enableSnippet(settings) {
-		t.Fatal("enableSnippet reported no change")
-	}
-	got := settings["enabledCssSnippets"].([]any)
-	want := []any{"mine", SnippetName}
-	if len(got) != len(want) {
-		t.Fatalf("enabled %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("enabled %v, want %v", got, want)
-		}
-	}
-	if enableSnippet(settings) {
-		t.Fatal("enableSnippet changed settings that are already right")
-	}
-}

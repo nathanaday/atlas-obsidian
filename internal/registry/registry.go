@@ -25,8 +25,6 @@ const (
 	ReasonSchema     = "schema"      // an identity file from a later version
 	ReasonMissing    = "missing"     // a registered path whose folder is gone
 	ReasonNotProject = "not-project" // a registered work folder with no atlas/<name>/project.json
-	ReasonFlat       = "flat"        // a project directly in atlas/; upgrade moves it into atlas/<name>/
-	ReasonV3Split    = "v3-split"    // a 3.x project, or the knowledge base it used; upgrade merges them
 )
 
 // Entry is one project the atlas knows. Refresh adds the derived State.
@@ -190,9 +188,7 @@ var ErrNotFound = errors.New("no such vault or project")
 var ErrStale = errors.New("stale registry")
 
 // Scan reads atlas/<name>/project.json under every work folder cfg.Projects lists. It
-// searches no folder: a project the config does not list is not in the atlas. A knowledge
-// base left in cfg.Knowledge by 3.x is reported as a problem, because upgrade absorbs it
-// into a project.
+// searches no folder: a project the config does not list is not in the atlas.
 func Scan(cfg *home.Config) (*Index, error) {
 	ix := &Index{}
 	found := map[string]bool{}
@@ -208,23 +204,6 @@ func Scan(cfg *home.Config) (*Index, error) {
 		}
 		found[key] = true
 		scanProject(ix, abs)
-	}
-
-	for _, v := range cfg.Knowledge {
-		abs, err := filepath.Abs(v)
-		if err != nil {
-			abs = v
-		}
-		key := realPath(abs)
-		if found[key] {
-			continue
-		}
-		found[key] = true
-		if info, err := os.Stat(abs); err != nil || !info.IsDir() {
-			fail(ix, abs, "a knowledge base of 3.x whose folder is gone; run atlas-obsidian forget "+abs, ReasonMissing)
-			continue
-		}
-		fail(ix, abs, "a knowledge base of 3.x; run atlas-obsidian upgrade "+abs+" to make it a project, or atlas-obsidian forget to drop it", ReasonV3Split)
 	}
 
 	sortEntries(ix.Entries)
@@ -250,8 +229,6 @@ func scanProject(ix *Index, work string) {
 	}
 	if _, err := project.Locate(work); err != nil {
 		switch {
-		case errors.Is(err, project.ErrFlat):
-			fail(ix, work, "the project sits directly in "+project.Dir+"/; run atlas-obsidian upgrade "+work, ReasonFlat)
 		case errors.Is(err, project.ErrNotProject):
 			fail(ix, work, "no "+project.Dir+"/<name>/"+project.Marker+"; run atlas-obsidian init there, or atlas-obsidian forget", ReasonNotProject)
 		default:
@@ -264,12 +241,7 @@ func scanProject(ix *Index, work string) {
 		fail(ix, work, "identity file is not JSON", ReasonUnreadable)
 		return
 	}
-	switch {
-	case project.Current(cfg.Schema):
-	case cfg.Schema == project.SchemaV3:
-		fail(ix, work, "a 3.x project, whose knowledge base sits outside it; run atlas-obsidian upgrade "+work, ReasonV3Split)
-		return
-	default:
+	if cfg.Schema != project.Schema {
 		fail(ix, work, fmt.Sprintf("unsupported schema %q", cfg.Schema), ReasonSchema)
 		return
 	}
@@ -440,7 +412,7 @@ func (e Entry) Atlas() string {
 func (e Entry) Wiki() string { return filepath.Join(e.Atlas(), project.WikiDir) }
 
 // StateSchema is the schema the registry state file declares.
-const StateSchema = "atlas-obsidian.registry.v4"
+const StateSchema = "atlas-obsidian.registry.v1"
 
 // registryFile is the on-disk shape of the state file.
 type registryFile struct {

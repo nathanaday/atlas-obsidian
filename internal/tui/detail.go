@@ -164,12 +164,8 @@ func boxLines(e registry.Entry, width int) []string {
 func problemFix(e registry.Entry) string {
 	path := home.Display(e.Path)
 	switch e.Reason {
-	case registry.ReasonV3Split:
-		return "run atlas-obsidian upgrade " + path
 	case registry.ReasonMissing:
 		return strings.TrimPrefix(e.Error, "not found; ")
-	case registry.ReasonFlat:
-		return "run atlas-obsidian upgrade " + path
 	case registry.ReasonNotProject:
 		return "run atlas-obsidian init " + path + ", or atlas-obsidian forget " + path
 	case registry.ReasonUnreadable:

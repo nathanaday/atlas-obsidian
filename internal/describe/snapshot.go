@@ -155,7 +155,7 @@ func walkFiles(root string) ([]string, error) {
 		}
 		name := d.Name()
 		if d.IsDir() {
-			if strings.HasPrefix(name, ".") || skip[name] || project.IsKnowledge(p) {
+			if strings.HasPrefix(name, ".") || skip[name] {
 				return fs.SkipDir
 			}
 			return nil

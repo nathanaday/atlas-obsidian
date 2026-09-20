@@ -11,28 +11,14 @@ import (
 )
 
 const (
-	ConfigSchema = "atlas-obsidian.config.v4"
-	// ConfigSchemaV4Atlas is the same config under the name the tool had before it was
-	// renamed to atlas-obsidian. Load accepts it and the next Save writes ConfigSchema.
-	ConfigSchemaV4Atlas = "claude-atlas.config.v4"
-	ConfigSchemaV3      = "claude-atlas.config.v3"
-	ConfigSchemaV2      = "claude-atlas.config.v2"
-	ConfigSchemaV1      = "claude-atlas.config.v1"
-	EnvHome             = "ATLAS_OBSIDIAN_HOME"
-	defaultHome         = "~/.atlas-obsidian"
-	// atlasHome is where the atlas lived before the tool was renamed to atlas-obsidian.
-	// Resolve moves it to defaultHome once, so an existing atlas is not orphaned.
-	atlasHome = "~/.claude-atlas"
+	ConfigSchema = "atlas-obsidian.config.v1"
+	EnvHome      = "ATLAS_OBSIDIAN_HOME"
+	defaultHome  = "~/.atlas-obsidian"
 
 	// DefaultPluginID is the atlas-obsidian plugin as Claude Code names it.
 	DefaultPluginID = "atlas-obsidian@nathanaday-atlas-obsidian"
 	// DefaultPluginSource is what `claude plugin marketplace add` takes: this repository.
 	DefaultPluginSource = "nathanaday/atlas-obsidian"
-	// atlasPluginID and atlasPluginSource name the plugin as it was before the tool was
-	// renamed to atlas-obsidian. Load replaces them, so setup and doctor ask about the
-	// plugin this version installs and not the one it replaced.
-	atlasPluginID     = "claude-atlas@nathanaday-claude-atlas"
-	atlasPluginSource = "nathanaday/claude-atlas"
 
 	// DefaultNewDays is how many days after its creation a vault counts as new.
 	DefaultNewDays = 7
@@ -69,29 +55,8 @@ type Config struct {
 	ClaudeCode LaunchConfig `json:"claude_code"`
 	// Heat is nil in a config written before the section existed; NewDays reads it.
 	Heat *HeatConfig `json:"heat,omitempty"`
-	// Knowledge holds the root of every knowledge base 3.x kept outside a project. Nothing
-	// adds to it; upgrade absorbs each one into a project and forget drops it.
-	Knowledge []string `json:"knowledge,omitempty"`
 	// Projects holds every project's work folder, the parent of its atlas/<name>/ folder.
 	Projects []string `json:"projects,omitempty"`
-}
-
-// AddKnowledge records a 3.x knowledge base's root, for a test and for nothing else; it
-// reports whether root was added.
-func (c *Config) AddKnowledge(root string) bool {
-	root = Expand(root)
-	if contains(c.Knowledge, root) {
-		return false
-	}
-	c.Knowledge = append(c.Knowledge, root)
-	return true
-}
-
-// RemoveKnowledge drops root from Knowledge; it reports whether root was present.
-func (c *Config) RemoveKnowledge(root string) bool {
-	var ok bool
-	c.Knowledge, ok = remove(c.Knowledge, Expand(root))
-	return ok
 }
 
 // AddProject records a project's work folder; it reports whether it was added.
@@ -110,9 +75,6 @@ func (c *Config) RemoveProject(work string) bool {
 	c.Projects, ok = remove(c.Projects, Expand(work))
 	return ok
 }
-
-// HasKnowledge reports whether the config lists root.
-func (c *Config) HasKnowledge(root string) bool { return contains(c.Knowledge, Expand(root)) }
 
 // HasProject reports whether the config lists work.
 func (c *Config) HasProject(work string) bool { return contains(c.Projects, Expand(work)) }
@@ -164,30 +126,13 @@ func Resolve(explicit string) Home {
 		value = os.Getenv(EnvHome)
 	}
 	if value == "" {
-		return Home{Root: adopt(Expand(defaultHome))}
+		return Home{Root: Expand(defaultHome)}
 	}
 	abs, err := filepath.Abs(Expand(value))
 	if err != nil {
 		abs = Expand(value)
 	}
 	return Home{Root: abs}
-}
-
-// adopt moves an atlas left at the old name to root, once, and reports the home to use.
-// It runs only for the default home, so a test or an explicit --home never reaches it.
-// A move that fails leaves the old atlas where it is and uses it, so nothing is lost.
-func adopt(root string) string {
-	if _, err := os.Stat(root); err == nil {
-		return root
-	}
-	old := Expand(atlasHome)
-	if _, err := os.Stat(filepath.Join(old, "config.json")); err != nil {
-		return root
-	}
-	if err := os.Rename(old, root); err != nil {
-		return old
-	}
-	return root
 }
 
 func (h Home) ConfigPath() string { return filepath.Join(h.Root, "config.json") }
@@ -232,29 +177,8 @@ func (h Home) Load() (*Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("%s: %w", h.ConfigPath(), err)
 	}
-	switch cfg.Schema {
-	case ConfigSchema:
-	case ConfigSchemaV4Atlas:
-		cfg.Schema = ConfigSchema
-	case ConfigSchemaV3:
-		cfg.Schema = ConfigSchema
-	case ConfigSchemaV2:
-		// A v2 config listed vaults of both kinds outside the vaults directory; the
-		// knowledge bases among them still resolve, and a v2 project vault reports itself
-		// as one when the scan reads it. Repositories and their policies are gone.
-		var v2 struct {
-			Vaults []string `json:"vaults"`
-		}
-		json.Unmarshal(data, &v2)
-		cfg.Knowledge = append(cfg.Knowledge, v2.Vaults...)
-		cfg.Schema = ConfigSchema
-	case ConfigSchemaV1:
-		cfg.Schema = ConfigSchema
-	default:
+	if cfg.Schema != ConfigSchema {
 		return nil, fmt.Errorf("%s: unsupported schema %q", h.ConfigPath(), cfg.Schema)
-	}
-	for i, v := range cfg.Knowledge {
-		cfg.Knowledge[i] = Expand(v)
 	}
 	for i, v := range cfg.Projects {
 		cfg.Projects[i] = Expand(v)
@@ -262,14 +186,6 @@ func (h Home) Load() (*Config, error) {
 	// Configs written before these sections existed keep working with the defaults.
 	if cfg.Plugin.ID == "" {
 		cfg.Plugin = defaultPlugin()
-	}
-	if cfg.Plugin.ID == atlasPluginID {
-		cfg.Plugin.ID = DefaultPluginID
-	}
-	// A source that is a local checkout is the user's own choice and is left alone; only
-	// the slug of this repository moves to its new name.
-	if cfg.Plugin.Source == atlasPluginSource {
-		cfg.Plugin.Source = DefaultPluginSource
 	}
 	cfg.Plugin.Source = Expand(cfg.Plugin.Source)
 	if cfg.ClaudeCode.Command == "" {

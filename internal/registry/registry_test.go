@@ -19,7 +19,7 @@ var now = time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
 // folders the scan cannot use: a work folder that is gone, one with no project in it, a
 // project in the flat layout of 2.2.0, a 3.x project, an identity file that is not JSON,
 // one from a later version, and a 3.x knowledge base.
-func fixture(t *testing.T) (*home.Config, map[string]*project.Project, string) {
+func fixture(t *testing.T) (*home.Config, map[string]*project.Project) {
 	t.Helper()
 	if !gitx.Available() {
 		t.Skip("git is not installed")
@@ -56,14 +56,6 @@ func fixture(t *testing.T) (*home.Config, map[string]*project.Project, string) {
 	}
 	bad("Bad/gone", func(dir string) { os.RemoveAll(dir) })
 	bad("Bad/plain", func(dir string) {})
-	bad("Bad/flat", func(dir string) {
-		os.MkdirAll(filepath.Join(dir, project.Dir), 0o755)
-		os.WriteFile(filepath.Join(dir, project.Dir, project.Marker), []byte(`{"schema":"claude-atlas.project.v3","id":"flat"}`), 0o644)
-	})
-	bad("Bad/split", func(dir string) {
-		os.MkdirAll(filepath.Join(dir, project.Dir, "split"), 0o755)
-		os.WriteFile(filepath.Join(dir, project.Dir, "split", project.Marker), []byte(`{"schema":"claude-atlas.project.v3","id":"split","name":"split","knowledge":{"id":"k1","name":"notes"}}`), 0o644)
-	})
 	bad("Bad/broken", func(dir string) {
 		os.MkdirAll(filepath.Join(dir, project.Dir, "broken"), 0o755)
 		os.WriteFile(filepath.Join(dir, project.Dir, "broken", project.Marker), []byte(`{not json`), 0o644)
@@ -72,15 +64,11 @@ func fixture(t *testing.T) (*home.Config, map[string]*project.Project, string) {
 		os.MkdirAll(filepath.Join(dir, project.Dir, "later"), 0o755)
 		os.WriteFile(filepath.Join(dir, project.Dir, "later", project.Marker), []byte(`{"schema":"atlas-obsidian.project.v9","id":"later"}`), 0o644)
 	})
-	kb := filepath.Join(root, "Vaults", "notes")
-	os.MkdirAll(kb, 0o755)
-	os.WriteFile(filepath.Join(kb, project.KnowledgeMarker), []byte(`{"schema":"claude-atlas.vault.v3","id":"k1","kind":"knowledge","name":"notes"}`), 0o644)
-	cfg.Knowledge = []string{kb}
-	return cfg, ps, kb
+	return cfg, ps
 }
 
 func TestScanReadsEveryProjectAndSortsThem(t *testing.T) {
-	cfg, ps, _ := fixture(t)
+	cfg, ps := fixture(t)
 	ix, err := Scan(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -113,7 +101,7 @@ func TestScanReadsEveryProjectAndSortsThem(t *testing.T) {
 }
 
 func TestScanNamesEveryFolderItCannotUse(t *testing.T) {
-	cfg, _, kb := fixture(t)
+	cfg, _ := fixture(t)
 	ix, err := Scan(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -127,11 +115,8 @@ func TestScanNamesEveryFolderItCannotUse(t *testing.T) {
 	want := map[string]string{
 		"gone":   ReasonMissing,
 		"plain":  ReasonNotProject,
-		"flat":   ReasonFlat,
-		"split":  ReasonV3Split,
 		"broken": ReasonUnreadable,
 		"later":  ReasonSchema,
-		"notes":  ReasonV3Split,
 	}
 	for name, reason := range want {
 		if reasons[name] != reason {
@@ -145,20 +130,16 @@ func TestScanNamesEveryFolderItCannotUse(t *testing.T) {
 	if len(ix.Problems) != len(want) {
 		t.Fatalf("problems %+v", ix.Problems)
 	}
-	// A 3.x knowledge base's message names the command that makes it a project.
-	e := ix.ByPath(kb)
-	if e == nil || !strings.Contains(e.Error, "atlas-obsidian upgrade") {
-		t.Fatalf("the knowledge base: %+v", e)
-	}
-	// A project the atlas cannot read has a path, an error, and a reason, and nothing else.
-	flat := ix.ByPath(filepath.Join(filepath.Dir(kb), "..", "Bad", "flat"))
-	if flat != nil && (flat.Name != "" || flat.ID != "") {
-		t.Fatalf("an unreadable entry carries nothing else: %+v", flat)
+	// A folder the atlas cannot read has a path, an error, and a reason, and nothing else.
+	for _, e := range ix.Entries {
+		if e.Error != "" && (e.Name != "" || e.ID != "") {
+			t.Fatalf("an unreadable entry carries nothing else: %+v", e)
+		}
 	}
 }
 
 func TestFindByNameIDAndPath(t *testing.T) {
-	cfg, ps, _ := fixture(t)
+	cfg, ps := fixture(t)
 	ix, _ := Scan(cfg)
 	web := ps["webapp"]
 	for _, arg := range []string{"webapp", "WEBAPP", web.Config.ID, web.Config.ID[:8], web.Root} {
@@ -195,7 +176,7 @@ func TestFindAmbiguousIDPrefix(t *testing.T) {
 }
 
 func TestStateFileRoundTrips(t *testing.T) {
-	cfg, _, _ := fixture(t)
+	cfg, _ := fixture(t)
 	ix, _ := Scan(cfg)
 	dir := filepath.Join(t.TempDir(), "state")
 	if _, _, err := Read(dir); !errors.Is(err, os.ErrNotExist) {
@@ -211,10 +192,10 @@ func TestStateFileRoundTrips(t *testing.T) {
 		t.Fatalf("round trip %v %s %+v", err, generated, entries)
 	}
 	data, _ := os.ReadFile(File(dir))
-	if !strings.Contains(string(data), `"schema": "atlas-obsidian.registry.v4"`) {
+	if !strings.Contains(string(data), `"schema": "atlas-obsidian.registry.v1"`) {
 		t.Fatalf("file:\n%s", data)
 	}
-	os.WriteFile(File(dir), []byte(`{"schema":"claude-atlas.registry.v3","entries":[]}`), 0o644)
+	os.WriteFile(File(dir), []byte(`{"schema":"atlas-obsidian.registry.v0","entries":[]}`), 0o644)
 	if _, _, err := Read(dir); !errors.Is(err, ErrStale) {
 		t.Fatalf("read another schema: %v", err)
 	}
@@ -290,23 +271,5 @@ func TestDescriptionSummaryAndUnfinished(t *testing.T) {
 	u := Unfinished{Stubs: &one, DeadLinks: &two}
 	if u.Text() != "1 stubs · 2 dead links" || *u.Total() != 3 || (Unfinished{}).Total() != nil {
 		t.Fatalf("unfinished %q %v", u.Text(), u.Total())
-	}
-}
-
-// The scan reads a project made before the rename as an ordinary entry, not a problem.
-func TestScanAcceptsTheSchemaWrittenBeforeTheRename(t *testing.T) {
-	work := t.TempDir()
-	dir := filepath.Join(work, project.Dir, "webapp")
-	os.MkdirAll(dir, 0o755)
-	os.WriteFile(filepath.Join(dir, project.Marker),
-		[]byte(`{"schema":"claude-atlas.project.v4","id":"p1","name":"webapp","created":"2026-09-17"}`), 0o644)
-	cfg := &home.Config{}
-	cfg.AddProject(work)
-	ix, err := Scan(cfg)
-	if err != nil {
-		t.Fatalf("scan: %v", err)
-	}
-	if len(ix.Entries) != 1 || ix.Entries[0].Error != "" {
-		t.Fatalf("entries %+v", ix.Entries)
 	}
 }

@@ -31,18 +31,7 @@ const (
 	// Marker is the identity file inside the project's folder. It is visible because the
 	// folder is the user's and the file says what the folder is.
 	Marker = "project.json"
-	Schema = "atlas-obsidian.project.v4"
-	// SchemaV4Atlas is the same identity file under the name the tool had before it was
-	// renamed to atlas-obsidian. Open accepts it and the next Save writes Schema.
-	SchemaV4Atlas = "claude-atlas.project.v4"
-	// SchemaV3 is the identity file 3.x wrote, when a project named a separate knowledge
-	// base. Open refuses it; upgrade absorbs the knowledge base and raises the schema.
-	SchemaV3 = "claude-atlas.project.v3"
-	// KnowledgeMarker is the identity file of a 3.x knowledge base, the separate vault v4
-	// absorbs into a project.
-	KnowledgeMarker = ".claude-atlas.json"
-	// LegacyMarker is claude-obsidian's identity file; adopt converts such a vault.
-	LegacyMarker = ".claude-obsidian.json"
+	Schema = "atlas-obsidian.project.v1"
 	// EnvProject names the project explicitly for the MCP server and the hooks. The
 	// launcher sets it.
 	EnvProject = "ATLAS_OBSIDIAN_PROJECT"
@@ -74,9 +63,6 @@ const (
 	// What the user drops in, and what nothing reads.
 	InboxDir = "inbox"
 	IdeasDir = "ideas"
-
-	// LegacyTasksDir held the task pages of 2.x; threads.Migrate turns them into threads.
-	LegacyTasksDir = "tasks"
 )
 
 // Folders are the folders every project holds, relative to its folder.
@@ -236,49 +222,16 @@ func HostFor(path string) (string, error) {
 	return repo.Dir, nil
 }
 
-// joinRepo readies the repository a new project's folder at abs commits into: the working
-// tree that holds it, or a new one at abs when there is none. It refuses a folder the
-// holding tree ignores, because no commit could record it. It reports whether it ran
-// git init.
-func joinRepo(abs string) (gitx.Repo, bool, error) {
-	repo := gitx.At(abs)
-	if repo.Prefix != "" {
-		if repo.Ignored("") {
-			return repo, false, fmt.Errorf("%s is ignored by the git repository %s; a project's wiki needs its history", abs, repo.Dir)
-		}
-		return repo, false, nil
-	}
-	if repo.IsRepo() {
-		return repo, false, nil
-	}
-	if err := repo.Init(); err != nil {
-		return repo, false, err
-	}
-	return repo, true, nil
-}
-
-var (
-	ErrNotProject = errors.New("not a atlas-obsidian project")
-	// ErrFlat means the project sits directly in atlas/, as 2.2.0 and earlier made it;
-	// upgrade moves it into atlas/<name>/.
-	ErrFlat = errors.New("the project sits directly in atlas/")
-	// ErrSplit means the project is a 3.x one, which names a separate knowledge base;
-	// upgrade absorbs that knowledge base into the project.
-	ErrSplit = errors.New("a 3.x project, with its knowledge base outside it")
-)
+var ErrNotProject = errors.New("not an atlas-obsidian project")
 
 // FolderName is the name of the folder a project with this name sits in: the name cleaned
 // so Obsidian can name a vault after it. It is empty when nothing usable is left.
 func FolderName(name string) string { return links.CleanName(strings.TrimSpace(name)) }
 
 // Locate returns the name of the project's folder under work/atlas/: the one child that
-// holds the identity file. It refuses a project in the flat layout and an atlas/ folder
-// that holds more than one project.
+// holds the identity file. It refuses an atlas/ folder that holds more than one project.
 func Locate(work string) (string, error) {
 	atlas := filepath.Join(work, Dir)
-	if isFile(filepath.Join(atlas, Marker)) {
-		return "", fmt.Errorf("%w; run atlas-obsidian upgrade %s", ErrFlat, home.Display(work))
-	}
 	// A file named atlas, such as a binary, is not a project.
 	if info, err := os.Stat(atlas); err == nil && !info.IsDir() {
 		return "", fmt.Errorf("%w: %s has no %s/<name>/%s", ErrNotProject, work, Dir, Marker)
@@ -307,45 +260,12 @@ func isFile(path string) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-// IsProject reports whether work holds a project's identity file under atlas/, in any
-// layout and of any schema; Open says whether it can be used.
+// IsProject reports whether work holds a project's identity file under atlas/; Open says
+// whether it can be used.
 func IsProject(work string) bool {
 	_, err := Locate(work)
 	return !errors.Is(err, ErrNotProject)
 }
-
-// IsKnowledge reports whether dir carries the identity file of a 3.x knowledge base or of
-// a claude-obsidian vault. Such a folder is not a project; upgrade and adopt absorb it.
-func IsKnowledge(dir string) bool {
-	return isFile(filepath.Join(dir, KnowledgeMarker)) || isFile(filepath.Join(dir, LegacyMarker))
-}
-
-// KnowledgeAbove returns the nearest folder at or above start that carries a knowledge
-// base's identity file, or "".
-func KnowledgeAbove(start string) string {
-	dir, err := filepath.Abs(start)
-	if err != nil {
-		return ""
-	}
-	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
-		dir = filepath.Dir(dir)
-	}
-	for {
-		if IsKnowledge(dir) {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
-	}
-}
-
-// Current reports whether schema names a v4 identity file. It accepts the name the tool
-// wrote before it was renamed to atlas-obsidian, so a project made by an earlier version
-// opens unchanged; the next Save raises it to Schema.
-func Current(schema string) bool { return schema == Schema || schema == SchemaV4Atlas }
 
 // ReadConfig parses the identity file without validating it, given the work folder. ok is
 // false when there is none, the layout is not the current one, or it is not JSON.
@@ -358,7 +278,7 @@ func ReadConfig(work string) (Config, bool) {
 }
 
 // ReadMarker parses the identity file inside a project's own folder without validating it.
-// Lint and upgrade read a folder this way; everything else opens the project.
+// Lint reads a folder this way; everything else opens the project.
 func ReadMarker(atlas string) (Config, bool) {
 	cfg, err := readConfig(filepath.Join(atlas, Marker))
 	return cfg, err == nil
@@ -391,12 +311,7 @@ func Open(work string) (*Project, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case Current(cfg.Schema):
-		cfg.Schema = Schema
-	case cfg.Schema == SchemaV3:
-		return nil, fmt.Errorf("%w: %s; run atlas-obsidian upgrade %s to absorb it into the project", ErrSplit, marker, home.Display(abs))
-	default:
+	if cfg.Schema != Schema {
 		return nil, fmt.Errorf("%s: unsupported schema %q", marker, cfg.Schema)
 	}
 	if cfg.ID == "" {
@@ -452,7 +367,7 @@ func Resolve(explicit, envValue, start string) (*Project, error) {
 }
 
 // CheckNew says why a project cannot be made at work: the folder is not there, it is a
-// project already, it sits inside another project, or it is a 3.x knowledge base.
+// project already, or it sits inside another project.
 // An atlas/ folder that holds something else is fine; Init refuses only a taken
 // atlas/<name>/.
 func CheckNew(work string) error {
@@ -472,9 +387,6 @@ func CheckNew(work string) error {
 	}
 	if outer := FindAbove(filepath.Dir(abs)); outer != "" {
 		return fmt.Errorf("%s is inside the project %s; a project does not go inside another", abs, outer)
-	}
-	if IsKnowledge(abs) {
-		return fmt.Errorf("%s is a knowledge base of an earlier version; run atlas-obsidian upgrade %s to make it a project", abs, home.Display(abs))
 	}
 	return nil
 }
@@ -541,19 +453,6 @@ func (p *Project) EnsureFolders() error {
 		}
 	}
 	return nil
-}
-
-// Under reports whether path sits at or inside root. It resolves symlinks first, because a
-// repository reports its own top with every link resolved and a caller's path may not be.
-func Under(root, path string) bool {
-	resolve := func(p string) string {
-		if out, err := filepath.EvalSymlinks(p); err == nil {
-			return out
-		}
-		return p
-	}
-	rel, err := filepath.Rel(resolve(root), resolve(path))
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // Same reports whether two paths name one folder.

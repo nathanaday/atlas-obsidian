@@ -75,8 +75,6 @@ func TestThreadSummaryText(t *testing.T) {
 
 func TestProblemFixNamesTheCommand(t *testing.T) {
 	cases := []struct{ reason, err, want string }{
-		{registry.ReasonV3Split, "e", "atlas-obsidian upgrade"},
-		{registry.ReasonFlat, "e", "atlas-obsidian upgrade"},
 		{registry.ReasonMissing, "not found; work in it again to heal the path, or run atlas-obsidian forget", "atlas-obsidian forget"},
 		{registry.ReasonNotProject, "e", "atlas-obsidian init"},
 		{registry.ReasonUnreadable, "e", "repair the identity file"},

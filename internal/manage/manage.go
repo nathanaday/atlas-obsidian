@@ -134,14 +134,13 @@ func EditProject(work string, edit Edit, now time.Time) error {
 	})
 }
 
-// Forget drops a path from the config: a project's work folder, or a knowledge base 3.x
-// left behind. The folder itself stays.
+// Forget drops a project's work folder from the config. The folder itself stays.
 func Forget(h home.Home, cfg *home.Config, path string) error {
 	abs, err := filepath.Abs(home.Expand(path))
 	if err != nil {
 		return err
 	}
-	if !cfg.RemoveProject(abs) && !cfg.RemoveKnowledge(abs) {
+	if !cfg.RemoveProject(abs) {
 		return fmt.Errorf("%s is not in the atlas", home.Display(abs))
 	}
 	return h.Save(cfg)

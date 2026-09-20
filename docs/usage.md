@@ -23,7 +23,7 @@ one tool from a Claude Code session, so scripts, muscle memory, and the
 | — | `threads [PROJECT]`, `thread PROJECT new\|show\|file\|close\|set\|reopen …`, `phase PROJECT …` | `threads`, `thread`, `phase` |
 | — | `config new-days N` | `settings` |
 | — | `stub PROJECT [TITLE...]` | `stub` |
-| — | `lint`, `history`, `undo`, `recover`, `upgrade`, `apply` | `lint`, `history`, `undo` |
+| — | `lint`, `history`, `undo`, `recover`, `apply` | `lint`, `history`, `undo` |
 | — | `setup`, `doctor`, `info`, `version` | — |
 
 ## One thing
@@ -368,7 +368,7 @@ atlas-obsidian edit webapp --mode lyt
 
 Changing the mode affects future pages only.
 
-## Recover and upgrade
+## Recover
 
 If an operation was interrupted, the project says so at the next session start.
 Restore it:
@@ -376,45 +376,6 @@ Restore it:
 ```bash
 atlas-obsidian recover webapp
 ```
-
-`upgrade` brings a project or a knowledge base made by an older version to this
-one. It moves your files, so it always shows what it will do and asks first,
-and it uses `git mv` where one repository holds both sides, so the history
-follows.
-
-```bash
-atlas-obsidian upgrade                                 # the project or knowledge base you are in
-atlas-obsidian upgrade webapp
-atlas-obsidian upgrade ~/Vaults/papers                 # a knowledge base, by path
-atlas-obsidian upgrade webapp --absorb ~/Vaults/kb     # name the knowledge base to take as the wiki
-atlas-obsidian upgrade --all
-```
-
-Four cases:
-
-1. **A 3.x project whose knowledge base is inside the work.** Its `wiki/`,
-   `.raw/`, `inbox/`, and `ideas/` move into `atlas/<name>/`, its scope joins
-   the project's description, its mode becomes the project's, and its entry
-   leaves the config.
-2. **A 3.x project whose knowledge base is elsewhere.** The same, by copy. The
-   old folder stays on disk for you to delete.
-3. **One knowledge base that several projects used.** Refused, with the
-   projects named. Upgrade one of them, which absorbs it; the others take
-   `--absorb PATH` to copy it, or start with an empty wiki.
-4. **A knowledge base no project used.** Its folder becomes a project, with
-   that knowledge base as the wiki.
-
-In every case the stage folders move under `threads/`, the task pages of 2.x
-become threads (Idea becomes the stub, Plan and Progress the plan, Outcome the
-receipt; `done` becomes `completed` and `cancelled` becomes `killed`), a project
-that 2.2.0 made directly in `atlas/` moves into `atlas/<name>/`, and the CSS
-snippet is rewritten. A page it cannot read stays where it is and is named.
-
-Until a folder is upgraded, every command and every tool refuses it with the
-command to run.
-
-If you opened an old knowledge base or the old `atlas/` folder in Obsidian,
-remove it from Obsidian's vault list and open `atlas/<name>/` instead.
 
 ## Open in Obsidian
 
@@ -486,19 +447,11 @@ A command names a project by its name, by its id or an id prefix of eight
 characters or more, or by its path. Two projects with one name make the command
 ask for the path or the id instead.
 
-## Adopt an existing vault
+## Adopt a folder of notes
 
-An Obsidian vault, a vault made with claude-obsidian, or a knowledge base from
-an earlier version becomes a project with `upgrade`: its folder becomes the
-work, `atlas/<name>/` is created inside it, and its `wiki/`, `inbox/`, `ideas/`,
-and `.raw/` move in. Nothing in it is replaced.
-
-```bash
-atlas-obsidian upgrade ~/Documents/MyKnowledgeVault
-```
-
-A vault with no `wiki/` folder is a folder of notes, not a wiki: make it a
-project with `init`, and move the notes under `wiki/` yourself, in the shape the
+An existing Obsidian vault becomes a project with `init`: its folder becomes the
+work and `atlas/<name>/` is created inside it. Nothing in the folder is
+replaced. Move the notes under `atlas/<name>/wiki/` yourself, in the shape the
 filing mode expects.
 
 ## Setup and health
@@ -515,8 +468,8 @@ atlas-obsidian version
 Setup shows its plan and asks before it acts: the atlas home and the plugin in
 Claude Code. It creates no project; `atlas-obsidian init` in your work does that.
 `doctor` checks git, Claude Code, the plugin's version against the binary's, and
-every project the config lists, naming the ones whose folder is gone, whose
-wiki needs recovery, or which wait for `upgrade`.
+every project the config lists, naming the ones whose folder is gone or whose
+wiki needs recovery.
 
 ## Scripts
 
@@ -533,7 +486,7 @@ atlas-obsidian apply webapp plan.json
 
 ```json
 {
-  "schema": "atlas-obsidian.config.v4",
+  "schema": "atlas-obsidian.config.v1",
   "projects": ["/Users/you/code/webapp", "/Users/you/code/fw"],
   "plugin": {
     "id": "atlas-obsidian@nathanaday-atlas-obsidian",
@@ -554,8 +507,7 @@ sets one and refreshes.
 
 | Setting | Effect |
 |---|---|
-| `projects` | every project's work folder. `init`, `forget`, `upgrade`, and the session hook keep this list |
-| `knowledge` | the knowledge bases of 3.x that `upgrade` has not absorbed yet. Nothing adds to it |
+| `projects` | every project's work folder. `init`, `forget`, and the session hook keep this list |
 | `claude_code.prompt` | a first message sent on every `open-claude`, for example `/atlas-obsidian:wiki` |
 | `claude_code.args` | flags for `claude`, such as `--model` |
 | `claude_code.session_context` | whether the session-start hook hands Claude the wiki's `hot.md` |

@@ -64,17 +64,7 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	default:
 		plan(c, "plugin", "install", fmt.Sprintf("%s from %s via `claude plugin`", cfg.Plugin.ID, cfg.Plugin.Source))
 	}
-	waiting := 0
-	for _, e := range ix.Entries {
-		if e.Reason == registry.ReasonV3Split || e.Reason == registry.ReasonFlat {
-			waiting++
-		}
-	}
-	note := fmt.Sprintf("%d listed", len(ix.Projects()))
-	if waiting > 0 {
-		note += fmt.Sprintf(", %d waiting for `atlas-obsidian upgrade`", waiting)
-	}
-	plan(c, "projects", "keep", note)
+	plan(c, "projects", "keep", fmt.Sprintf("%d listed", len(ix.Projects())))
 	c.Say("")
 	ok, err := c.Confirm("Proceed?", true)
 	if err != nil {
@@ -141,13 +131,6 @@ func Run(h home.Home, c *console.Console, opts Options) (int, error) {
 	}
 	c.Say("")
 	return 0, nil
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }
 
 func ternary[T any](cond bool, a, b T) T {
