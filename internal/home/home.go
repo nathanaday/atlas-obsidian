@@ -50,6 +50,7 @@ type LaunchConfig struct {
 // Config is the contents of config.json. Paths are absolute. The atlas knows a knowledge
 // base or a project only when the config lists its folder; it never searches for one.
 type Config struct {
+	PreferredIDE     string       `json:"preferred_ide,omitempty"`
 	PreferredHarness string       `json:"preferred_harness,omitempty"`
 	Schema           string       `json:"schema"`
 	Plugin           PluginConfig `json:"plugin"`
@@ -58,6 +59,22 @@ type Config struct {
 	Heat *HeatConfig `json:"heat,omitempty"`
 	// Projects holds every project's work folder, the parent of its atlas/<name>/ folder.
 	Projects []string `json:"projects,omitempty"`
+}
+
+// IDE defaults to VS Code for configs written before this preference existed.
+func (c *Config) IDE() string {
+	if c.PreferredIDE == "" {
+		return "vscode"
+	}
+	return c.PreferredIDE
+}
+
+func (c *Config) SetPreferredIDE(ide string) error {
+	if ide != "vscode" {
+		return fmt.Errorf("preferred-ide must be vscode; other IDEs are not supported yet (got %q)", ide)
+	}
+	c.PreferredIDE = ide
+	return nil
 }
 
 // Harness returns the preferred interactive agent, defaulting to Claude for older configs.
@@ -220,6 +237,9 @@ func (h Home) Load() (*Config, error) {
 		return nil, fmt.Errorf("%s: heat.new_days must be 0 or more", h.ConfigPath())
 	}
 	if err := cfg.SetPreferredHarness(cfg.Harness()); err != nil {
+		return nil, err
+	}
+	if err := cfg.SetPreferredIDE(cfg.IDE()); err != nil {
 		return nil, err
 	}
 	return &cfg, nil

@@ -36,7 +36,7 @@ func TestConfigSavesPreferredHarness(t *testing.T) {
 	v = next.(view)
 	next, _ = v.Update(refreshedMsg{})
 	v = next.(view)
-	for _, key := range []string{"o", "c", "n", "h"} {
+	for _, key := range []string{"o", "c", "i", "n", "h"} {
 		v = keyV(v, key)
 	}
 	if v.tab != tabConfig || !strings.Contains(v.View(), "Codex (saved)") {
@@ -65,5 +65,27 @@ func TestConfigSaveErrorKeepsPreference(t *testing.T) {
 	v = pressV(v, tea.KeyEsc)
 	if v.tab != tabProjects {
 		t.Fatal("Escape returns to Projects")
+	}
+}
+
+func TestConfigSavesIDEWithoutChangingHarness(t *testing.T) {
+	h := home.Home{Root: t.TempDir()}
+	cfg := h.Default()
+	if err := h.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	v := newView(nil, Opener{}, actions.Bind(h, cfg, nil))
+	v = pressV(v, tea.KeyRight, tea.KeyDown, tea.KeyDown, tea.KeyEnter)
+	saved, err := h.Load()
+	if err != nil || saved.PreferredIDE != "vscode" || saved.Harness() != "claude" {
+		t.Fatalf("config=%+v err=%v", saved, err)
+	}
+	if !strings.Contains(v.View(), "> VS Code (saved)") || !strings.Contains(v.status, "saved preferred IDE") {
+		t.Fatal(v.View())
+	}
+	v.acts.SetPreferredIDE = func(string) error { return errors.New("disk unavailable") }
+	v = pressV(v, tea.KeyEnter)
+	if v.errMsg != "disk unavailable" {
+		t.Fatal(v.View())
 	}
 }

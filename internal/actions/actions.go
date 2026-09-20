@@ -9,6 +9,7 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/capture"
 	"github.com/nathanaday/atlas-obsidian/internal/console"
 	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/ide"
 	"github.com/nathanaday/atlas-obsidian/internal/manage"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/refresh"
@@ -28,6 +29,9 @@ type InitProject struct {
 // Atlas is every action the CLI, the view, and the tools reach. Each field is one
 // function from the package that owns the action, bound to the atlas home and its config.
 type Atlas struct {
+	PreferredIDE        func() string
+	SetPreferredIDE     func(string) error
+	OpenIDE             func(registry.Entry) error
 	PreferredHarness    func() string
 	SetPreferredHarness func(string) error
 	// Load reads the registry, refreshing it first when no refresh has run yet. Scan
@@ -68,6 +72,28 @@ type Atlas struct {
 func Bind(h home.Home, cfg *home.Config, c *console.Console) Atlas {
 	openProject := func(en registry.Entry) (*project.Project, error) { return project.Open(en.Path) }
 	return Atlas{
+		PreferredIDE: cfg.IDE,
+		SetPreferredIDE: func(preferred string) error {
+			latest, err := h.Load()
+			if err != nil {
+				return err
+			}
+			if err := latest.SetPreferredIDE(preferred); err != nil {
+				return err
+			}
+			if err := h.Save(latest); err != nil {
+				return err
+			}
+			*cfg = *latest
+			return nil
+		},
+		OpenIDE: func(en registry.Entry) error {
+			p, err := openProject(en)
+			if err != nil {
+				return err
+			}
+			return ide.Open(cfg.IDE(), p.Root)
+		},
 		PreferredHarness: cfg.Harness,
 		SetPreferredHarness: func(harness string) error {
 			latest, err := h.Load()

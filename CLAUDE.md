@@ -139,6 +139,7 @@ internal/refresh/       derive one entry's state, rewrite the registry, list an 
 internal/manage/        init, edit, forget, and register a project
 internal/links/         the facts git reports about a folder, and CleanName
 internal/tui/           Bubble Tea screens: the view (one list of projects, a Problems tab while there is one, expand in place, open and launch keys)
+internal/ide/           open the project root in the preferred IDE (VS Code for now)
 internal/obsidian/      Obsidian's vault registry, obsidian:// URIs, restart
 internal/home/          ~/.atlas-obsidian and config.json
 internal/console/       prompts and step lines
@@ -357,6 +358,10 @@ here is in `docs/v4-design.md`; the designs it replaced are history, listed
 under "Sources of truth".
 
 ## Open questions
+
+- Extend `preferred_ide` and `open-ide` beyond VS Code: Cursor, Windsurf, Zed,
+  JetBrains IDEs, and Sublime Text. The TUI `i` shortcut opens the work root;
+  the Config tab and `config preferred-ide vscode` persist the preference.
 
 - A `search` tool with BM25 ranking, once Grep proves insufficient.
 - Knowledge that crosses projects, the mission v4 tabled: a reader over the

@@ -278,7 +278,7 @@ func TestClaudeStartsInTheWork(t *testing.T) {
 
 func TestKeysOnAProblemRefuse(t *testing.T) {
 	v := findEntry(t, newView(sample(), Opener{}, actions.Atlas{}), "gateway")
-	for _, key := range []string{"o", "c", "n"} {
+	for _, key := range []string{"o", "c", "i", "n"} {
 		v = keyV(v, key)
 		if !strings.Contains(v.errMsg, "not found") {
 			t.Fatalf("%s on a problem names the error: %q", key, v.errMsg)
@@ -400,7 +400,7 @@ func TestNewThreadWritesARealStub(t *testing.T) {
 func TestHelpTogglesTheFooter(t *testing.T) {
 	v := findEntry(t, newView(sample(), Opener{}, actions.Atlas{}), "webapp")
 	out := v.View()
-	if !strings.Contains(out, "Enter details · o Obsidian · c Claude Code · n new thread · ←→ tabs · h help · q quit") {
+	if !strings.Contains(out, "Enter details · o Obsidian · c Claude Code · i VS Code · n new thread") {
 		t.Fatalf("help off names the row's keys:\n%s", out)
 	}
 	v = keyV(v, "h")

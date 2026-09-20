@@ -60,6 +60,7 @@ Projects (PROJECT is a name, a path, or nothing for the project you are in):
   edit NAME                 change it: --name N, --description TEXT, --mode generic|lyt
   describe PROJECT          stage a snapshot of the work; the describe skill writes its page
   forget PROJECT            drop a project from the atlas; its atlas/<name>/ folder stays
+  open-ide NAME            open the work folder in the preferred IDE
   open-agent NAME          start the preferred harness in the work folder
   open-vault [PROJECT]      open the project's folder in Obsidian
   open-claude NAME          start Claude Code in the work; --thread ID continues a thread
@@ -89,7 +90,7 @@ The wiki (PROJECT is a name, a path, or nothing for the project you are in):
 Across the atlas:
   view                      the interactive screen; the same as no command at all
   refresh                   read everything again and rewrite the registry
-  config [KEY VALUE]        show or set new-days / preferred-harness
+  config [KEY VALUE]        show or set new-days / preferred-harness / preferred-ide
   info                      show every path and version the atlas uses
   doctor                    check the installation and every project
 
@@ -173,6 +174,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.view(rest[1:])
 	case "open-vault":
 		code, err = e.openVault(rest[1:])
+	case "open-ide":
+		code, err = e.openIDE(rest[1:])
 	case "open-agent":
 		code, err = e.openPreferredAgent(rest[1:])
 	case "open-claude":
@@ -1170,6 +1173,30 @@ func skillHint() string { return "skills: " + hooks.Skills }
 // trustNote explains Claude Code's own first-run dialog, whose default answer quits.
 const trustNote = "The first time in a folder, Claude Code asks whether you trust it; choose Yes."
 
+func (e *env) openIDE(args []string) (int, error) {
+	fs := newFlags("open-ide", e.stderr)
+	positional, err := parse(fs, args)
+	if err != nil {
+		return 2, nil
+	}
+	if len(positional) != 1 {
+		return 2, errors.New("usage: atlas-obsidian open-ide NAME")
+	}
+	cfg, err := e.home.Load()
+	if err != nil {
+		return 1, err
+	}
+	entry, err := e.entry(cfg, positional[0])
+	if err != nil {
+		return 1, err
+	}
+	if err := actions.Bind(e.home, cfg, e.console).OpenIDE(entry); err != nil {
+		return 1, err
+	}
+	e.console.Step(console.OK, "opened", entry.Name+" in VS Code")
+	return 0, nil
+}
+
 func (e *env) openPreferredAgent(args []string) (int, error) {
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -1893,6 +1920,7 @@ func (e *env) config(args []string) (int, error) {
 	if len(args) == 0 {
 		row := func(label, value string) { c.Say("  %-18s %s", label, value) }
 		row("preferred-harness", cfg.Harness())
+		row("preferred-ide", cfg.IDE())
 		row("new-days", fmt.Sprintf("%d  (an entry is new for this many days after its creation; 0 turns it off)", cfg.NewDays()))
 		row("projects", fmt.Sprintf("%d registered", len(cfg.Projects)))
 		row("claude command", cfg.ClaudeCode.Command)
@@ -1901,9 +1929,15 @@ func (e *env) config(args []string) (int, error) {
 		return 0, nil
 	}
 	if len(args) != 2 {
-		return 2, errors.New("usage: atlas-obsidian config [KEY VALUE]; keys: new-days, preferred-harness")
+		return 2, errors.New("usage: atlas-obsidian config [KEY VALUE]; keys: new-days, preferred-harness, preferred-ide")
 	}
 	switch args[0] {
+	case "preferred-ide":
+		if err := actions.Bind(e.home, cfg, c).SetPreferredIDE(args[1]); err != nil {
+			return 1, err
+		}
+		c.Step(console.OK, args[0], args[1])
+		return 0, nil
 	case "preferred-harness":
 		if err := actions.Bind(e.home, cfg, c).SetPreferredHarness(args[1]); err != nil {
 			return 1, err
@@ -1919,7 +1953,7 @@ func (e *env) config(args []string) (int, error) {
 			return 2, err
 		}
 	default:
-		return 2, fmt.Errorf("unknown setting %q; keys: new-days, preferred-harness", args[0])
+		return 2, fmt.Errorf("unknown setting %q; keys: new-days, preferred-harness, preferred-ide", args[0])
 	}
 	if err := e.home.Save(cfg); err != nil {
 		return 1, err

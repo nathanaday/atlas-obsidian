@@ -13,6 +13,8 @@ one tool from a Claude Code session, so scripts, muscle memory, and the
 |---|---|---|
 | Enter on a project | `show NAME` | `atlas`, `status` |
 | `o` open `atlas/<name>/` in Obsidian | `open-vault NAME` | — |
+| `i` open the project root in the preferred IDE | `open-ide NAME` | — |
+| Config: choose IDE, Enter saves | `config preferred-ide vscode` | — |
 | `c` start the preferred harness in the work | `open-agent NAME [--thread ID]` | — |
 | Config: choose harness, Enter saves | `config preferred-harness codex` | — |
 | — | `open-claude NAME [--thread ID]` | — |
@@ -408,6 +410,7 @@ CLI's and the session's job.
 | Enter | expand the entry under the cursor, or collapse it |
 | `o` | open `atlas/<name>/` in Obsidian |
 | `c` | start the preferred harness in the work |
+| `i` | open the project root in VS Code |
 | `n` | open a new thread |
 | `R` | refresh in the background |
 | `h` | show every key; again to hide them |
@@ -511,14 +514,23 @@ atlas-obsidian apply webapp plan.json
 }
 ```
 
-The TUI's Config tab edits the global preferred harness: use ↑/↓ to choose
-Claude Code or Codex, then Enter to save. The `c` shortcut uses the saved choice
+The TUI's Config tab edits global preferences: use ↑/↓ to choose a harness
+(Claude Code or Codex) or the IDE option (VS Code), then Enter to save. The `c` shortcut uses the saved choice
 immediately. Existing configs default to Claude Code.
 
 ```bash
 atlas-obsidian config preferred-harness codex
 atlas-obsidian open-agent webapp
 ```
+
+`preferred_ide` defaults to `vscode`, the only supported value. Press `i` or run
+`atlas-obsidian open-ide NAME` to open the project's work folder in a new VS Code
+window. Install VS Code's `code` command on PATH before using it. Save the
+preference through Config or `atlas-obsidian config preferred-ide vscode`.
+
+Future IDE support: Cursor, Windsurf, Zed, JetBrains IDEs (such as IntelliJ IDEA,
+PyCharm, WebStorm, and GoLand), and Sublime Text. These are planned options,
+not accepted config values yet.
 
 `preferred_harness` in the config file accepts `claude` or `codex`.
 `open-claude` and `open-codex` continue to select a specific harness.

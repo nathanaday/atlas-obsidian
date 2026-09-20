@@ -158,15 +158,21 @@ atlas-obsidian
 With no arguments the binary opens a terminal view of every project it knows,
 listed by name, each with its recent activity and what is open. Arrow keys
 move, Enter expands an entry in place, `o` opens `atlas/<name>/` in Obsidian, `c` starts
-your preferred harness in the work folder, `n` opens a new thread, `R` re-reads
+your preferred harness in the work folder, `i` opens the project root in VS Code,
+`n` opens a new thread, `R` re-reads
 everything, and `h` shows the keys.
 
-On the Config tab, use ↑/↓ to choose Claude Code or Codex and Enter to save.
+On the Config tab, use ↑/↓ to choose a harness or IDE option and Enter to save.
 The preference is stored globally; existing configs default to Claude Code.
 You can also set it with `atlas-obsidian config preferred-harness codex`.
 `open-agent webapp` launches the preferred harness; `open-claude` and
 `open-codex` select a specific harness. Use `atlas-obsidian open-codex webapp` to launch Codex, or add
 `--thread "Filter vehicle"` to continue a particular thread.
+
+VS Code is the default and currently the only supported IDE. Its `code` command
+must be on PATH. The global `preferred_ide` setting is `vscode`; use
+`atlas-obsidian config preferred-ide vscode` or the Config tab to save it.
+`atlas-obsidian open-ide webapp` also opens the project root.
 
 ## How writes reach the wiki
 

@@ -603,3 +603,34 @@ func TestShellArg(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenIDEAndConfig(t *testing.T) {
+	h := setup(t)
+	work := filepath.Join(t.TempDir(), "work with spaces")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if code := h.run("init", work); code != 0 {
+		t.Fatal(h.err.String())
+	}
+	bin := t.TempDir()
+	log := filepath.Join(t.TempDir(), "ide-args")
+	t.Setenv("IDE_TEST_LOG", log)
+	if err := os.WriteFile(filepath.Join(bin, "code"), []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$IDE_TEST_LOG\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if code := h.run("config", "preferred-ide", "vscode"); code != 0 {
+		t.Fatal(h.err.String())
+	}
+	if code := h.run("config", "preferred-ide", "cursor"); code == 0 || h.config(t).IDE() != "vscode" {
+		t.Fatal("unsupported IDE changed preference")
+	}
+	if code := h.run("open-ide", work); code != 0 {
+		t.Fatal(h.err.String())
+	}
+	data, err := os.ReadFile(log)
+	if err != nil || string(data) != "--new-window\n"+work+"\n" {
+		t.Fatalf("args=%q err=%v", data, err)
+	}
+}

@@ -95,7 +95,7 @@ var tabNames = map[tab]string{tabProjects: "Projects", tabProblems: "Problems", 
 
 // captions say what each tab holds.
 var captions = map[tab]string{
-	tabConfig:   "Global settings. Choose your preferred harness; Enter saves it for every project.",
+	tabConfig:   "Global settings. Choose a harness or IDE; Enter saves it for every project.",
 	tabProjects: "A project is an atlas/<name>/ folder inside your work: its wiki, and its threads in their phases. Open it in Obsidian to read both.",
 	tabProblems: "Folders the atlas knows but could not read.",
 }
@@ -277,6 +277,14 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// A session may have opened or closed threads; read everything again.
 		return v.refresh()
+	case ideOpenedMsg:
+		v.busy = ""
+		if msg.err != nil {
+			v.errMsg = msg.err.Error()
+		} else {
+			v.status = "opened " + msg.name + " in VS Code"
+		}
+		return v, nil
 	case openedMsg:
 		v.busy = ""
 		if msg.err != nil {
@@ -332,7 +340,7 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			v.help = !v.help
 			v.board().ensureVisible(v.bodyHeight())
 			return v, nil
-		case "o", "c", "n":
+		case "o", "c", "i", "n":
 			item := v.current()
 			if item == nil {
 				return v, nil
@@ -342,6 +350,8 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return v, nil
 			}
 			switch msg.String() {
+			case "i":
+				return v.openIDE(item)
 			case "c":
 				return v.agent(item)
 			case "n":
@@ -448,6 +458,21 @@ func (v view) agent(item *Item) (tea.Model, tea.Cmd) {
 	harness := v.harness()
 	name, path, run := entryName(item.Entry), item.Entry.Path, v.opener.Agent
 	return v, tea.Exec(launch{run: func() error { return run(harness, path) }}, func(err error) tea.Msg { return agentDoneMsg{name: name, harness: harness, err: err} })
+}
+
+type ideOpenedMsg struct {
+	name string
+	err  error
+}
+
+func (v view) openIDE(item *Item) (tea.Model, tea.Cmd) {
+	if v.acts.OpenIDE == nil {
+		v.errMsg = "opening an IDE is not available here"
+		return v, nil
+	}
+	name, entry, open := entryName(item.Entry), item.Entry, v.acts.OpenIDE
+	v.busy = "opening " + name + " in VS Code…"
+	return v, func() tea.Msg { return ideOpenedMsg{name: name, err: open(entry)} }
 }
 
 // open starts opening the project's folder in Obsidian in the background.
@@ -618,7 +643,7 @@ func (v view) entryKeys(e registry.Entry) string {
 	if e.Error != "" {
 		return "R refresh"
 	}
-	return "o Obsidian · c " + harnessLabel(v.harness()) + " · n new thread"
+	return "o Obsidian · c " + harnessLabel(v.harness()) + " · i VS Code · n new thread"
 }
 
 // boardHints lists the keys for the entry under the cursor.
