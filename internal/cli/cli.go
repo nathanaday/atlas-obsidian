@@ -18,6 +18,7 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/actions"
 	"github.com/nathanaday/atlas-obsidian/internal/capture"
 	"github.com/nathanaday/atlas-obsidian/internal/claudecode"
+	"github.com/nathanaday/atlas-obsidian/internal/codex"
 	"github.com/nathanaday/atlas-obsidian/internal/console"
 	"github.com/nathanaday/atlas-obsidian/internal/describe"
 	"github.com/nathanaday/atlas-obsidian/internal/gitx"
@@ -47,7 +48,7 @@ Usage:
   atlas-obsidian [--home DIR] [-y] <command> [options]
 
 Getting started:
-  setup                     install the Claude Code plugin
+  setup                     install the plugin; --agent claude (default) or codex
   init [PATH]               make the current folder (or PATH) a project: an atlas/<name>/ folder
                             inside your work, with its wiki and its threads
                             --name N, --description TEXT, --mode generic|lyt;
@@ -61,6 +62,7 @@ Projects (PROJECT is a name, a path, or nothing for the project you are in):
   forget PROJECT            drop a project from the atlas; its atlas/<name>/ folder stays
   open-vault [PROJECT]      open the project's folder in Obsidian
   open-claude NAME          start Claude Code in the work; --thread ID continues a thread
+  open-codex NAME           start Codex in the work; --thread ID continues a thread
 
 Threads (ID is a thread's id or title):
   threads [PROJECT]         list open threads by stage; --all adds the closed ones, --stage S, --json
@@ -172,6 +174,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.openVault(rest[1:])
 	case "open-claude":
 		code, err = e.openClaude(rest[1:])
+	case "open-codex":
+		code, err = e.openAgent(rest[1:], "codex")
 	case "ingest":
 		code, err = e.ingest(rest[1:])
 	case "list":
@@ -482,11 +486,15 @@ func (e *env) vaultArg(arg string) (*project.Project, error) {
 func (e *env) setup(args []string) (int, error) {
 	fs := newFlags("setup", e.stderr)
 	source := fs.String("plugin-source", "", "install the plugin from this marketplace source, e.g. a local checkout")
-	noPlugin := fs.Bool("no-plugin", false, "do not run `claude plugin`")
+	noPlugin := fs.Bool("no-plugin", false, "do not install an agent plugin")
+	agent := fs.String("agent", "claude", "plugin host: claude or codex")
 	if err := fs.Parse(args); err != nil {
 		return 2, nil
 	}
-	opts := wizard.Options{Version: Version, PluginSource: *source, WithPlugin: !*noPlugin}
+	if *agent != "claude" && *agent != "codex" {
+		return 2, fmt.Errorf("unknown agent %q; choose claude or codex", *agent)
+	}
+	opts := wizard.Options{Version: Version, PluginSource: *source, WithPlugin: !*noPlugin, Agent: *agent}
 	return wizard.Run(e.home, e.console, opts)
 }
 
@@ -1160,14 +1168,18 @@ func skillHint() string { return "skills: " + hooks.Skills }
 const trustNote = "The first time in a folder, Claude Code asks whether you trust it; choose Yes."
 
 func (e *env) openClaude(args []string) (int, error) {
-	fs := newFlags("open-claude", e.stderr)
+	return e.openAgent(args, "claude")
+}
+
+func (e *env) openAgent(args []string, agent string) (int, error) {
+	fs := newFlags("open-"+agent, e.stderr)
 	threadID := fs.String("thread", "", "continue this thread: start with the skill for its next stage as the first message")
 	positional, err := parse(fs, args)
 	if err != nil {
 		return 2, nil
 	}
 	if len(positional) != 1 {
-		return 2, errors.New("usage: atlas-obsidian open-claude NAME [--thread ID]")
+		return 2, fmt.Errorf("usage: atlas-obsidian open-%s NAME [--thread ID]", agent)
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -1178,7 +1190,7 @@ func (e *env) openClaude(args []string) (int, error) {
 		return 1, err
 	}
 	if !e.console.Interactive() {
-		return 2, errors.New("open-claude starts an interactive Claude Code session and needs a terminal")
+		return 2, fmt.Errorf("open-%s starts an interactive session and needs a terminal", agent)
 	}
 	prompt := ""
 	if *threadID != "" {
@@ -1200,13 +1212,22 @@ func (e *env) openClaude(args []string) (int, error) {
 		prompt = claudecode.ThreadPrompt(t.Stage, t.ID)
 		e.console.Say("  thread: %s (%s)", t.Title, t.Stage)
 	}
-	cmd, err := claudecode.LaunchCommand(cfg.ClaudeCode, entry.Path, prompt)
+	launch := cfg.ClaudeCode
+	if agent == "codex" {
+		launch = home.LaunchConfig{Command: "codex", SessionContext: true}
+		prompt = strings.Replace(prompt, "/atlas-obsidian:", "$", 1)
+	}
+	cmd, err := claudecode.LaunchCommand(launch, entry.Path, prompt)
 	if err != nil {
 		return 1, err
 	}
 	e.console.Say("  %s", home.Display(cmd.Dir))
-	e.console.Say("  %s", skillHint())
-	e.console.Say("  %s", trustNote)
+	if agent == "codex" {
+		e.console.Say("  Use $wiki to orient; review and trust Atlas hooks in /hooks before relying on them.")
+	} else {
+		e.console.Say("  %s", skillHint())
+		e.console.Say("  %s", trustNote)
+	}
 	e.console.Say("")
 	if err := cmd.Run(); err != nil {
 		var exit *exec.ExitError
@@ -1814,12 +1835,19 @@ func (e *env) mcp(args []string) (int, error) {
 		dir = cwd()
 	}
 	err := mcpserver.Run(context.Background(), mcpserver.Options{
-		Version: Version, PluginRoot: os.Getenv("CLAUDE_PLUGIN_ROOT"), ProjectDir: dir,
+		Version: Version, PluginRoot: pluginRoot(), ProjectDir: dir,
 	})
 	if err != nil {
 		return 1, err
 	}
 	return 0, nil
+}
+
+func pluginRoot() string {
+	if root := os.Getenv("PLUGIN_ROOT"); root != "" {
+		return root
+	}
+	return os.Getenv("CLAUDE_PLUGIN_ROOT")
 }
 
 func (e *env) hook(args []string) (int, error) {
@@ -1930,6 +1958,14 @@ func (e *env) info(args []string) (int, error) {
 }
 
 func (e *env) doctor(args []string) (int, error) {
+	fs := newFlags("doctor", e.stderr)
+	agent := fs.String("agent", "claude", "plugin host: claude or codex")
+	if err := fs.Parse(args); err != nil {
+		return 2, nil
+	}
+	if fs.NArg() != 0 || (*agent != "claude" && *agent != "codex") {
+		return 2, errors.New("usage: atlas-obsidian doctor [--agent claude|codex]")
+	}
 	c := e.console
 	line := func(label, value string) { c.Say("  %-16s %s", label, value) }
 	line("home", home.Display(e.home.Root)+"  "+ternary(e.home.Exists(), "ok", "missing"))
@@ -1948,20 +1984,42 @@ func (e *env) doctor(args []string) (int, error) {
 		ok = false
 		line("git", "missing; every wiki operation needs it")
 	}
-	if claudecode.CLI() == "" {
-		line("Claude Code", "`claude` is not on PATH")
-	} else {
-		line("Claude Code", "on PATH")
-	}
-	if inst, _ := claudecode.InstalledPlugin(cfg.Plugin.ID); inst != nil {
-		note := ""
-		if inst.Version != "" && Version != "dev" && inst.Version != Version {
-			note = fmt.Sprintf("  (binary is %s; keep them in step)", Version)
+	if *agent == "codex" {
+		inst, err := codex.InstalledPlugin(cfg.Plugin.ID)
+		switch {
+		case err != nil:
+			ok = false
+			line("Codex plugin", err.Error())
+		case inst == nil:
+			ok = false
+			line("Codex plugin", "not installed; run `atlas-obsidian setup --agent codex`")
+		case !inst.Enabled:
+			ok = false
+			line("Codex plugin", "disabled; enable it in /plugins")
+		default:
+			note := ""
+			if inst.Version != "" && Version != "dev" && inst.Version != Version {
+				note = fmt.Sprintf(" (binary is %s; keep them in step)", Version)
+			}
+			line("Codex plugin", cfg.Plugin.ID+" v"+inst.Version+note)
+			line("hooks", "review trust in Codex /hooks")
 		}
-		line("plugin", fmt.Sprintf("v%s at %s%s", inst.Version, home.Display(inst.InstallPath), note))
 	} else {
-		ok = false
-		line("plugin", cfg.Plugin.ID+" is not installed; run `atlas-obsidian setup`")
+		if claudecode.CLI() == "" {
+			line("Claude Code", "`claude` is not on PATH")
+		} else {
+			line("Claude Code", "on PATH")
+		}
+		if inst, _ := claudecode.InstalledPlugin(cfg.Plugin.ID); inst != nil {
+			note := ""
+			if inst.Version != "" && Version != "dev" && inst.Version != Version {
+				note = fmt.Sprintf("  (binary is %s; keep them in step)", Version)
+			}
+			line("plugin", fmt.Sprintf("v%s at %s%s", inst.Version, home.Display(inst.InstallPath), note))
+		} else {
+			ok = false
+			line("plugin", cfg.Plugin.ID+" is not installed; run `atlas-obsidian setup`")
+		}
 	}
 	ix, err := registry.Scan(cfg)
 	if err != nil {

@@ -254,7 +254,7 @@ func (s *Server) settingsTool(ctx context.Context, req *mcp.CallToolRequest, a S
 
 type StageArgs struct {
 	Paths    []string `json:"paths,omitempty" jsonschema:"files or folders outside the project; omit to stage what is new in the folders it staged from before"`
-	Snapshot bool     `json:"snapshot,omitempty" jsonschema:"write a snapshot of the work into the inbox (its CLAUDE.md, README, file list, docs headings, and the log since the page describing it was written) for the describe skill; not with paths"`
+	Snapshot bool     `json:"snapshot,omitempty" jsonschema:"write a snapshot of the work into the inbox (its AGENTS.md, CLAUDE.md, README, file list, docs headings, and the log since the page describing it was written) for the describe skill; not with paths"`
 	DryRun   bool     `json:"dry_run,omitempty" jsonschema:"plan only: say what would be copied and copy nothing"`
 }
 

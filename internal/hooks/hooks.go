@@ -1,8 +1,9 @@
-// Package hooks implements the plugin's Claude Code hooks: bounded session context, the
+// Package hooks implements the plugin's shared agent hooks: bounded session context, the
 // write guard, and the stop-time recovery warning. Each reads the hook's JSON on stdin.
 package hooks
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,8 +27,8 @@ import (
 // MaxContextBytes bounds the hot cache text a session start may inject.
 const MaxContextBytes = 8 * 1024
 
-// Skills is the slash-menu line shown at the start of a session.
-const Skills = "/atlas-obsidian:wiki  wiki-ingest  wiki-query  wiki-lint  wiki-mode  wiki-fold  save  describe  work  thread  thread-stub  thread-spec  thread-plan  thread-run  thread-receipt  canvas  obsidian-markdown  obsidian-bases  think  atlas  atlas-project"
+// Skills names the workflows without assuming a host's invocation syntax.
+const Skills = "wiki  wiki-ingest  wiki-query  wiki-lint  wiki-mode  wiki-fold  save  describe  work  thread  thread-stub  thread-spec  thread-plan  thread-run  thread-receipt  canvas  obsidian-markdown  obsidian-bases  think  atlas  atlas-project"
 
 // MaxThreadLines bounds how many open threads the session start lists.
 const MaxThreadLines = 8
@@ -288,21 +289,60 @@ func hotText(p *project.Project) string {
 // write, but a new one comes from the thread tool, which gives it the thread's id.
 func Guard(r io.Reader, w io.Writer) error {
 	in := readInput(r)
+	for _, target := range editPaths(in) {
+		var decision bytes.Buffer
+		if err := guardPath(target, &decision); err != nil {
+			return err
+		}
+		if decision.Len() > 0 {
+			_, err := w.Write(decision.Bytes())
+			return err
+		}
+	}
+	return nil
+}
+
+// editPaths handles Claude file edits and Codex multi-file patches. Both sides
+// of a rename count as writes. Patch body lines have a diff prefix, so they
+// cannot be confused with these unprefixed control lines.
+func editPaths(in input) []string {
 	var ti struct {
 		FilePath     string `json:"file_path"`
 		NotebookPath string `json:"notebook_path"`
+		Command      string `json:"command"`
 	}
 	json.Unmarshal(in.ToolInput, &ti)
-	target := ti.FilePath
-	if target == "" {
-		target = ti.NotebookPath
+	var paths []string
+	if in.ToolName == "apply_patch" {
+		for _, line := range strings.Split(ti.Command, "\n") {
+			for _, prefix := range []string{"*** Add File: ", "*** Update File: ", "*** Delete File: ", "*** Move to: "} {
+				if strings.HasPrefix(line, prefix) {
+					paths = append(paths, strings.TrimSpace(strings.TrimPrefix(line, prefix)))
+				}
+			}
+		}
+	} else {
+		paths = append(paths, ti.FilePath, ti.NotebookPath)
 	}
-	if target == "" {
-		return nil
+	var result []string
+	seen := map[string]bool{}
+	for _, target := range paths {
+		if target == "" {
+			continue
+		}
+		if !filepath.IsAbs(target) && in.Cwd != "" {
+			target = filepath.Join(in.Cwd, target)
+		}
+		target = filepath.Clean(target)
+		if !seen[target] {
+			result = append(result, target)
+			seen[target] = true
+		}
 	}
-	if !filepath.IsAbs(target) && in.Cwd != "" {
-		target = filepath.Join(in.Cwd, target)
-	}
+	return result
+}
+
+func guardPath(target string, w io.Writer) error {
 	work := project.FindAbove(filepath.Dir(target))
 	if work == "" {
 		return nil
@@ -352,17 +392,15 @@ func exists(path string) bool {
 // that owns it becomes updated today, so nobody has to say so.
 func Touched(r io.Reader, now time.Time) error {
 	in := readInput(r)
-	var ti struct {
-		FilePath string `json:"file_path"`
+	for _, target := range editPaths(in) {
+		if err := touchPath(target, now); err != nil {
+			return err
+		}
 	}
-	json.Unmarshal(in.ToolInput, &ti)
-	target := ti.FilePath
-	if target == "" {
-		return nil
-	}
-	if !filepath.IsAbs(target) && in.Cwd != "" {
-		target = filepath.Join(in.Cwd, target)
-	}
+	return nil
+}
+
+func touchPath(target string, now time.Time) error {
 	work := project.FindAbove(filepath.Dir(target))
 	if work == "" {
 		return nil

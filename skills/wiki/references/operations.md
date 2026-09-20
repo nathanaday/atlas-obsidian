@@ -9,7 +9,8 @@ one `apply`, one git commit. Parallel workers read and draft; only the
 orchestrator plans and applies.
 
 The tools are on the atlas MCP server, named
-`mcp__plugin_atlas-obsidian_atlas__<tool>`. Every tool acts on this session's
+`mcp__plugin_atlas-obsidian_atlas__<tool>` in Claude Code. In Codex, discover
+the atlas MCP tools by their short names; the host chooses the prefix. Every tool acts on this session's
 project and its one wiki. None takes a vault argument.
 
 | Tool | Use |

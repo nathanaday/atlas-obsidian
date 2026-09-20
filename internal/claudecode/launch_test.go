@@ -46,3 +46,25 @@ func TestLaunchCommandWithoutClaude(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestLaunchCodex(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	cmd, err := LaunchCommand(LaunchConfig{Command: "codex", SessionContext: true}, "/work", "$thread-run thr-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd.Dir != "/work" || len(cmd.Args) != 2 || cmd.Args[1] != "$thread-run thr-123" {
+		t.Fatalf("command=%+v", cmd)
+	}
+	if !strings.Contains(strings.Join(cmd.Env, "\n"), "ATLAS_OBSIDIAN_PROJECT=/work") {
+		t.Fatal("missing explicit project selection")
+	}
+	t.Setenv("PATH", t.TempDir())
+	if _, err := LaunchCommand(LaunchConfig{Command: "codex"}, "/work", ""); err == nil || !strings.Contains(err.Error(), "codex") {
+		t.Fatalf("missing Codex: %v", err)
+	}
+}

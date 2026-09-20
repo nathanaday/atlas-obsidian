@@ -9,7 +9,7 @@ for candidate in \
   "$HOME/go/bin/atlas-obsidian" \
   "/opt/homebrew/bin/atlas-obsidian" \
   "/usr/local/bin/atlas-obsidian" \
-  "${CLAUDE_PLUGIN_DATA:-/nonexistent}/bin/atlas-obsidian"
+  "${PLUGIN_DATA:-${CLAUDE_PLUGIN_DATA:-/nonexistent}}/bin/atlas-obsidian"
 do
   if [ -n "$candidate" ] && [ -x "$candidate" ]; then
     exec "$candidate" "$@"

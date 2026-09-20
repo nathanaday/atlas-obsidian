@@ -41,7 +41,7 @@ session: inside a project, or in a folder the atlas does not know.
 ## What stays in the terminal
 
 `atlas-obsidian doctor` (the installation check), `recover`, `setup`,
-`open-vault`, and `open-claude` are commands, not tools. Name the command; do
+`open-vault`, `open-claude`, and `open-codex` are commands, not tools. Name the command; do
 not run it through Bash unless the user asks.
 
 Every write here is reversible or leaves the folder alone, so no plan preview

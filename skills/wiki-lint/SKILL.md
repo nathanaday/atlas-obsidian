@@ -55,5 +55,5 @@ Never fix findings unasked. When the user picks findings to repair:
 4. Show the preview, then apply after the user agrees.
 5. Run `lint` again and compare the relevant findings.
 
-The `wiki-lint` agent can run and interpret the report on your behalf; it never
-repairs.
+In Claude Code, the optional `wiki-lint` agent can run and interpret the report
+on your behalf; it never repairs. In Codex, run this skill directly.

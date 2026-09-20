@@ -79,10 +79,10 @@ Pasted text has no file: quote it in the page and mark its authority
    URL in prose as a markdown link; keep code spans for identifiers.
 7. Prefer updating an existing page over creating a near duplicate.
 
-Parallel workers (the `wiki-ingest` agent) may read and return draft packets
+Optional parallel workers (the `wiki-ingest` agent in Claude Code) may read and return draft packets
 with proposed paths and content. Give each worker the project's folder and the
 captured source's path. Workers never plan or apply; you merge their drafts and
-apply once.
+apply once. If the host has no named worker, perform those steps inline.
 
 ## Follow provenance
 

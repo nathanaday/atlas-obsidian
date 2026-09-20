@@ -2,6 +2,7 @@ package claudecode
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 
@@ -58,6 +59,9 @@ func LaunchIn(cfg LaunchConfig, place, dir, prompt string) (*exec.Cmd, error) {
 	}
 	path, err := exec.LookPath(command)
 	if err != nil {
+		if command != "claude" {
+			return nil, fmt.Errorf("the %q command is not on PATH", command)
+		}
 		return nil, ErrNoClaude
 	}
 	args := append([]string{}, cfg.Args...)
@@ -74,6 +78,6 @@ func LaunchIn(cfg LaunchConfig, place, dir, prompt string) (*exec.Cmd, error) {
 	if cfg.SessionContext {
 		context = "1"
 	}
-	cmd.Env = append(os.Environ(), EnvVault+"="+place, EnvSessionContext+"="+context)
+	cmd.Env = append(os.Environ(), "ATLAS_OBSIDIAN_PROJECT="+place, EnvVault+"="+place, EnvSessionContext+"="+context)
 	return cmd, nil
 }

@@ -26,7 +26,7 @@ plan of a few lines and go on.
   in the code, the interface, or the look and feel, take it, and record the
   change under Progress. When the intent itself should change, stop and ask.
 - **Slices and commits.** Work in the slices the plan names. Commit each
-  one when it works, the way the work's CLAUDE.md says. `atlas/<name>/` is
+  one when it works, the way the work's AGENTS.md or CLAUDE.md says. `atlas/<name>/` is
   tracked like any other folder, so a commit may carry the plan's progress
   with the code. Use a branch when the repository's habits call for one.
 - **Tests.** Behavior that can break gets a test, written with the code or

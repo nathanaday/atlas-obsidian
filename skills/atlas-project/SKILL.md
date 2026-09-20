@@ -24,7 +24,7 @@ Ask one question at a time. Offer the default; accept a yes.
 2. **Name.** Default: the folder's name.
 3. **Description.** One to three sentences saying what the work is and what
    its wiki should remember. `wiki-ingest` and `wiki-query` read it to judge
-   what belongs. Draft it from the folder's README or CLAUDE.md when there is
+   what belongs. Draft it from the folder's README, AGENTS.md, or CLAUDE.md when there is
    one, and read it back.
 4. **Mode.** `generic` files a new page by type, which suits most work;
    `lyt` keeps atomic notes in `wiki/notes/` and navigates them through Maps

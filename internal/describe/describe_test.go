@@ -140,6 +140,22 @@ func TestTakeSnapshotOverARepository(t *testing.T) {
 	}
 }
 
+func TestSnapshotIncludesCodexInstructions(t *testing.T) {
+	code, _ := repoWork(t)
+	if err := os.WriteFile(filepath.Join(code, "AGENTS.md"), []byte("# Codex guidance\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := TakeSnapshot(registry.Entry{ID: "p-1", Name: "code", Path: code}, "", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"## AGENTS.md", "# Codex guidance", "## CLAUDE.md", "## README.md"} {
+		if !strings.Contains(string(s.Content), want) {
+			t.Errorf("snapshot missing %q", want)
+		}
+	}
+}
+
 func TestTakeSnapshotOverAPlainFolder(t *testing.T) {
 	docs := filepath.Join(t.TempDir(), "thesis")
 	os.MkdirAll(filepath.Join(docs, "atlas", "thesis"), 0o755)

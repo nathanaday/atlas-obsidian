@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,89 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/threads"
 )
+
+func patchInput(t *testing.T, cwd, patch string) *bytes.Reader {
+	t.Helper()
+	data, err := json.Marshal(map[string]any{
+		"cwd": cwd, "tool_name": "apply_patch",
+		"tool_input": map[string]string{"command": "*** Begin Patch\n" + patch + "\n*** End Patch"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bytes.NewReader(data)
+}
+
+func TestCodexPatchGuard(t *testing.T) {
+	_, work := atlas(t, time.Now())
+	for _, tc := range []struct {
+		name, patch string
+		deny        bool
+	}{
+		{"code", "*** Update File: src/main.go\n@@\n-old\n+new", false},
+		{"add", "*** Add File: atlas/code/wiki/new.md\n+new", true},
+		{"delete", "*** Delete File: atlas/code/wiki/hot.md", true},
+		{"mixed", "*** Update File: src/main.go\n@@\n-old\n+new\n*** Update File: atlas/code/wiki/hot.md\n@@\n-old\n+new", true},
+		{"move in", "*** Update File: src/main.go\n*** Move to: atlas/code/wiki/new.md\n@@\n-old\n+new", true},
+		{"move out", "*** Update File: atlas/code/wiki/hot.md\n*** Move to: elsewhere.md\n@@\n-old\n+new", true},
+		{"identity", "*** Update File: atlas/code/project.json", true},
+		{"board", "*** Update File: atlas/code/threads/threads.md", true},
+		{"new stage", "*** Add File: atlas/code/threads/specs/new.md\n+new", true},
+		{"raw", "*** Delete File: atlas/code/.raw/captured/source.md", true},
+		{"multiple protected", "*** Delete File: atlas/code/wiki/hot.md\n*** Delete File: atlas/code/wiki/index.md", true},
+		{"absolute", "*** Delete File: " + filepath.Join(work, "atlas/code/wiki/hot.md"), true},
+		{"body is data", "*** Add File: src/example.txt\n+*** Delete File: atlas/code/wiki/hot.md", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			if err := Guard(patchInput(t, work, tc.patch), &out); err != nil {
+				t.Fatal(err)
+			}
+			if tc.deny {
+				if !json.Valid(out.Bytes()) || !strings.Contains(out.String(), `"permissionDecision":"deny"`) {
+					t.Fatalf("expected one denial object, got %s", out.String())
+				}
+			} else if out.Len() != 0 {
+				t.Fatalf("unexpected denial: %s", out.String())
+			}
+		})
+	}
+}
+
+func TestCodexPatchTouchesEveryThread(t *testing.T) {
+	day := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
+	_, work := atlas(t, day)
+	p, err := project.Open(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var patch string
+	var ids []string
+	for _, title := range []string{"First", "Second"} {
+		th, err := threads.Start(p, threads.New{Title: title}, day)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, th.ID)
+		patch += "*** Update File: " + p.Path(th.Docs[0].Path) + "\n@@\n-old\n+new\n"
+	}
+	var out bytes.Buffer
+	if err := Guard(patchInput(t, work, patch), &out); err != nil || out.Len() != 0 {
+		t.Fatalf("existing stage prose must be editable: %v %s", err, out.String())
+	}
+	if err := Touched(patchInput(t, work, patch), day.AddDate(0, 0, 3)); err != nil {
+		t.Fatal(err)
+	}
+	board, err := threads.Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		if got := board.Find(id).Updated; got != "2026-09-20" {
+			t.Errorf("%s updated %s", id, got)
+		}
+	}
+}
 
 // env answers ATLAS_OBSIDIAN_HOME with a temp path that does not exist, so a test that names
 // no home reads no atlas at all instead of the developer's ~/.atlas-obsidian.

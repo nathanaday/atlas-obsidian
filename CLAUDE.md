@@ -1,8 +1,8 @@
 # atlas-obsidian
 
-A Go binary and a Claude Code plugin. The binary makes a folder of work a
+A Go binary and a plugin for Claude Code and Codex. The binary makes a folder of work a
 project, which holds a wiki and the threads of the work in one folder, and
-serves the MCP tools Claude uses in it; the plugin carries the skills and
+serves the MCP tools either agent uses in it; the plugin carries the skills and
 hooks. The atlas side lists every project and shows them in a terminal view.
 
 Read `README.md` first. This file holds what the code and README do not say.
@@ -267,6 +267,17 @@ claude-atlas or claude-obsidian name any more, and the schemas restarted at
 - Prose follows the user's global writing guide.
 
 ## Claude Code plugin facts, verified on 2.1.270
+
+Codex uses `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json`.
+Both hosts share `.mcp.json`, `skills/`, and `hooks/hooks.json`; Codex supplies
+`CLAUDE_PLUGIN_ROOT` for compatibility. Its `apply_patch` hook input contains
+patch text in `tool_input.command`. The guard checks all patch paths and both
+sides of moves. Codex users must review and trust hooks in `/hooks`, then
+restart the session. Setup selects the host with `--agent claude|codex`.
+Keep both plugin manifests and the Claude marketplace version in step.
+`open-codex NAME [--thread ID]` launches Codex in a registered project's work
+folder; `doctor --agent codex` checks its plugin via the Codex CLI. The terminal
+view's `c` shortcut and its automatic launch offers remain Claude-specific.
 
 - A plugin's `.mcp.json` may run `${CLAUDE_PLUGIN_ROOT}/...`. The server starts
   in the project directory with `CLAUDE_PROJECT_DIR` and `CLAUDE_PLUGIN_ROOT`

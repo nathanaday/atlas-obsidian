@@ -16,7 +16,7 @@ most of the work is reading, and the user answers only what reading cannot.
 
 1. Call `threads` with the `id`. Read the stub.
 2. Find the answers yourself: the code the thread touches, its tests, the
-   CLAUDE.md of the work, recent commits, and the wiki (the page that
+   AGENTS.md and CLAUDE.md of the work, recent commits, and the wiki (the page that
    describes the work, `wiki/hot.md`, a Grep for the subject). A question the
    code answers is not a question for the user.
 3. Decide what you can decide. Where one option is right, take it and give

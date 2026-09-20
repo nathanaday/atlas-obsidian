@@ -14,6 +14,7 @@ one tool from a Claude Code session, so scripts, muscle memory, and the
 | Enter on a project | `show NAME` | `atlas`, `status` |
 | `o` open the project's folder in Obsidian | `open-vault NAME` | — |
 | `c` start Claude Code in the work | `open-claude NAME [--thread ID]` | — |
+| — | `open-codex NAME [--thread ID]` | — |
 | `n` open a new thread | `thread PROJECT new TEXT` | `thread` |
 | `R` refresh | `refresh` | `atlas` with `refresh` |
 | `←` `→` switch tabs; `h` shows every key; `q` quits | — | — |
@@ -458,16 +459,22 @@ filing mode expects.
 
 ```bash
 atlas-obsidian setup
+atlas-obsidian setup --agent codex
 atlas-obsidian setup --plugin-source ~/projects/software/atlas-obsidian   # install the plugin from a checkout
 atlas-obsidian setup --no-plugin
 atlas-obsidian doctor
+atlas-obsidian doctor --agent codex
 atlas-obsidian info
 atlas-obsidian version
 ```
 
 Setup shows its plan and asks before it acts: the atlas home and the plugin in
-Claude Code. It creates no project; `atlas-obsidian init` in your work does that.
-`doctor` checks git, Claude Code, the plugin's version against the binary's, and
+the selected host (Claude Code by default, or Codex with `--agent codex`).
+It creates no project; `atlas-obsidian init` in your work does that. For local
+development, combine `--agent codex` with `--plugin-source /path/to/checkout`.
+Start a new Codex session after installation, review the plugin hooks in
+`/hooks`, trust them, and restart so the session-start hook can run.
+`doctor` checks git, the selected agent's plugin (Claude Code by default), its version against the binary's, and
 every project the config lists, naming the ones whose folder is gone or whose
 wiki needs recovery.
 

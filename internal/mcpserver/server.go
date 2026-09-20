@@ -36,7 +36,7 @@ const Name = "atlas"
 type Options struct {
 	// Version of the binary.
 	Version string
-	// PluginRoot is ${CLAUDE_PLUGIN_ROOT}; used to read the plugin's version.
+	// PluginRoot is the host's plugin root; used to read the plugin's version.
 	PluginRoot string
 	// ProjectDir is where the session started; the place is found by walking up from it.
 	ProjectDir string

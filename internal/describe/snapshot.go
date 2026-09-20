@@ -94,7 +94,7 @@ func TakeSnapshot(e registry.Entry, since string, now time.Time) (*Snapshot, err
 	if e.Description != "" {
 		fmt.Fprintf(&b, "\nThe project describes itself as: %s\n", e.Description)
 	}
-	for _, name := range []string{"CLAUDE.md", readmeName(files)} {
+	for _, name := range []string{"AGENTS.md", "CLAUDE.md", readmeName(files)} {
 		if name == "" {
 			continue
 		}

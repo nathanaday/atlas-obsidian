@@ -8,7 +8,7 @@ description: "Plan a thread: read its spec, explore the code as in plan mode, an
 Read [threads.md](../wiki/references/threads.md). Tools: `threads`, `thread`.
 
 The plan is what you find when you look at the code with the spec in hand:
-the same thinking as Claude Code's plan mode, kept as a document. It is not
+the same thinking as an agent's plan mode, kept as a document. It is not
 a script for someone else to follow line by line, and nobody reviews it but
 the user.
 

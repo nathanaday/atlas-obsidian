@@ -22,9 +22,17 @@ The folder is an Obsidian vault the user opens, and `project.json` says what it
 is. The wiki commits into the repository that holds the work, scoped to the
 wiki's own paths, so an operation never touches the code.
 
-The atlas MCP server (tools named `mcp__plugin_atlas-obsidian_atlas__<tool>`,
-called `status`, `plan`, `apply`, and so on below) is the only write path
-into the wiki.
+The atlas MCP server is the only write path into the wiki. Tool prefixes vary
+by host; discover the installed atlas server's tools and use the short names
+`status`, `plan`, `apply`, and so on below. Claude Code uses
+`mcp__plugin_atlas-obsidian_atlas__<tool>`; do not assume that prefix in Codex.
+
+These skills work in Claude Code and Codex. Invoke `/atlas-obsidian:wiki` in
+Claude Code or select `wiki` from Codex's `$` skill picker. References to Read,
+Grep, Glob, and Edit mean the host's equivalent file-reading, searching, and
+editing tools (for example, shell reads and `apply_patch` in Codex). Read the
+work's AGENTS.md and CLAUDE.md when present. Named workers under `agents/` are
+optional Claude helpers; perform the same workflow inline in other hosts.
 
 ## Find the place
 
@@ -43,7 +51,8 @@ interrupted, tell the user to run `atlas-obsidian recover` before anything else.
 
 ## Never write wiki pages directly
 
-Write, Edit, MultiEdit, and NotebookEdit are refused under `wiki/` by a hook.
+Write, Edit, MultiEdit, NotebookEdit, and Codex `apply_patch` are refused under
+`wiki/` by an enabled, trusted hook. Never bypass it with shell writes.
 Read pages with Read, Grep, and Glob as usual; change them only through `plan`
 and `apply`. The core writes `wiki/log.md` and the source ledger itself; a plan
 that names either is rejected.

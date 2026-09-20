@@ -22,6 +22,56 @@ type harness struct {
 	err  bytes.Buffer
 }
 
+func TestSetupRejectsUnknownAgent(t *testing.T) {
+	h := &harness{t: t, home: filepath.Join(t.TempDir(), "atlas")}
+	if code := h.run("setup", "--agent", "unknown"); code != 2 {
+		t.Fatalf("exit=%d: %s", code, h.err.String())
+	}
+	if _, err := os.Stat(h.home); !os.IsNotExist(err) {
+		t.Fatal("invalid host changed the home")
+	}
+}
+
+func TestCodexDoctorAndLaunch(t *testing.T) {
+	h := setup(t)
+	bin := t.TempDir()
+	log := filepath.Join(bin, "launch")
+	t.Setenv("ATLAS_TEST_LAUNCH", log)
+	script := "#!/bin/sh\nif [ \"$1\" = plugin ]; then\n" +
+		"printf '%s' '{\"installed\":[{\"pluginId\":\"" + home.DefaultPluginID + "\",\"enabled\":true,\"version\":\"5.2.0\"}]}'\n" +
+		"else\nprintf '%s\\n' \"$PWD\" \"$ATLAS_OBSIDIAN_PROJECT\" \"$*\" > \"$ATLAS_TEST_LAUNCH\"\nfi\n"
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if code := h.run("doctor", "--agent", "codex"); code != 0 || !strings.Contains(h.out.String(), "Codex plugin") {
+		t.Fatalf("doctor=%d: %s %s", code, h.out.String(), h.err.String())
+	}
+	work := filepath.Join(t.TempDir(), "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if code := h.run("init", work); code != 0 {
+		t.Fatalf("init=%d: %s", code, h.err.String())
+	}
+	if code := h.run("thread", "work", "new", "Fix it"); code != 0 {
+		t.Fatalf("thread=%d: %s", code, h.err.String())
+	}
+	var out, stderr bytes.Buffer
+	c := console.NewWith(true, strings.NewReader(""), &out, true)
+	code := run([]string{"--home", h.home, "open-codex", "work", "--thread", "Fix it"}, strings.NewReader(""), &out, &stderr, c)
+	if code != 0 {
+		t.Fatalf("open-codex=%d: %s %s", code, out.String(), stderr.String())
+	}
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), work+"\n"+work+"\n$thread-spec thr-") {
+		t.Fatalf("wrong launch folder, selection or prompt: %s", data)
+	}
+}
+
 func (h *harness) run(args ...string) int {
 	h.out.Reset()
 	h.err.Reset()
