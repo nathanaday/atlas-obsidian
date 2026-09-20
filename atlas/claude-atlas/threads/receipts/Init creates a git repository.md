@@ -8,7 +8,7 @@ created: 2026-09-17
 
 > [!receipt] Init creates a git repository · completed
 > [Stub](<../stubs/Init creates a git repository.md>) → Spec → Plan → **Receipt**
-> `thr-20260917-635f` · [Thread](<../threads/archive/Init creates a git repository.md>) · filed 2026-09-17
+> `thr-20260917-635f` · [Thread](<../archive/Init creates a git repository.md>) · filed 2026-09-17
 
 `init` now makes a work folder a git repository when it is in none.
 

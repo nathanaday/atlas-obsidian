@@ -8,7 +8,7 @@ created: 2026-09-17
 
 > [!receipt] Fix list errors · completed
 > [Stub](<../stubs/Fix list errors.md>) → Spec → Plan → **Receipt**
-> `thr-20260917-6214` · [Thread](<../threads/archive/Fix list errors.md>) · filed 2026-09-17
+> `thr-20260917-6214` · [Thread](<../archive/Fix list errors.md>) · filed 2026-09-17
 
 All three problems are fixed.
 

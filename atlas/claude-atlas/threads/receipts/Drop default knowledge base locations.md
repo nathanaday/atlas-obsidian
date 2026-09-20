@@ -8,7 +8,7 @@ created: 2026-09-17
 
 > [!receipt] Drop default knowledge base locations · completed
 > [Stub](<../stubs/Drop default knowledge base locations.md>) → Spec → Plan → **Receipt**
-> `thr-20260917-5e5a` · [Thread](<../threads/archive/Drop default knowledge base locations.md>) · filed 2026-09-17
+> `thr-20260917-5e5a` · [Thread](<../archive/Drop default knowledge base locations.md>) · filed 2026-09-17
 
 The atlas has no default location, and it never searches the disk. The config lists every knowledge base under `knowledge`, as it lists every project under `projects`.
 

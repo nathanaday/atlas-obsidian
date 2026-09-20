@@ -7,7 +7,7 @@ created: 2026-09-17
 
 > [!stub] Replace tasks with threads
 > **Stub** → [Spec](<../specs/Replace tasks with threads.md>) → [Plan](<../plans/Replace tasks with threads.md>) → Receipt
-> `thr-20260917-5ac2` · [Thread](<../threads/Replace tasks with threads.md>) · filed 2026-09-17
+> `thr-20260917-5ac2` · [Thread](<../Replace tasks with threads.md>) · filed 2026-09-17
 
 The only real entity in the project state system is the task: ingest tasks, then a simple task list. That is not enough for clear project state tracking.
 

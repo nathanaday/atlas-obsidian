@@ -8,7 +8,7 @@ created: 2026-09-17
 
 > [!receipt] Fix the Next hint after init PATH · completed
 > [Stub](<../stubs/Fix the Next hint after init PATH.md>) → Spec → Plan → **Receipt**
-> `thr-20260917-1a4c` · [Thread](<../threads/archive/Fix the Next hint after init PATH.md>) · filed 2026-09-17
+> `thr-20260917-1a4c` · [Thread](<../archive/Fix the Next hint after init PATH.md>) · filed 2026-09-17
 
 `init` now builds its Next hint from where it ran (`internal/cli/cli.go`, `initProject`).
 

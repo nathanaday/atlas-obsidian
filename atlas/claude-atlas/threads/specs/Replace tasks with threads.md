@@ -7,7 +7,7 @@ created: 2026-09-17
 
 > [!spec] Replace tasks with threads
 > [Stub](<../stubs/Replace tasks with threads.md>) → **Spec** → [Plan](<../plans/Replace tasks with threads.md>) → Receipt
-> `thr-20260917-5ac2` · [Thread](<../threads/Replace tasks with threads.md>) · filed 2026-09-17
+> `thr-20260917-5ac2` · [Thread](<../Replace tasks with threads.md>) · filed 2026-09-17
 
 The design is `docs/threads-design.md`; it is the spec of record for this thread.
 
