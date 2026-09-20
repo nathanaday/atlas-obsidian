@@ -7,115 +7,146 @@ A wiki and the state of the work, in every project.
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-7c3aed.svg)](.claude-plugin/plugin.json)
 [![Version](https://img.shields.io/badge/version-5.1.0-d97745.svg)](.claude-plugin/plugin.json)
 
-## About
+## What it is
 
-Claude Code starts every session knowing nothing. You explain the codebase
-again, decide things you already decided, and the paper you meant to read
-stays in your downloads folder.
+A Claude Code session begins with no memory of the last one. atlas-obsidian
+keeps what a project knows in the project itself, as Markdown files that git
+tracks and Obsidian opens.
 
-atlas-obsidian keeps that knowledge in the project itself, as plain Markdown.
-One folder, `atlas/<name>/`, sits beside your code and holds two things:
+It comes in two pieces that install separately: a Go binary, which makes a
+folder of work into a project and serves the tools Claude uses inside it, and
+a Claude Code plugin, which carries the skills and the hooks.
 
-- **A wiki.** Drop a PDF, a page, or a note in `inbox/`. Claude reads it and
-  writes pages that cite it. Ask those pages later and the answer names its
-  evidence.
-- **Threads.** One thread is one line of work: a bug, a feature, a chore. It
-  moves stub → spec → plan → receipt, and every stage is a document you can
-  open. Nothing tracks a thread's state, because the documents are the state.
+A project is one folder, `atlas/<name>/`, sitting beside your code. It holds
+two things.
 
-Start Claude anywhere inside your repository and the session already knows
-which threads are open and what the wiki says.
+**The wiki** is Markdown pages that cite where they came from. Put a PDF, an
+article, or a note in `inbox/` and Claude reads it, keeps an unmodified copy
+under `.raw/captured/`, and writes pages that cite that copy. Ask the wiki a
+question later and the answer names the page and the source behind it.
 
-The folder is plain files, so your repository tracks it like any other folder
-and Obsidian opens it like any other vault. Nothing is hidden in a database.
+**The threads** are the work in progress. A thread is one bug, feature, or
+chore, and it moves through four documents: a stub in your own words, then a
+spec, a plan, and a receipt. Nothing records which stage a thread is in. The
+furthest document that exists is the stage, so every change of state is a page
+you can open and read.
 
-- **You review every write.** Claude shows a plan, you approve it, the core
-  makes one git commit. `undo` takes it back.
-- **Your edits come first.** What you type in Obsidian is committed before any
-  operation touches the wiki, so undo can never lose it.
-- **The code and the wiki stay separate.** An operation's git commands are
-  scoped to the wiki's own paths and never see your source.
-- **One screen for every project.** Open any of them in Obsidian, or start
-  Claude Code in the work, without leaving it.
+Start Claude anywhere inside the repository and a hook hands the session the
+project's description, the wiki's recent context, which threads are open, and
+what is waiting in the inbox.
 
-## Quickstart
+## Getting started
 
-### Prerequisites
+You need [Claude Code](https://claude.com/claude-code) with `claude` on your
+PATH, git, and Go 1.24 or newer to build the binary. macOS and Linux are
+supported. [Obsidian](https://obsidian.md) is optional — the files are plain
+Markdown and read fine anywhere, but the folder is laid out for it, with a CSS
+snippet that colors each kind of folder.
 
-- [Claude Code](https://claude.com/claude-code), with `claude` on your PATH
-- git
-- Go 1.24 or newer, to build the binary
-- [Obsidian](https://obsidian.md), optional: the files are Markdown and read
-  fine anywhere, but Obsidian is what the folder is laid out for
-
-### Install
+Build and install the binary:
 
 ```bash
 git clone https://github.com/nathanaday/atlas-obsidian.git
 cd atlas-obsidian
-go install ./cmd/atlas-obsidian
+make install
 ```
 
-The binary lands in `$(go env GOPATH)/bin`, usually `~/go/bin`. Add that
-directory to your PATH if it is not there yet.
+That puts `atlas-obsidian` in `$(go env GOPATH)/bin`, usually `~/go/bin`; add
+that directory to your PATH if it is not there already. Use `make install`
+rather than `go install` so the binary carries its version number, which lets
+`atlas-obsidian doctor` tell you when the binary and the plugin have drifted
+apart.
 
-### Setup
+Then install the Claude Code plugin:
 
 ```bash
 atlas-obsidian setup
 ```
 
-This installs the Claude Code plugin. It shows what it will do and asks first.
-Run it again whenever you like; finished steps are skipped.
+Setup prints what it intends to do and waits for you to agree. It creates
+`~/.atlas-obsidian/` and installs the plugin through `claude plugin`. Running
+it again is harmless; anything already done is skipped.
 
-## Usage
-
-Make a repository a project, open a thread, and start work:
+## Making a project
 
 ```bash
 cd ~/code/webapp
 atlas-obsidian init --description "The customer-facing web app."
+```
+
+This writes `atlas/webapp/` beside your code, commits it, and records the
+folder in the atlas config. If the folder is not in a git repository yet, init
+creates one, since the wiki needs a history to commit into. Pass `--no-git` if
+you would rather it did not.
+
+Open a thread and start a session:
+
+```bash
 atlas-obsidian thread webapp new "Filter vehicle false alarms" --priority high
 claude
 ```
 
-`init` writes `atlas/webapp/` beside your code and tells the atlas it exists.
-`thread ... new` writes the thread's card and its stub, in your words. The
+The thread command writes a card and a stub in the words you gave it. The
 Claude session that follows opens with that thread in view.
 
-From there the skills carry it:
+From there you ask Claude for the skill you want:
 
-| Ask Claude | What happens |
+| Ask for | What it does |
 |---|---|
 | `/atlas-obsidian:describe` | writes the wiki page that says what this codebase is |
-| `/atlas-obsidian:thread-spec` | turns the stub into a spec: what will be true when it is done |
+| `/atlas-obsidian:thread-spec` | turns a stub into a spec: what will be true when it is done |
 | `/atlas-obsidian:thread-plan` | reads the code and files the approach |
-| `/atlas-obsidian:thread-run` | does the work and keeps the plan current as it goes |
+| `/atlas-obsidian:thread-run` | does the work, keeping the plan document current as it goes |
 | `/atlas-obsidian:thread-receipt` | closes the thread and offers the wiki what the work taught |
 
-Teach the wiki something:
+To teach the wiki something, drop the source in the inbox and start a session:
 
 ```bash
 cp ~/Downloads/paper.pdf ~/code/webapp/atlas/webapp/inbox/
 claude
 ```
 
-`/atlas-obsidian:wiki-ingest` reads what is waiting and writes pages that cite
-it. `/atlas-obsidian:wiki-query` answers from those pages. A short note in the
-same inbox becomes a thread instead, through `/atlas-obsidian:thread-stub`.
+`/atlas-obsidian:wiki-ingest` reads whatever is waiting and writes pages that
+cite it. `/atlas-obsidian:wiki-query` answers questions from those pages
+without changing anything. A short note dropped in the same inbox becomes a
+thread instead, through `/atlas-obsidian:thread-stub`.
 
-See every project at once:
+Every command and its options: [docs/usage.md](docs/usage.md).
+
+## Seeing every project
 
 ```bash
 atlas-obsidian
 ```
 
-Enter expands an entry, `o` opens it in Obsidian, `c` starts Claude Code in the
-work, `n` opens a new thread, `R` refreshes.
+With no arguments the binary opens a terminal view of every project it knows,
+listed by name, each with its recent activity and what is open. Arrow keys
+move, Enter expands an entry in place, `o` opens it in Obsidian, `c` starts
+Claude Code in the work folder, `n` opens a new thread, `R` re-reads
+everything, and `h` shows the keys.
 
-Every command and option: [docs/usage.md](docs/usage.md).
+## How writes reach the wiki
 
-## Inside a project
+Claude cannot write a wiki page with its ordinary file tools; a hook refuses
+Write and Edit anywhere under `wiki/`. It prepares a plan instead. You see
+which files the plan creates, replaces, or deletes, and approving it makes one
+git commit. `atlas-obsidian undo` takes a commit back by restoring the files it
+touched from its parent, and refuses if you have changed one of those files in
+the meantime.
+
+Anything you typed in Obsidian is committed first, as its own operation, so an
+undo can never reach your own edits. Every git command an operation runs is
+limited to `wiki/`, `.raw/`, `inbox/`, and `project.json`, so an apply or an
+undo never stages your source code.
+
+Some pages belong to the tool rather than to Claude: the wiki's log, the ledger
+of sources, the thread cards, the board that lists them, and the opening
+callout of each thread document. The binary derives all of those from the files
+around them, and Claude is left to write the prose pages.
+
+## What the folder holds
+
+A new project looks like this:
 
 ```
 webapp/                          your repository
@@ -123,31 +154,24 @@ webapp/                          your repository
 └── atlas/
     └── webapp/                  named after the project; a rename moves it
         ├── project.json         name, description, filing mode
-        ├── wiki/                index.md, log.md, hot.md, overview.md,
-        │                        then sources/ entities/ concepts/ canvases/
-        ├── threads/             threads.md is the board; one card per open thread
-        │   ├── stubs/           where a thread begins, in your words
-        │   ├── specs/           what will be true when it is done
-        │   ├── plans/           how the work will go, then its progress
-        │   ├── receipts/        how it ended: completed or killed
-        │   ├── phases/          a goal and an order; threads name their phase
-        │   └── archive/         the cards of closed threads
+        ├── wiki/                index.md, log.md, hot.md, overview.md
+        ├── threads/             stubs/ specs/ plans/ receipts/ phases/ archive/
         ├── inbox/               what you drop in: sources, and notes
-        ├── ideas/               your scratch notes, outside the wiki
-        └── .raw/captured/       unmodified copies of everything ingested
+        ├── ideas/               your scratch notes, which nothing reads
+        └── .obsidian/           vault settings and the CSS snippet
 ```
 
-Open `atlas/webapp/` in Obsidian and both halves are there, each folder in its
-own color.
+The rest arrives as it is used. Opening a thread adds its card directly under
+`threads/`, alongside `threads.md`, the board that lists them all; filing wiki
+pages creates `wiki/sources/`, `wiki/entities/`, and `wiki/concepts/`; and
+ingesting a source creates `.raw/captured/`.
 
-Two filing modes decide where a new wiki page lands. `generic` files by type
-into the folders above. `lyt` keeps atomic notes in `wiki/notes/` and navigates
-them through Maps of Content. Change it with
-`atlas-obsidian edit webapp --mode lyt`.
+Two filing modes decide where a new wiki page lands. `generic`, the default,
+files by type into the folders above. `lyt` keeps atomic notes in `wiki/notes/`
+and navigates them through Maps of Content in `wiki/mocs/`. Switch with
+`atlas-obsidian edit webapp --mode lyt`; existing pages stay where they are.
 
-## The atlas
-
-A project holds its own identity and no path. The paths live in one place:
+## Where the atlas keeps its own state
 
 ```
 ~/.atlas-obsidian/
@@ -155,36 +179,23 @@ A project holds its own identity and no path. The paths live in one place:
 └── state/registry.json     derived; `atlas-obsidian refresh` rebuilds it
 ```
 
-The atlas never searches your disk. It knows a project because `init` added its
-folder to that list, so a project can live anywhere. Move the folder and the
-next session inside it repairs the entry.
-
-## Conventions
-
-Full reasoning in [docs/core-design.md](docs/core-design.md) and
-[docs/v4-design.md](docs/v4-design.md).
-
-- **One operation, one commit, in the wiki.** Claude plans, you review, the
-  core commits. Claude's own file tools are refused inside `wiki/`.
-- **Your edits come first.** Hand edits are committed before any operation, so
-  undo never reaches them.
-- **The core owns what it can derive:** the log, the source ledger, the thread
-  cards and board, the health check. Claude writes prose and nothing else.
-- **Ids travel, paths stay.** A project carries its facts; the atlas carries
-  the paths and derives the rest.
+A project's `project.json` holds its name, description, and id, but no path.
+The paths live only in `config.json`, and the atlas never searches your disk
+for projects — it knows about one because `init` added its folder to that list.
+So a project can live anywhere. If you move the folder, the next session you
+start inside it repairs the entry.
 
 ## Documentation
 
-- Usage: [docs/usage.md](docs/usage.md)
-- Design and decisions: [docs/core-design.md](docs/core-design.md), [docs/v4-design.md](docs/v4-design.md)
-- Skills: [skills/](skills/), one `SKILL.md` each
-- Plugin manifest: [.claude-plugin/plugin.json](.claude-plugin/plugin.json)
+- Every command and its options: [docs/usage.md](docs/usage.md)
+- How the engine works and why: [docs/core-design.md](docs/core-design.md)
+- The layout of a project: [docs/v4-design.md](docs/v4-design.md)
+- How threads work: [docs/threads-design.md](docs/threads-design.md)
+- What each skill promises to do: [skills/](skills/), one `SKILL.md` per directory
 
-External:
-
-- Obsidian: https://obsidian.md
-- Claude Code plugins: https://code.claude.com/docs/en/plugins
-- MCP Go SDK: https://github.com/modelcontextprotocol/go-sdk
+External references: [Obsidian](https://obsidian.md),
+[Claude Code plugins](https://code.claude.com/docs/en/plugins),
+[MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk).
 
 ## Credits
 
