@@ -76,6 +76,9 @@ For each candidate, one of three outcomes, with a reason in one line:
   from the report when one fits; it is what the members already call it.
 - **Leave** when the resemblance is words, or when each member needs its own
   page as it is. Say so; a run that leaves every candidate is a good run.
+  Always leave a member's own describing page (`entity_type: project`): it
+  is the home of that wiki, and every page there links back to it. Bridge
+  to it instead. A source page never upgrades either; the hub page cites it.
 
 Bound the run: propose at most eight upgrades and eight bridges. More waits
 for the next run, and the user can ask for it.
