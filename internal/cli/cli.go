@@ -63,6 +63,7 @@ Projects (PROJECT is a name, a path, or nothing for the project you are in):
   describe PROJECT          stage a snapshot of the work; the describe skill writes its page
   forget PROJECT            drop a project from the atlas; its atlas/<name>/ folder stays
   open-ide NAME            open the work folder in the preferred IDE
+  open-terminal NAME       open a terminal window at the work folder
   open-agent NAME          start the preferred harness in the work folder
   open-vault [PROJECT]      open the project's folder in Obsidian
   open-claude NAME          start Claude Code in the work; --thread ID continues a thread
@@ -178,6 +179,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.openVault(rest[1:])
 	case "open-ide":
 		code, err = e.openIDE(rest[1:])
+	case "open-terminal":
+		code, err = e.openTerminal(rest[1:])
 	case "open-agent":
 		code, err = e.openPreferredAgent(rest[1:])
 	case "open-claude":
@@ -1198,6 +1201,30 @@ func (e *env) openIDE(args []string) (int, error) {
 		return 1, err
 	}
 	e.console.Step(console.OK, "opened", entry.Name+" in VS Code")
+	return 0, nil
+}
+
+func (e *env) openTerminal(args []string) (int, error) {
+	fs := newFlags("open-terminal", e.stderr)
+	positional, err := parse(fs, args)
+	if err != nil {
+		return 2, nil
+	}
+	if len(positional) != 1 {
+		return 2, errors.New("usage: atlas-obsidian open-terminal NAME")
+	}
+	cfg, err := e.home.Load()
+	if err != nil {
+		return 1, err
+	}
+	entry, err := e.entry(cfg, positional[0])
+	if err != nil {
+		return 1, err
+	}
+	if err := actions.Bind(e.home, cfg, e.console).OpenTerminal(entry); err != nil {
+		return 1, err
+	}
+	e.console.Step(console.OK, "opened", "a terminal at "+home.Display(entry.Path))
 	return 0, nil
 }
 

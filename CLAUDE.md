@@ -141,7 +141,8 @@ internal/registry/      the scan of the projects the config lists, the entries, 
 internal/refresh/       derive one entry's state, rewrite the registry, list an entry's signals
 internal/manage/        init, edit, forget, and register a project
 internal/links/         the facts git reports about a folder, and CleanName
-internal/tui/           Bubble Tea screens: the view (one list of projects, a Problems tab while there is one, expand in place, open and launch keys)
+internal/tui/           Bubble Tea screens: the view (a force-directed map of the projects and their member links on a braille canvas, the selection's summary, the card, find, settings, launch keys)
+internal/terminal/      open a terminal window at a folder
 internal/ide/           open the project root in the preferred IDE (VS Code for now)
 internal/obsidian/      Obsidian's vault registry, obsidian:// URIs, restart
 internal/home/          ~/.atlas-obsidian and config.json
@@ -281,6 +282,9 @@ claude-atlas or claude-obsidian name any more, and the schemas restarted at
   out of that count and out of the snapshot.
 - Lint is read-only; refresh writes nothing git tracks.
 - TUI models keep all logic in `Update`; tests drive them with `tea.KeyMsg`.
+  The map's simulation (`tui.graph`) is deterministic for a set of projects,
+  steps on `tea.Tick` only while it has energy, and the canvas (`tui.canvas`)
+  renders exactly the screen's size, so a test can assert on both.
 - Tests never touch a real `~/.atlas-obsidian`, never install a plugin, and skip
   when `git` is missing. MCP tools are tested in-process over the SDK's
   in-memory transport.
@@ -298,7 +302,7 @@ Keep both plugin manifests and the Claude marketplace version in step.
 `open-codex NAME [--thread ID]` launches Codex in a registered project's work
 folder; `doctor --agent codex` checks its plugin via the Codex CLI. The terminal
 view's `c` shortcut and `open-agent` use the global `preferred_harness`
-(`claude` by default, or `codex`), editable on the Config tab or with
+(`claude` by default, or `codex`), editable in the view's settings panel or with
 `config preferred-harness`. Automatic launch offers remain Claude-specific.
 
 - A plugin's `.mcp.json` may run `${CLAUDE_PLUGIN_ROOT}/...`. The server starts
@@ -380,7 +384,7 @@ under "Sources of truth".
 
 - Extend `preferred_ide` and `open-ide` beyond VS Code: Cursor, Windsurf, Zed,
   JetBrains IDEs, and Sublime Text. The TUI `i` shortcut opens the work root;
-  the Config tab and `config preferred-ide vscode` persist the preference.
+  the settings panel and `config preferred-ide vscode` persist the preference.
 
 - A `search` tool with BM25 ranking, once Grep proves insufficient.
 - Distribution: a Homebrew tap and release binaries; then the wrapper can

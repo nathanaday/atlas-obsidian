@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nathanaday/atlas-obsidian/internal/console"
 	"github.com/nathanaday/atlas-obsidian/internal/gitx"
@@ -632,6 +634,50 @@ func TestOpenIDEAndConfig(t *testing.T) {
 	data, err := os.ReadFile(log)
 	if err != nil || string(data) != "--new-window\n"+work+"\n" {
 		t.Fatalf("args=%q err=%v", data, err)
+	}
+}
+
+func TestOpenTerminal(t *testing.T) {
+	h := setup(t)
+	work := filepath.Join(t.TempDir(), "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if code := h.run("init", work); code != 0 {
+		t.Fatal(h.err.String())
+	}
+	bin := t.TempDir()
+	log := filepath.Join(t.TempDir(), "terminal-args")
+	t.Setenv("TERMINAL_TEST_LOG", log)
+	script := "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$TERMINAL_TEST_LOG\"\n"
+	switch runtime.GOOS {
+	case "darwin":
+		t.Setenv("TERM_PROGRAM", "Apple_Terminal")
+		if err := os.WriteFile(filepath.Join(bin, "open"), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	case "linux":
+		t.Setenv("TERMINAL", "fake-term")
+		if err := os.WriteFile(filepath.Join(bin, "fake-term"), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		t.Skip("no terminal launcher on " + runtime.GOOS)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if code := h.run("open-terminal"); code != 2 {
+		t.Fatalf("usage exit %d", code)
+	}
+	if code := h.run("open-terminal", "work"); code != 0 || !strings.Contains(h.out.String(), "a terminal at") {
+		t.Fatalf("exit %d %s%s", code, h.out.String(), h.err.String())
+	}
+	var data []byte
+	for i := 0; i < 50 && len(data) == 0; i++ {
+		data, _ = os.ReadFile(log)
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !strings.Contains(string(data), work) {
+		t.Fatalf("launched: %q", data)
 	}
 }
 

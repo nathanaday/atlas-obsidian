@@ -6,21 +6,22 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/nathanaday/atlas-obsidian/internal/actions"
 	"github.com/nathanaday/atlas-obsidian/internal/home"
 )
 
-func TestConfigSavesPreferredHarness(t *testing.T) {
+func TestSettingsSavePreferredHarness(t *testing.T) {
 	h := home.Home{Root: t.TempDir()}
 	cfg := h.Default()
 	if err := h.Save(cfg); err != nil {
 		t.Fatal(err)
 	}
 	acts := actions.Bind(h, cfg, nil)
-	v := newView(nil, Opener{}, acts)
-	v = pressV(v, tea.KeyRight)
-	if v.tab != tabConfig || !strings.Contains(v.View(), "Claude Code (saved)") {
-		t.Fatal(v.View())
+	v := sized(nil, Opener{}, acts)
+	v = keyV(v, ",")
+	if !v.settings || !strings.Contains(stripANSI(v.View()), "Claude Code  saved") {
+		t.Fatal(stripANSI(v.View()))
 	}
 	v = pressV(v, tea.KeyDown)
 	if cfg.Harness() != "claude" {
@@ -31,61 +32,60 @@ func TestConfigSavesPreferredHarness(t *testing.T) {
 	if err != nil || saved.Harness() != "codex" || cfg.Harness() != "codex" {
 		t.Fatalf("save: %+v %v", saved, err)
 	}
-	// Window resizing, refresh completion, and project keys are safe on Config.
+	if !strings.Contains(v.status, "Codex") {
+		t.Fatal(v.status)
+	}
+	// Resizing, a refresh landing, and project keys are safe while settings is open.
 	next, _ := v.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	v = next.(view)
 	next, _ = v.Update(refreshedMsg{})
 	v = next.(view)
-	for _, key := range []string{"o", "c", "i", "n", "h"} {
+	for _, key := range []string{"o", "c", "i", "t", "n", "/"} {
 		v = keyV(v, key)
+		if !v.settings || v.busy != "" || v.find != nil || v.stub != nil {
+			t.Fatalf("%s under settings", key)
+		}
 	}
-	if v.tab != tabConfig || !strings.Contains(v.View(), "Codex (saved)") {
-		t.Fatal(v.View())
-	}
-	reopened := newView(sample(), Opener{}, actions.Bind(h, saved, nil))
-	reopened = findEntry(t, reopened, "webapp")
-	if !strings.Contains(reopened.View(), "c Codex") {
-		t.Fatal(reopened.View())
-	}
-	v = pressV(v, tea.KeyUp, tea.KeyEnter)
-	if cfg.Harness() != "claude" {
-		t.Fatal("could not switch back")
+	v = keyV(v, ",")
+	if v.settings {
+		t.Fatal(", closes settings")
 	}
 }
 
-func TestConfigSaveErrorKeepsPreference(t *testing.T) {
-	v := newView(nil, Opener{}, actions.Atlas{
+func TestSettingsSaveErrorKeepsPreference(t *testing.T) {
+	acts := actions.Atlas{
 		PreferredHarness:    func() string { return "claude" },
-		SetPreferredHarness: func(string) error { return errors.New("disk unavailable") },
-	})
-	v = pressV(v, tea.KeyRight, tea.KeyDown, tea.KeyEnter)
-	if v.errMsg != "disk unavailable" || v.harness() != "claude" || !strings.Contains(v.View(), "Claude Code (saved)") {
-		t.Fatal(v.View())
+		SetPreferredHarness: func(string) error { return errors.New("disk full") },
 	}
-	v = pressV(v, tea.KeyEsc)
-	if v.tab != tabProjects {
-		t.Fatal("Escape returns to Projects")
+	v := sized(nil, Opener{}, acts)
+	v = keyV(v, ",")
+	v = pressV(v, tea.KeyDown, tea.KeyEnter)
+	if v.errMsg != "disk full" || v.harness() != "claude" {
+		t.Fatalf("err=%q harness=%q", v.errMsg, v.harness())
+	}
+	none := sized(nil, Opener{}, actions.Atlas{})
+	none = keyV(none, ",")
+	none = pressV(none, tea.KeyEnter)
+	if !strings.Contains(none.errMsg, "not available") {
+		t.Fatal(none.errMsg)
 	}
 }
 
-func TestConfigSavesIDEWithoutChangingHarness(t *testing.T) {
+func TestSettingsSaveIDEWithoutChangingHarness(t *testing.T) {
 	h := home.Home{Root: t.TempDir()}
 	cfg := h.Default()
 	if err := h.Save(cfg); err != nil {
 		t.Fatal(err)
 	}
-	v := newView(nil, Opener{}, actions.Bind(h, cfg, nil))
-	v = pressV(v, tea.KeyRight, tea.KeyDown, tea.KeyDown, tea.KeyEnter)
+	acts := actions.Bind(h, cfg, nil)
+	v := sized(nil, Opener{}, acts)
+	v = keyV(v, ",")
+	v = pressV(v, tea.KeyDown, tea.KeyDown, tea.KeyEnter)
 	saved, err := h.Load()
-	if err != nil || saved.PreferredIDE != "vscode" || saved.Harness() != "claude" {
-		t.Fatalf("config=%+v err=%v", saved, err)
+	if err != nil || saved.IDE() != "vscode" || saved.Harness() != "claude" {
+		t.Fatalf("save: %+v %v", saved, err)
 	}
-	if !strings.Contains(v.View(), "> VS Code (saved)") || !strings.Contains(v.status, "saved preferred IDE") {
-		t.Fatal(v.View())
-	}
-	v.acts.SetPreferredIDE = func(string) error { return errors.New("disk unavailable") }
-	v = pressV(v, tea.KeyEnter)
-	if v.errMsg != "disk unavailable" {
-		t.Fatal(v.View())
+	if !strings.Contains(v.status, "VS Code") {
+		t.Fatal(v.status)
 	}
 }

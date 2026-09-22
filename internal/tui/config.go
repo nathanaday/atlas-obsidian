@@ -1,10 +1,12 @@
 package tui
 
 import (
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// The settings panel: one list of choices, a harness and an IDE, with Enter saving the
+// one under the cursor.
+var settingChoices = []string{"claude", "codex", "vscode"}
 
 func harnessLabel(harness string) string {
 	if harness == "codex" {
@@ -20,24 +22,31 @@ func (v view) harness() string {
 	return "claude"
 }
 
-func (v view) updateConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (v view) ide() string {
+	if v.acts.PreferredIDE != nil {
+		return v.acts.PreferredIDE()
+	}
+	return "vscode"
+}
+
+// updateSettings moves along the choices, saves one, or closes the panel.
+func (v view) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyUp, tea.KeyDown:
-		choices := []string{"claude", "codex", "vscode"}
-		for i, choice := range choices {
-			if choice == v.configChoice {
-				delta := 1
-				if msg.Type == tea.KeyUp {
-					delta = -1
-				}
-				v.configChoice = choices[max(0, min(len(choices)-1, i+delta))]
+		delta := 1
+		if msg.Type == tea.KeyUp {
+			delta = -1
+		}
+		for i, choice := range settingChoices {
+			if choice == v.settingChoice {
+				v.settingChoice = settingChoices[max(0, min(len(settingChoices)-1, i+delta))]
 				break
 			}
 		}
 	case tea.KeyEnter:
-		if v.configChoice == "vscode" {
+		if v.settingChoice == "vscode" {
 			if v.acts.SetPreferredIDE == nil {
-				v.errMsg = "saving config is not available here"
+				v.errMsg = "saving settings is not available here"
 			} else if err := v.acts.SetPreferredIDE("vscode"); err != nil {
 				v.errMsg = err.Error()
 			} else {
@@ -46,45 +55,44 @@ func (v view) updateConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return v, nil
 		}
 		if v.acts.SetPreferredHarness == nil {
-			v.errMsg = "saving config is not available here"
-		} else if err := v.acts.SetPreferredHarness(v.configChoice); err != nil {
+			v.errMsg = "saving settings is not available here"
+		} else if err := v.acts.SetPreferredHarness(v.settingChoice); err != nil {
 			v.errMsg = err.Error()
 		} else {
-			v.status = "saved preferred harness: " + harnessLabel(v.configChoice)
+			v.status = "saved preferred harness: " + harnessLabel(v.settingChoice)
 		}
 	case tea.KeyEsc:
-		v.goTo(tabProjects)
+		v.settings = false
+	default:
+		if msg.String() == "," || msg.String() == "q" {
+			v.settings = false
+		}
 	}
 	return v, nil
 }
 
-func (v view) configView() string {
-	var b strings.Builder
-	b.WriteString(v.head())
-	b.WriteString(v.wrapped(title, "Preferred harness"))
-	for _, harness := range []string{"claude", "codex"} {
+// settingsLines is the body of the settings panel.
+func (v view) settingsLines() []string {
+	var out []string
+	line := func(choice, text string, saved bool) {
 		prefix := "  "
-		if v.configChoice == harness {
+		if v.settingChoice == choice {
 			prefix = "> "
 		}
-		label := prefix + harnessLabel(harness)
-		if v.harness() == harness {
-			label += " (saved)"
+		if saved {
+			text += dim.Render("  saved")
 		}
-		b.WriteString(v.wrapped(captionSt, label))
+		if v.settingChoice == choice {
+			out = append(out, memberSt.Render(prefix+text))
+		} else {
+			out = append(out, prefix+text)
+		}
 	}
-	b.WriteString(v.wrapped(dim, "The c shortcut starts this harness in the project's work folder."))
-	b.WriteString("\n" + v.wrapped(title, "Preferred IDE"))
-	prefix := "  "
-	if v.configChoice == "vscode" {
-		prefix = "> "
+	out = append(out, label.Render("Harness"), faint.Render("what c starts in the work folder"))
+	for _, harness := range []string{"claude", "codex"} {
+		line(harness, harnessLabel(harness), v.harness() == harness)
 	}
-	label := prefix + "VS Code"
-	if v.acts.PreferredIDE == nil || v.acts.PreferredIDE() == "vscode" {
-		label += " (saved)"
-	}
-	b.WriteString(v.wrapped(captionSt, label))
-	b.WriteString(v.wrapped(dim, "The i shortcut opens the project root. VS Code is the only supported IDE."))
-	b.WriteString("\n" + v.footer(v.hints()...))
-	return v.fit(b.String())
+	out = append(out, "", label.Render("IDE"), faint.Render("what i opens the work folder in"))
+	line("vscode", "VS Code", v.ide() == "vscode")
+	return out
 }

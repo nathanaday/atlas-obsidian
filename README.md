@@ -171,24 +171,26 @@ edits there, and a member never knows it is listed. The design and its reasons:
 atlas-obsidian
 ```
 
-With no arguments the binary opens a terminal view of every project it knows,
-listed by name, each with its recent activity and what is open. Arrow keys
-move, Enter expands an entry in place, `o` opens `atlas/<name>/` in Obsidian, `c` starts
-your preferred harness in the work folder, `i` opens the project root in VS Code,
-`n` opens a new thread, `R` re-reads
-everything, and `h` shows the keys.
+With no arguments the binary opens a map of every project it knows. Each
+project is a node and each member link is an edge, laid out by a live force
+simulation, so the projects that share knowledge sit together and the map
+settles like a mobile. Arrow keys select the nearest project that way, Tab
+cycles, `/` finds one by name, and Shift+arrows nudge a node while the rest
+answer. The selected project is filled, what it mirrors and what mirrors it
+are lit, and one line under the map says how it connects. Enter opens its
+card with only the facts that exist.
 
-On the Config tab, use ↑/↓ to choose a harness or IDE option and Enter to save.
-The preference is stored globally; existing configs default to Claude Code.
-You can also set it with `atlas-obsidian config preferred-harness codex`.
+From the map: `o` opens `atlas/<name>/` in Obsidian, `c` starts your preferred
+harness in the work folder, `i` opens it in VS Code, `t` opens a terminal
+window there, `n` opens a new thread, `R` re-reads everything, `,` opens the
+settings, and `?` shows the keys.
+
+The settings hold the harness (Claude Code or Codex) and the IDE, saved
+globally. `atlas-obsidian config preferred-harness codex` sets the same thing.
 `open-agent webapp` launches the preferred harness; `open-claude` and
-`open-codex` select a specific harness. Use `atlas-obsidian open-codex webapp` to launch Codex, or add
-`--thread "Filter vehicle"` to continue a particular thread.
-
-VS Code is the default and currently the only supported IDE. Its `code` command
-must be on PATH. The global `preferred_ide` setting is `vscode`; use
-`atlas-obsidian config preferred-ide vscode` or the Config tab to save it.
-`atlas-obsidian open-ide webapp` also opens the project root.
+`open-codex` select one; add `--thread "Filter vehicle"` to continue a thread.
+`open-ide webapp` and `open-terminal webapp` open the work folder in VS Code
+and in a terminal window.
 
 ## How writes reach the wiki
 

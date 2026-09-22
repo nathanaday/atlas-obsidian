@@ -14,14 +14,15 @@ one tool from a Claude Code session, so scripts, muscle memory, and the
 | Enter on a project | `show NAME` | `atlas`, `status` |
 | `o` open `atlas/<name>/` in Obsidian | `open-vault NAME` | — |
 | `i` open the project root in the preferred IDE | `open-ide NAME` | — |
-| Config: choose IDE, Enter saves | `config preferred-ide vscode` | — |
+| `t` open a terminal at the work folder | `open-terminal NAME` | — |
+| `,` settings: choose the IDE, Enter saves | `config preferred-ide vscode` | — |
 | `c` start the preferred harness in the work | `open-agent NAME [--thread ID]` | — |
-| Config: choose harness, Enter saves | `config preferred-harness codex` | — |
+| `,` settings: choose the harness, Enter saves | `config preferred-harness codex` | — |
 | — | `open-claude NAME [--thread ID]` | — |
 | — | `open-codex NAME [--thread ID]` | — |
 | `n` open a new thread | `thread PROJECT new TEXT` | `thread` |
 | `R` refresh | `refresh` | `atlas` with `refresh` |
-| `←` `→` switch tabs; `h` shows every key; `q` quits | — | — |
+| arrows and Tab select; `/` finds; Enter opens the card; `?` shows every key; `q` quits | — | — |
 | — | `init [PATH]`, `edit NAME`, `forget NAME` | `project` |
 | — | `edit NAME --add-member P`, `sync [PROJECT]` | `project` with `add_members`, then `sync` |
 | — | `describe PROJECT` | `stage` with `snapshot`, then the `describe` skill |
@@ -432,26 +433,38 @@ atlas-obsidian open-vault
 
 ## The atlas
 
-`atlas-obsidian` with no command, or `atlas-obsidian view`, is one screen: every
-project, warmest first, with its path, its wiki's page count, its open thread
-count and current phase, what waits in its inbox, and a mark when the path is
-missing. Enter expands an entry in place with what `show` prints. A Problems
-tab appears only while the atlas holds a folder it could not read. The view is
-for seeing what exists and getting there; creating and changing things is the
-CLI's and the session's job.
+`atlas-obsidian` with no command, or `atlas-obsidian view`, is one screen: a
+map of every project. Each project is a node, each member link is an edge, and
+a force simulation lays them out: linked projects pull together, every project
+pushes the others away, and the map settles like a mobile. Nudge a node and the
+rest answer. The selected project is filled with the project color; the
+projects it mirrors are lit in the same color, the projects that mirror it in
+the hub color, and everything else fades. A folder the atlas could not read is
+a red node. The line under the map says what the selection is, what it mirrors
+and what mirrors it, and its facts; a zero is left out. Enter opens the card:
+only the rows that have something to say. The view is for seeing what exists
+and getting there; creating and changing things is the CLI's and the session's
+job.
 
 | Key | What it does |
 |---|---|
-| `←` `→` | previous tab, next tab |
-| `↑` `↓` | move |
-| Enter | expand the entry under the cursor, or collapse it |
+| `↑` `↓` `←` `→` | select the nearest project that way |
+| Tab, Shift+Tab | select the next project, the previous |
+| Shift+arrows | nudge the selected project; the map answers |
+| Enter | open the selected project's card; again to close it |
+| `/` | find a project by name; Enter keeps the match, Esc goes back |
 | `o` | open `atlas/<name>/` in Obsidian |
 | `c` | start the preferred harness in the work |
-| `i` | open the project root in VS Code |
+| `i` | open the work folder in the preferred IDE |
+| `t` | open a terminal window at the work folder |
 | `n` | open a new thread |
 | `R` | refresh in the background |
-| `h` | show every key; again to hide them |
+| `,` | settings: the harness and the IDE |
+| `?` | show every key; again to hide them |
+| Esc | close the card, the settings, or the keys; on the map, quit |
 | `q` | quit |
+
+The map fits the screen at any size and again when the terminal resizes.
 
 ```bash
 atlas-obsidian
@@ -551,7 +564,7 @@ atlas-obsidian apply webapp plan.json
 }
 ```
 
-The TUI's Config tab edits global preferences: use ↑/↓ to choose a harness
+The view's settings panel (`,`) edits global preferences: use ↑/↓ to choose a harness
 (Claude Code or Codex) or the IDE option (VS Code), then Enter to save. The `c` shortcut uses the saved choice
 immediately. Existing configs default to Claude Code.
 
@@ -563,7 +576,12 @@ atlas-obsidian open-agent webapp
 `preferred_ide` defaults to `vscode`, the only supported value. Press `i` or run
 `atlas-obsidian open-ide NAME` to open the project's work folder in a new VS Code
 window. Install VS Code's `code` command on PATH before using it. Save the
-preference through Config or `atlas-obsidian config preferred-ide vscode`.
+preference through the settings panel or `atlas-obsidian config preferred-ide vscode`.
+
+Press `t` or run `atlas-obsidian open-terminal NAME` to open a new terminal
+window at the work folder. On macOS it is the terminal you are running in
+(`TERM_PROGRAM`: Terminal, iTerm, WezTerm, Ghostty, kitty, Alacritty, Warp), or
+Terminal; on Linux it is `$TERMINAL`, or the first known emulator on PATH.
 
 Future IDE support: Cursor, Windsurf, Zed, JetBrains IDEs (such as IntelliJ IDEA,
 PyCharm, WebStorm, and GoLand), and Sublime Text. These are planned options,

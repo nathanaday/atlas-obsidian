@@ -15,6 +15,7 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/refresh"
 	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/terminal"
 	"github.com/nathanaday/atlas-obsidian/internal/threads"
 )
 
@@ -33,6 +34,7 @@ type Atlas struct {
 	PreferredIDE        func() string
 	SetPreferredIDE     func(string) error
 	OpenIDE             func(registry.Entry) error
+	OpenTerminal        func(registry.Entry) error
 	PreferredHarness    func() string
 	SetPreferredHarness func(string) error
 	// Load reads the registry, refreshing it first when no refresh has run yet. Scan
@@ -96,6 +98,13 @@ func Bind(h home.Home, cfg *home.Config, c *console.Console) Atlas {
 				return err
 			}
 			return ide.Open(cfg.IDE(), p.Root)
+		},
+		OpenTerminal: func(en registry.Entry) error {
+			p, err := openProject(en)
+			if err != nil {
+				return err
+			}
+			return terminal.Open(p.Root)
 		},
 		PreferredHarness: cfg.Harness,
 		SetPreferredHarness: func(harness string) error {

@@ -1,11 +1,12 @@
-// Package tui is the atlas view: every project on one screen, with the keys that open one
-// in Obsidian or start the preferred harness in it. It lists and launches; creating and changing
-// project content is the CLI's and the session's job. Global preferences live on Config.
+// Package tui is the atlas view: every project on one screen as a map, each project a
+// node and each member link an edge, laid out by a live force simulation. It shows and
+// launches; creating and changing project content is the CLI's and the session's job.
 package tui
 
 import (
 	"fmt"
 	"io"
+	"math"
 	"path/filepath"
 	"strings"
 	"time"
@@ -43,9 +44,10 @@ func entryName(e registry.Entry) string {
 	return e.Name
 }
 
-// Opener connects the view to Obsidian and the preferred harness without the screen doing the work
-// itself. Obsidian opens the atlas/<name>/ folder at path. Agent runs the selected harness in
-// the work folder at path, holding the terminal until the session ends.
+// Opener connects the view to Obsidian and the preferred harness without the screen
+// doing the work itself. Obsidian opens the atlas/<name>/ folder at path. Agent runs the
+// selected harness in the work folder at path, holding the terminal until the session
+// ends.
 type Opener struct {
 	Obsidian func(path string) error
 	Agent    func(harness, path string) error
@@ -54,6 +56,14 @@ type Opener struct {
 // now is the clock the screens use; tests may replace it.
 var now = time.Now
 
+// frame is how often the simulation steps while it has energy.
+const frame = 33 * time.Millisecond
+
+// nudgeCells is how far a Shift+arrow moves a node, in cells.
+const nudgeCells = 3.0
+
+type tickMsg time.Time
+
 // agentDoneMsg reports that a harness session ended and the view has the terminal back.
 type agentDoneMsg struct {
 	harness string
@@ -61,8 +71,9 @@ type agentDoneMsg struct {
 	err     error
 }
 
-// openedMsg reports the outcome of an Obsidian open that ran in the background.
+// openedMsg reports the outcome of an open that ran in the background.
 type openedMsg struct {
+	what string // what opened: Obsidian, the IDE, a terminal
 	name string
 	err  error
 }
@@ -82,192 +93,152 @@ func (launch) SetStdin(io.Reader)  {}
 func (launch) SetStdout(io.Writer) {}
 func (launch) SetStderr(io.Writer) {}
 
-// tab is one screen of the tab bar.
-type tab int
+// panelKind is what lies over the map, if anything.
+type panelKind int
 
 const (
-	tabProjects tab = iota
-	tabProblems
-	tabConfig
+	panelNone panelKind = iota
+	panelCard
+	panelHelp
 )
 
-var tabNames = map[tab]string{tabProjects: "Projects", tabProblems: "Problems", tabConfig: "Config"}
-
-// captions say what each tab holds.
-var captions = map[tab]string{
-	tabConfig:   "Global settings. Choose a harness or IDE; Enter saves it for every project.",
-	tabProjects: "A project is an atlas/<name>/ folder inside your work: its wiki, and its threads in their phases. Open it in Obsidian to read both.",
-	tabProblems: "Folders the atlas knows but could not read.",
-}
-
-// empties is what a tab says when it lists nothing.
-var empties = map[tab]string{
-	tabProjects: "no projects yet; run `atlas-obsidian init` in a work folder",
-}
-
-// boardOf is the index of the board behind a tab.
-func boardOf(t tab) int { return int(t) }
-
-// boardTab is the tab a board sits on.
-func boardTab(i int) tab { return tab(i) }
-
 type view struct {
-	items   []Item
-	opener  Opener
-	acts    actions.Atlas
-	tab     tab
-	boards  [2]board // projects, problems
-	changed bool
-	// stub is the one-line prompt for a new thread, open while not nil, and the project
-	// the thread opens in.
-	stub      *textinput.Model
-	stubInto  *Item
-	busy      string // message while an open or a refresh runs in the background
-	status    string
-	errMsg    string
-	width     int
-	height    int
+	items  []Item
+	byID   map[string]*Item
+	opener Opener
+	acts   actions.Atlas
+	graph  *graph
+	// sel is the selected node, an index into graph.nodes; -1 when there is none.
+	sel     int
+	ticking bool
+	panel   panelKind
+	// settings is the settings panel, over everything else while open.
+	settings      bool
+	settingChoice string
+	// find is the prompt that jumps to a name, and the selection before it opened.
+	find    *textinput.Model
+	findWas int
+	// stub is the one-line prompt for a new thread, and the project it opens in.
+	stub     *textinput.Model
+	stubInto *Item
+	busy     string
+	status   string
+	errMsg   string
+	width    int
+	height   int
+	// refreshed is when the registry was last derived, or "".
 	refreshed string
-	// help shows every key in the footer; off, the footer names only the tab's keys.
-	help         bool
-	configChoice string
+	changed   bool
+	// cells is where each node was drawn last, for tests and the summary.
+	cells []cell
 }
+
+// cell is a node's place on the canvas.
+type cell struct{ x, y int }
 
 func newView(items []Item, opener Opener, acts actions.Atlas) view {
-	v := view{items: items, opener: opener, acts: acts, width: 100, height: 40}
-	v.boards = [2]board{
-		newBoard(boardProjects, items, v.width),
-		newBoard(boardProblems, items, v.width),
-	}
-	v.configChoice = v.harness()
-	v.stamp()
+	v := view{opener: opener, acts: acts, width: 100, height: 40, sel: -1}
+	v.take(items, "")
+	v.settingChoice = v.harness()
 	return v
 }
 
-func (v *view) stamp() {
+// take installs the entries, builds the map over them, and keeps the selection on the
+// project whose id is keep.
+func (v *view) take(items []Item, keep string) {
+	v.items = items
+	v.byID = map[string]*Item{}
 	v.refreshed = ""
-	for _, it := range v.items {
-		if s := it.Entry.State; s != nil && s.GeneratedAt > v.refreshed {
+	for i := range items {
+		e := items[i].Entry
+		if e.ID != "" {
+			v.byID[e.ID] = &items[i]
+		}
+		if s := e.State; s != nil && s.GeneratedAt > v.refreshed {
 			v.refreshed = s.GeneratedAt
 		}
 	}
+	v.graph = buildGraph(items)
+	v.sel = -1
+	if i, ok := v.graph.byID[keep]; ok {
+		v.sel = i
+	} else if len(v.graph.nodes) > 0 {
+		v.sel = 0
+	}
+	v.graph.wake()
 }
 
-// board is the active tab's board.
-func (v *view) board() *board { return &v.boards[boardOf(v.tab)] }
-
-// current is the entry under the cursor; nil on the end marker or an empty board.
+// current is the selected project, or nil.
 func (v *view) current() *Item {
-	if v.tab == tabConfig {
+	if v.sel < 0 || v.sel >= len(v.graph.nodes) {
 		return nil
 	}
-	return v.board().current()
+	return v.item(v.sel)
 }
 
-// tabs lists the tabs the bar shows: Problems only while there is one.
-func (v view) tabs() []tab {
-	out := []tab{tabProjects}
-	if len(v.boards[boardOf(tabProblems)].items) > 0 {
-		out = append(out, tabProblems)
+// item is the entry behind a node.
+func (v *view) item(i int) *Item {
+	n := v.graph.nodes[i]
+	if it, ok := v.byID[n.id]; ok {
+		return it
 	}
-	return append(out, tabConfig)
-}
-
-// switchTab moves along the bar and stops at its ends.
-func (v *view) switchTab(delta int) {
-	tabs := v.tabs()
-	at := 0
-	for i, t := range tabs {
-		if t == v.tab {
-			at = i
+	for j := range v.items {
+		if "path:"+v.items[j].Entry.Path == n.id {
+			return &v.items[j]
 		}
 	}
-	v.goTo(tabs[max(0, min(len(tabs)-1, at+delta))])
+	return nil
 }
 
-// goTo shows a tab.
-func (v *view) goTo(t tab) {
-	v.tab = t
-	if t == tabConfig {
-		v.configChoice = v.harness()
-		return
+// nameOf is a project's name by id, for the members a card lists.
+func (v *view) nameOf(id string) string {
+	if it, ok := v.byID[id]; ok {
+		return entryName(it.Entry)
 	}
-	b := v.board()
-	b.layout()
-	b.ensureVisible(v.bodyHeight())
+	return id
 }
 
-// reload re-reads the registry when the actions can, then rebuilds every board with
-// the cursor on the entry at path, on its tab.
-func (v *view) reload(path string) {
-	if v.acts.Load != nil {
-		entries, err := v.acts.Load()
-		if err != nil {
-			v.errMsg = err.Error()
-			return
-		}
-		v.items = Items(entries)
-		v.stamp()
-	}
-	v.rebuild(path)
+// tick schedules the next step of the simulation.
+func tick() tea.Cmd {
+	return tea.Tick(frame, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-// rebuild lays the boards out again over v.items.
-func (v *view) rebuild(path string) {
-	for i := range v.boards {
-		v.boards[i].width = v.width
-		v.boards[i].reload(v.items)
+// wake puts energy into the map and starts the ticks when they are not running.
+func (v *view) wake() tea.Cmd {
+	v.graph.wake()
+	if v.ticking || v.graph.settled() {
+		return nil
 	}
-	for i := range v.boards {
-		if path != "" && v.boards[i].moveTo(path) {
-			v.tab = boardTab(i)
-		}
-	}
-	if v.tab == tabProblems && len(v.boards[boardOf(tabProblems)].items) == 0 {
-		v.tab = tabProjects
-	}
-	for i := range v.boards {
-		v.boards[i].layout()
-	}
-	if v.tab != tabConfig {
-		v.board().ensureVisible(v.bodyHeight())
-	}
+	v.ticking = true
+	return tick()
 }
 
-func (v view) Init() tea.Cmd { return nil }
+func (v view) Init() tea.Cmd {
+	v.ticking = true
+	return tick()
+}
 
-// head is everything above the body: a blank line, the tab bar, the caption, a blank
-// line. The caption wraps to the screen, so its height is known here and nothing below
-// it shifts when the tab changes.
-func (v view) head() string {
-	var caption []string
-	for _, line := range strings.Split(captionSt.Width(max(20, v.width-6)).Render(captions[v.tab]), "\n") {
-		caption = append(caption, "    "+strings.TrimRight(line, " "))
+// select moves the selection to a node and records that it changed.
+func (v *view) selectNode(i int) {
+	if i >= 0 && i < len(v.graph.nodes) {
+		v.sel = i
 	}
-	return fmt.Sprintf("\n  %s\n%s\n\n", v.tabBar(), strings.Join(caption, "\n"))
 }
-
-// bodyHeight is how many lines the body may take: the screen without the head, the
-// footer, and the line that counts what the body leaves out.
-func (v view) bodyHeight() int {
-	chrome := countLines(v.head()) + countLines("\n"+v.footer(v.hints()...)) + 1
-	return max(5, v.height-chrome)
-}
-
-// countLines counts the screen lines a rendered block takes.
-func countLines(block string) int { return strings.Count(strings.TrimSuffix(block, "\n"), "\n") + 1 }
 
 func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tickMsg:
+		if !v.ticking {
+			return v, nil
+		}
+		v.graph.step()
+		if v.graph.settled() {
+			v.ticking = false
+			return v, nil
+		}
+		return v, tick()
 	case tea.WindowSizeMsg:
 		v.width, v.height = msg.Width, msg.Height
-		for i := range v.boards {
-			v.boards[i].width = msg.Width
-			v.boards[i].layout()
-		}
-		if v.tab != tabConfig {
-			v.board().ensureVisible(v.bodyHeight())
-		}
 		return v, nil
 	case agentDoneMsg:
 		if msg.err != nil {
@@ -277,20 +248,12 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// A session may have opened or closed threads; read everything again.
 		return v.refresh()
-	case ideOpenedMsg:
-		v.busy = ""
-		if msg.err != nil {
-			v.errMsg = msg.err.Error()
-		} else {
-			v.status = "opened " + msg.name + " in VS Code"
-		}
-		return v, nil
 	case openedMsg:
 		v.busy = ""
 		if msg.err != nil {
 			v.errMsg = msg.err.Error()
 		} else {
-			v.status = "opened " + msg.name + " in Obsidian"
+			v.status = "opened " + msg.name + " in " + msg.what
 		}
 		return v, nil
 	case refreshedMsg:
@@ -299,85 +262,155 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			v.errMsg = msg.err.Error()
 			return v, nil
 		}
-		path := ""
+		keep := ""
 		if it := v.current(); it != nil {
-			path = it.Entry.Path
+			keep = it.Entry.ID
 		}
-		v.reload(path)
+		if v.acts.Load != nil {
+			entries, err := v.acts.Load()
+			if err != nil {
+				v.errMsg = err.Error()
+				return v, nil
+			}
+			v.take(Items(entries), keep)
+		}
 		if v.status == "" {
 			v.status = "refreshed"
 		}
-		return v, nil
+		return v, v.wake()
 	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlC {
-			return v, tea.Quit
-		}
-		if v.stub != nil {
-			return v.updateStub(msg)
-		}
-		if msg.String() == "q" {
-			return v, tea.Quit
-		}
-		if v.busy != "" {
-			return v, nil
-		}
-		v.status, v.errMsg = "", ""
-		switch msg.Type {
-		case tea.KeyLeft:
-			v.switchTab(-1)
-			return v, nil
-		case tea.KeyRight:
-			v.switchTab(1)
-			return v, nil
-		}
-		if v.tab == tabConfig {
-			return v.updateConfig(msg)
-		}
-		switch msg.String() {
-		case "R":
-			return v.refresh()
-		case "h":
-			v.help = !v.help
-			v.board().ensureVisible(v.bodyHeight())
-			return v, nil
-		case "o", "c", "i", "n":
-			item := v.current()
-			if item == nil {
-				return v, nil
-			}
-			if item.Entry.Error != "" {
-				v.errMsg = item.Entry.Error
-				return v, nil
-			}
-			switch msg.String() {
-			case "i":
-				return v.openIDE(item)
-			case "c":
-				return v.agent(item)
-			case "n":
-				return v.openStub(item)
-			}
-			return v.open(item)
-		}
-		b := v.board()
-		switch msg.Type {
-		case tea.KeyUp:
-			b.move(-1)
-		case tea.KeyDown:
-			b.move(1)
-		case tea.KeyEnter:
-			b.toggle()
-		case tea.KeyEsc:
-			if !b.collapseAll() {
-				return v, tea.Quit
-			}
-		default:
-			return v, nil
-		}
-		b.layout()
-		b.ensureVisible(v.bodyHeight())
+		return v.key(msg)
 	}
 	return v, nil
+}
+
+// key handles one key press: the prompts first, then the panels, then the map.
+func (v view) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyCtrlC {
+		return v, tea.Quit
+	}
+	if v.stub != nil {
+		return v.updateStub(msg)
+	}
+	if v.find != nil {
+		return v.updateFind(msg)
+	}
+	if v.busy != "" {
+		return v, nil
+	}
+	v.status, v.errMsg = "", ""
+	if v.settings {
+		return v.updateSettings(msg)
+	}
+	switch msg.String() {
+	case "q":
+		return v, tea.Quit
+	case "?":
+		v.panel = togglePanel(v.panel, panelHelp)
+		return v, nil
+	case ",":
+		v.settings = true
+		v.settingChoice = v.harness()
+		return v, nil
+	case "R":
+		return v.refresh()
+	case "/":
+		return v.openFind()
+	case "o", "c", "i", "t", "n":
+		return v.launch(msg.String())
+	}
+	switch msg.Type {
+	case tea.KeyEnter:
+		if v.current() != nil {
+			v.panel = togglePanel(v.panel, panelCard)
+		}
+		return v, nil
+	case tea.KeyEsc:
+		if v.panel != panelNone {
+			v.panel = panelNone
+			return v, nil
+		}
+		return v, tea.Quit
+	case tea.KeyTab:
+		v.selectNode(v.graph.cycle(v.sel, 1))
+	case tea.KeyShiftTab:
+		v.selectNode(v.graph.cycle(v.sel, -1))
+	case tea.KeyUp:
+		v.selectNode(v.graph.nearest(v.sel, 0, -1))
+	case tea.KeyDown:
+		v.selectNode(v.graph.nearest(v.sel, 0, 1))
+	case tea.KeyLeft:
+		v.selectNode(v.graph.nearest(v.sel, -1, 0))
+	case tea.KeyRight:
+		v.selectNode(v.graph.nearest(v.sel, 1, 0))
+	case tea.KeyShiftUp, tea.KeyShiftDown, tea.KeyShiftLeft, tea.KeyShiftRight:
+		return v.nudge(msg.Type)
+	}
+	return v, nil
+}
+
+// togglePanel opens a panel, or closes it when it is the one open.
+func togglePanel(open, want panelKind) panelKind {
+	if open == want {
+		return panelNone
+	}
+	return want
+}
+
+// nudge pushes the selected node a few cells and lets the map answer.
+func (v view) nudge(key tea.KeyType) (tea.Model, tea.Cmd) {
+	if v.sel < 0 {
+		return v, nil
+	}
+	_, scale := v.fit()
+	step := nudgeCells * 2 / scale
+	switch key {
+	case tea.KeyShiftUp:
+		v.graph.nudge(v.sel, 0, -step)
+	case tea.KeyShiftDown:
+		v.graph.nudge(v.sel, 0, step)
+	case tea.KeyShiftLeft:
+		v.graph.nudge(v.sel, -step, 0)
+	case tea.KeyShiftRight:
+		v.graph.nudge(v.sel, step, 0)
+	}
+	return v, v.wake()
+}
+
+// launch runs one of the launch keys on the selected project.
+func (v view) launch(key string) (tea.Model, tea.Cmd) {
+	item := v.current()
+	if item == nil {
+		return v, nil
+	}
+	if item.Entry.Error != "" {
+		v.errMsg = item.Entry.Error
+		return v, nil
+	}
+	switch key {
+	case "o":
+		return v.open(item)
+	case "c":
+		return v.agent(item)
+	case "i":
+		return v.background(item, "opening %s in the IDE…", "the IDE", v.acts.OpenIDE, "opening an IDE")
+	case "t":
+		return v.background(item, "opening a terminal at %s…", "a terminal", v.acts.OpenTerminal, "opening a terminal")
+	case "n":
+		return v.openStub(item)
+	}
+	return v, nil
+}
+
+// background runs an action on the entry in the background and reports when it is done.
+func (v view) background(item *Item, busy, what string, action func(registry.Entry) error, verb string) (tea.Model, tea.Cmd) {
+	if action == nil {
+		v.errMsg = verb + " is not available here"
+		return v, nil
+	}
+	name, entry := entryName(item.Entry), item.Entry
+	v.busy = fmt.Sprintf(busy, name)
+	return v, func() tea.Msg { return openedMsg{what: what, name: name, err: action(entry)} }
 }
 
 // refreshCmd rebuilds the registry in the background; nil when no action does it.
@@ -392,7 +425,7 @@ func (v view) refreshCmd() tea.Cmd {
 	}
 }
 
-// refresh rebuilds derived state in the background, then reloads the boards.
+// refresh rebuilds derived state in the background, then reloads the map.
 func (v view) refresh() (tea.Model, tea.Cmd) {
 	if v.acts.Refresh == nil || v.acts.Load == nil {
 		v.errMsg = "refresh is not available here"
@@ -401,6 +434,36 @@ func (v view) refresh() (tea.Model, tea.Cmd) {
 	v.changed = true
 	v.busy = "reading every project…"
 	return v, v.refreshCmd()
+}
+
+// openFind opens the prompt that jumps to a name as it is typed.
+func (v view) openFind() (tea.Model, tea.Cmd) {
+	in := textinput.New()
+	in.Prompt = "  find: "
+	in.Width = max(20, v.width-lipgloss.Width(in.Prompt)-4)
+	in.Focus()
+	v.find, v.findWas = &in, v.sel
+	return v, textinput.Blink
+}
+
+// updateFind forwards keys to the prompt and moves the selection to the first match;
+// Enter keeps it, Esc puts the selection back.
+func (v view) updateFind(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		v.find = nil
+		v.selectNode(v.findWas)
+		return v, nil
+	case tea.KeyEnter:
+		v.find = nil
+		return v, nil
+	}
+	in, cmd := v.find.Update(msg)
+	v.find = &in
+	if i := v.graph.find(in.Value()); i >= 0 {
+		v.selectNode(i)
+	}
+	return v, cmd
 }
 
 // openStub opens the one-line prompt that opens a thread in a project.
@@ -460,21 +523,6 @@ func (v view) agent(item *Item) (tea.Model, tea.Cmd) {
 	return v, tea.Exec(launch{run: func() error { return run(harness, path) }}, func(err error) tea.Msg { return agentDoneMsg{name: name, harness: harness, err: err} })
 }
 
-type ideOpenedMsg struct {
-	name string
-	err  error
-}
-
-func (v view) openIDE(item *Item) (tea.Model, tea.Cmd) {
-	if v.acts.OpenIDE == nil {
-		v.errMsg = "opening an IDE is not available here"
-		return v, nil
-	}
-	name, entry, open := entryName(item.Entry), item.Entry, v.acts.OpenIDE
-	v.busy = "opening " + name + " in VS Code…"
-	return v, func() tea.Msg { return ideOpenedMsg{name: name, err: open(entry)} }
-}
-
 // open starts opening the project's folder in Obsidian in the background.
 func (v view) open(item *Item) (tea.Model, tea.Cmd) {
 	if v.opener.Obsidian == nil {
@@ -486,175 +534,343 @@ func (v view) open(item *Item) (tea.Model, tea.Cmd) {
 	return v, func() tea.Msg {
 		p, err := project.Open(path)
 		if err != nil {
-			return openedMsg{name: name, err: err}
+			return openedMsg{what: "Obsidian", name: name, err: err}
 		}
-		return openedMsg{name: name, err: fn(p.Atlas())}
+		return openedMsg{what: "Obsidian", name: name, err: fn(p.Atlas())}
 	}
 }
 
-// footer renders the prompt, progress, or status lines under a screen.
-func (v view) footer(hints ...string) string {
+// The frame: one header line, the map, one summary line, one footer line.
+
+func (v view) mapHeight() int { return max(5, v.height-3) }
+
+// header is the first line: the atlas, its counts, and when it was refreshed.
+func (v view) header() string {
+	projects, problems, links := 0, 0, len(v.graph.edges())
+	for _, it := range v.items {
+		if it.Entry.Error != "" {
+			problems++
+		} else {
+			projects++
+		}
+	}
+	left := "  " + title.Render("Atlas")
+	var counts []string
+	counts = append(counts, fmt.Sprintf("%d project%s", projects, plural(projects)))
+	if links > 0 {
+		counts = append(counts, fmt.Sprintf("%d link%s", links, plural(links)))
+	}
+	if problems > 0 {
+		counts = append(counts, errSt.Render(fmt.Sprintf("%d problem%s", problems, plural(problems))))
+	}
+	left += "  " + dim.Render(strings.Join(counts, " · "))
+	stamp := dim.Render("not refreshed yet")
+	if t, err := time.Parse("2006-01-02T15:04:05Z", v.refreshed); err == nil {
+		stamp = dim.Render("refreshed " + t.Local().Format("15:04"))
+	}
+	if pad := v.width - lipgloss.Width(left) - lipgloss.Width(stamp) - 2; pad >= 2 {
+		return left + strings.Repeat(" ", pad) + stamp
+	}
+	return lipgloss.NewStyle().MaxWidth(v.width).Render(left)
+}
+
+// labelOf is a node's marker and name.
+func labelOf(n node) string {
+	if n.problem {
+		return "✗ " + n.name
+	}
+	return "● " + n.name
+}
+
+// fit is the transform from the map's dots to the canvas's: the offset of the map's
+// top-left corner and the scale. The map fills the canvas, less room for the labels,
+// and is never blown up past a size that would spread a small map across the screen.
+func (v view) fit() (offset [2]float64, scale float64) {
+	c := v.mapHeight()
+	labels := 0
+	for _, n := range v.graph.nodes {
+		labels = max(labels, lipgloss.Width(labelOf(n)))
+	}
+	padL, padR, padT, padB := 4.0, float64(2*(labels+2)), 4.0, 6.0
+	minX, minY, maxX, maxY := v.graph.bounds()
+	w, h := math.Max(1, maxX-minX), math.Max(1, maxY-minY)
+	availW, availH := math.Max(4, float64(2*v.width)-padL-padR), math.Max(4, float64(4*c)-padT-padB)
+	scale = math.Min(availW/w, availH/h)
+	scale = math.Min(scale, 2)
+	offset[0] = padL + (availW-w*scale)/2 - minX*scale
+	offset[1] = padT + (availH-h*scale)/2 - minY*scale
+	return offset, scale
+}
+
+// draw renders the map into a canvas: the edges, then the labels, the selected one
+// first so it keeps its place, and the panel over all of it.
+func (v *view) draw() *canvas {
+	c := newCanvas(v.width, v.mapHeight())
+	offset, scale := v.fit()
+	dots := make([][2]int, len(v.graph.nodes))
+	v.cells = make([]cell, len(v.graph.nodes))
+	for i, n := range v.graph.nodes {
+		x := int(math.Round(n.x*scale + offset[0]))
+		y := int(math.Round(n.y*scale + offset[1]))
+		dots[i] = [2]int{x, y}
+		v.cells[i] = cell{x / 2, y / 4}
+	}
+	for _, e := range v.graph.edges() {
+		var layer int8 = 1
+		if e[0] == v.sel || e[1] == v.sel {
+			layer = 2
+		}
+		c.line(dots[e[0]][0], dots[e[0]][1], dots[e[1]][0], dots[e[1]][1], layer)
+	}
+	order := make([]int, 0, len(v.graph.nodes))
+	if v.sel >= 0 {
+		order = append(order, v.sel)
+	}
+	for i := range v.graph.nodes {
+		if i != v.sel {
+			order = append(order, i)
+		}
+	}
+	for _, i := range order {
+		text := v.nodeStyle(i).Render(labelOf(v.graph.nodes[i]))
+		v.placeLabel(c, v.cells[i], text)
+	}
+	if lines := v.overlay(); len(lines) > 0 {
+		width := lipgloss.Width(lines[0])
+		x := max(0, v.width-width-1)
+		for i, line := range lines {
+			c.place(x, i, line)
+		}
+	}
+	return c
+}
+
+// placeLabel puts a label at its node, or on a free row near it.
+func (v view) placeLabel(c *canvas, at cell, text string) {
+	width := lipgloss.Width(text)
+	x := max(0, min(at.x, v.width-width))
+	for _, dy := range []int{0, 1, -1, 2, -2, 3, -3} {
+		y := at.y + dy
+		if y < 0 || y >= c.h {
+			continue
+		}
+		if c.free(x, y, width) {
+			c.place(x, y, text)
+			return
+		}
+	}
+	c.place(x, at.y, text)
+}
+
+// nodeStyle is how a node's label reads against the selection.
+func (v view) nodeStyle(i int) lipgloss.Style {
+	n := v.graph.nodes[i]
+	switch {
+	case i == v.sel:
+		return selectedSt
+	case n.problem:
+		return problemSt
+	case v.sel < 0:
+		return nodeSt
+	case contains(v.graph.nodes[v.sel].members, i):
+		return memberSt
+	case contains(v.graph.nodes[v.sel].hubs, i):
+		return hubSt
+	}
+	return fadedSt
+}
+
+func contains(list []int, i int) bool {
+	for _, x := range list {
+		if x == i {
+			return true
+		}
+	}
+	return false
+}
+
+// overlay is the panel over the map, as lines, or nil.
+func (v view) overlay() []string {
+	width := min(64, max(30, v.width-4))
+	tall := v.mapHeight()
+	switch {
+	case v.settings:
+		return panel("Settings", v.settingsLines(), width, tall)
+	case v.panel == panelHelp:
+		return panel("Keys", helpLines(v.harness()), width, tall)
+	case v.panel == panelCard:
+		it := v.current()
+		if it == nil {
+			return nil
+		}
+		var members, hubs []string
+		for _, m := range v.graph.nodes[v.sel].members {
+			members = append(members, v.graph.nodes[m].name)
+		}
+		for _, h := range v.graph.nodes[v.sel].hubs {
+			hubs = append(hubs, v.graph.nodes[h].name)
+		}
+		return panel(entryName(it.Entry), cardLines(it.Entry, members, hubs), width, tall)
+	}
+	return nil
+}
+
+// helpLines is the body of the keys panel.
+func helpLines(harness string) []string {
+	rows := [][2]string{
+		{"↑ ↓ ← →", "select the nearest project that way"},
+		{"Tab / Shift+Tab", "select the next, the previous"},
+		{"Shift+arrows", "nudge the selected project; the map answers"},
+		{"Enter", "open its card; again to close"},
+		{"/", "find a project by name"},
+		{"o", "open atlas/<name>/ in Obsidian"},
+		{"c", "start " + harnessLabel(harness) + " in the work folder"},
+		{"i", "open the work folder in the IDE"},
+		{"t", "open a terminal at the work folder"},
+		{"n", "open a thread"},
+		{"R", "refresh every project"},
+		{",", "settings: harness and IDE"},
+		{"Esc", "close a panel; on the map, quit"},
+		{"q", "quit"},
+	}
+	var out []string
+	for _, r := range rows {
+		out = append(out, label.Width(17).Render(r[0])+r[1])
+	}
+	return out
+}
+
+// summary is the line under the map: the selected project, what it mirrors and what
+// mirrors it, and its facts.
+func (v view) summary() string {
+	it := v.current()
+	if it == nil {
+		if len(v.items) == 0 {
+			return dim.Render("no projects yet; run `atlas-obsidian init` in a work folder")
+		}
+		return ""
+	}
+	e := it.Entry
+	if e.Error != "" {
+		return errSt.Render(entryName(e)) + "  " + dim.Render(e.Error)
+	}
+	n := v.graph.nodes[v.sel]
+	parts := []string{memberSt.Render(e.Name)}
+	if len(n.members) > 0 {
+		var names []string
+		for _, m := range n.members {
+			names = append(names, v.graph.nodes[m].name)
+		}
+		parts = append(parts, "mirrors "+memberSt.Render(strings.Join(names, ", ")))
+	}
+	if len(n.hubs) > 0 {
+		var names []string
+		for _, h := range n.hubs {
+			names = append(names, v.graph.nodes[h].name)
+		}
+		parts = append(parts, "mirrored by "+hubSt.Render(strings.Join(names, ", ")))
+	}
+	if e.Description != "" && len(n.members)+len(n.hubs) == 0 {
+		parts = append(parts, dim.Render(e.Description))
+	}
+	for _, f := range facts(e.State) {
+		parts = append(parts, dim.Render(f))
+	}
+	return fitJoin(parts, "  ", v.width-2)
+}
+
+// fitJoin joins parts with sep, dropping parts from the end until the line fits width.
+// The first part always stays.
+func fitJoin(parts []string, sep string, width int) string {
+	for len(parts) > 1 {
+		line := strings.Join(parts, sep)
+		if lipgloss.Width(line) <= width {
+			return line
+		}
+		parts = parts[:len(parts)-1]
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[0]
+}
+
+// footer is the last line: a prompt, progress, a result, or the keys, never wrapped.
+func (v view) footer() string {
 	switch {
 	case v.stub != nil:
-		return v.stub.View() + "\n" + v.wrapped(dim, "Enter open the thread · Esc cancel")
+		return v.stub.View() + dim.Render("  Enter open · Esc cancel")
+	case v.find != nil:
+		return v.find.View() + dim.Render("  Enter keep · Esc back")
 	case v.busy != "":
-		return "  " + okSt.Render(v.busy) + "\n"
+		return "  " + okSt.Render(v.busy)
+	case v.errMsg != "":
+		return "  " + errSt.Render(v.errMsg)
+	case v.status != "":
+		return "  " + okSt.Render(v.status)
 	}
-	out := ""
-	for _, line := range hints {
-		out += v.wrapped(dim, line)
-	}
-	if v.status != "" {
-		out += v.wrapped(okSt, v.status)
-	}
-	if v.errMsg != "" {
-		out += v.wrapped(errSt, v.errMsg)
-	}
-	return out
+	return "  " + dim.Render(v.hints())
 }
 
-// wrapped is one footer line, broken to the screen so it never runs past the last row.
-// Wrapping here keeps the whole message and keeps the frame's height countable.
-func (v view) wrapped(style lipgloss.Style, text string) string {
-	out := ""
-	for _, line := range strings.Split(style.Width(max(20, v.width-4)).Render(text), "\n") {
-		out += "  " + strings.TrimRight(line, " ") + "\n"
-	}
-	return out
+// hint is one key in the footer and how soon a narrow screen may drop it: the higher
+// the rank, the sooner it goes.
+type hint struct {
+	text string
+	rank int
 }
 
-// tabColor is the color a tab's box is filled with while it is the active one.
-func tabColor(t tab) lipgloss.Color {
-	if t == tabProblems {
-		return lipgloss.Color("9")
-	}
-	return projectColor
-}
-
-// tabRow renders the tab boxes, with their counts when there is room for them.
-func (v view) tabRow(counts bool) string {
-	var parts []string
-	for _, t := range v.tabs() {
-		text := tabNames[t]
-		if counts && t != tabConfig {
-			text += fmt.Sprintf(" (%d)", len(v.boards[boardOf(t)].items))
-		}
-		parts = append(parts, tabStyle(tabColor(t), t == v.tab).Render(text))
-	}
-	return strings.Join(parts, "")
-}
-
-// tabBar is the first line: every tab with its count in parentheses, the active one
-// filled with its color, and the refresh stamp at the right. It never wraps: a screen
-// too narrow for all of that loses the stamp, then the name, then the counts.
-func (v view) tabBar() string {
-	room := v.width - 4
-	fits := func(s string) bool { return lipgloss.Width(s) <= room }
-
-	full := title.Render("Atlas") + "  " + v.tabRow(true)
-	stamp := "not refreshed yet"
-	if t, err := time.Parse("2006-01-02T15:04:05Z", v.refreshed); err == nil {
-		stamp = "refreshed " + t.Local().Format("2006-01-02 15:04")
-	}
-	if pad := room - lipgloss.Width(full) - lipgloss.Width(stamp); pad >= 3 {
-		return full + strings.Repeat(" ", pad) + dim.Render(stamp)
-	}
+// hints names the keys in order, dropping the least needed until they fit the width.
+func (v view) hints() string {
+	var keys []hint
 	switch {
-	case fits(full):
-		return full
-	case fits(v.tabRow(true)):
-		return v.tabRow(true)
+	case v.settings:
+		keys = []hint{{"↑↓ choose", 0}, {"Enter save", 0}, {"Esc close", 1}}
+	case v.panel == panelHelp:
+		keys = []hint{{"? close", 0}, {"q quit", 1}}
+	case v.current() != nil && v.current().Entry.Error != "":
+		keys = []hint{{"Enter card", 0}, {"R refresh", 2}, {"arrows select", 3}, {"? keys", 1}, {"q quit", 0}}
+	case v.current() != nil:
+		enter := "Enter card"
+		if v.panel == panelCard {
+			enter = "Enter close"
+		}
+		keys = []hint{{enter, 0}, {"o Obsidian", 4}, {"c " + harnessLabel(v.harness()), 5}, {"i IDE", 6}, {"t terminal", 7}, {"n thread", 8}, {"/ find", 3}, {"R refresh", 10}, {", settings", 9}, {"? keys", 2}, {"q quit", 1}}
+	default:
+		keys = []hint{{"R refresh", 2}, {", settings", 3}, {"? keys", 1}, {"q quit", 0}}
 	}
-	return v.tabRow(false)
+	for len(keys) > 1 {
+		var parts []string
+		for _, k := range keys {
+			parts = append(parts, k.text)
+		}
+		if line := strings.Join(parts, " · "); lipgloss.Width(line) <= v.width-2 {
+			return line
+		}
+		drop, at := -1, -1
+		for i, k := range keys {
+			if k.rank > drop {
+				drop, at = k.rank, i
+			}
+		}
+		keys = append(keys[:at], keys[at+1:]...)
+	}
+	return keys[0].text
 }
 
-// fit makes a frame exactly as tall as the screen, so the tab bar sits on the same row
-// whatever the tab holds. A frame the terminal has to scroll moves everything above the
-// fold out of sight; a short one leaves the top where it is.
-func (v view) fit(frame string) string {
-	out := strings.Split(strings.TrimSuffix(frame, "\n"), "\n")
-	if v.height <= 0 {
-		return strings.Join(out, "\n")
-	}
-	for len(out) < v.height {
-		out = append(out, "")
-	}
-	if len(out) > v.height {
-		out = out[:v.height]
-	}
-	return strings.Join(out, "\n")
-}
-
+// View is the frame: exactly the screen's height, every line at most its width.
 func (v view) View() string {
-	if v.tab == tabConfig {
-		return v.configView()
+	c := v.draw()
+	lines := []string{v.header()}
+	lines = append(lines, c.render(faint, litSt)...)
+	lines = append(lines, "  "+v.summary(), v.footer())
+	clip := lipgloss.NewStyle().MaxWidth(max(1, v.width))
+	for i := range lines {
+		lines[i] = clip.Render(lines[i])
 	}
-	var b strings.Builder
-	b.WriteString(v.head())
-	bd := v.board()
-	body := v.bodyHeight()
-	if len(bd.items) == 0 {
-		b.WriteString("  " + dim.Render(empties[v.tab]) + "\n")
-		body--
+	for len(lines) < v.height {
+		lines = append(lines, "")
 	}
-	lines, more := bd.window(body)
-	for _, line := range lines {
-		b.WriteString("  " + line + "\n")
-	}
-	if more > 0 {
-		b.WriteString("  " + dim.Render(fmt.Sprintf("… %d more lines", more)) + "\n")
-	}
-	b.WriteString("\n" + v.footer(v.hints()...))
-	return v.fit(b.String())
-}
-
-// hints is the footer. With help off it names the tab's own keys: Enter and the launch
-// keys for the entry under the cursor, h, and q. With help on it names every key on
-// two lines.
-func (v view) hints() []string {
-	if v.tab == tabConfig {
-		return []string{"↑↓ choose · Enter save · ←→ tabs · q quit"}
-	}
-	quit := "h help · q quit"
-	if v.help {
-		quit = "h hide help · q quit"
-	}
-	if v.help {
-		return []string{v.boardHints(), "←→ tabs · R refresh · " + quit}
-	}
-	bd := v.board()
-	var parts []string
-	if it := bd.current(); it != nil {
-		parts = append(parts, enterHint(bd, it), v.entryKeys(it.Entry))
-	}
-	return []string{strings.Join(append(parts, "←→ tabs", quit), " · ")}
-}
-
-// enterHint says what Enter does to the entry under the cursor.
-func enterHint(bd *board, it *Item) string {
-	if bd.expanded[it.Entry.Path] {
-		return "Enter collapse"
-	}
-	return "Enter details"
-}
-
-// entryKeys lists the launch keys for one entry.
-func (v view) entryKeys(e registry.Entry) string {
-	if e.Error != "" {
-		return "R refresh"
-	}
-	return "o Obsidian · c " + harnessLabel(v.harness()) + " · i VS Code · n new thread"
-}
-
-// boardHints lists the keys for the entry under the cursor.
-func (v view) boardHints() string {
-	hints := "↑↓ move"
-	bd := v.board()
-	it := bd.current()
-	if it == nil {
-		return hints
-	}
-	return hints + " · " + enterHint(bd, it) + " · " + v.entryKeys(it.Entry)
+	return strings.Join(lines[:v.height], "\n")
 }
 
 // RunView shows the atlas until the user quits. It reports whether anything changed: a
