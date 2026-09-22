@@ -2,11 +2,14 @@ package overlap
 
 import (
 	"bytes"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/nathanaday/atlas-obsidian/internal/lint"
 )
 
 // page renders a wiki page. project stamps it as a mirror of that member.
@@ -106,7 +109,7 @@ func TestReportFindsDuplicatesRelatedPagesNamesAndTags(t *testing.T) {
 	}
 	// Two names, one vocabulary, and a link name in common.
 	os := find(t, r, "a/concepts/Linux.md", "b/concepts/macOS.md")
-	if os.Kind != Related || os.Name != 0 || os.Content < ContentFloor || os.Links == 0 || os.Settled {
+	if os.Kind != Related || os.Name != 0 || os.Content < ScoreFloor || os.Links == 0 || os.Settled {
 		t.Fatalf("os %+v", os)
 	}
 	if len(os.SharedTerms) == 0 || strings.Join(os.SharedLinks, ",") != "Operating Systems,Shell" {
@@ -198,9 +201,39 @@ func TestAHubWithoutMirrorsSaysSo(t *testing.T) {
 	}
 }
 
+func TestNameScoreCountsSharedWords(t *testing.T) {
+	mk := func(names ...string) *doc {
+		d := &doc{names: names}
+		for _, n := range names {
+			d.keys = append(d.keys, lint.NameKey(n))
+			d.runes = append(d.runes, []rune(lint.NameKey(n)))
+			d.words = append(d.words, distinct(tokens(n)))
+		}
+		return d
+	}
+	for _, c := range []struct {
+		a, b []string
+		want float64
+	}{
+		{[]string{"CS513 Course Project"}, []string{"cs513-project", "CS513 group project"}, 2.0 / 3},
+		{[]string{"Widget"}, []string{"Widget (source)"}, 0.5},
+		{[]string{"Gradient Descent"}, []string{"GD"}, 0},
+		{[]string{"Linux"}, []string{"macOS"}, 0},
+		{[]string{"Config"}, []string{"config"}, 1},
+		{[]string{"Backpropagation"}, []string{"Backpropogation"}, NameDuplicate},
+	} {
+		if got := nameScore(mk(c.a...), mk(c.b...)); math.Abs(got-c.want) > 1e-9 {
+			t.Errorf("nameScore(%v, %v) = %v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+}
+
 func TestTokensAndStem(t *testing.T) {
 	got := strings.Join(tokens("The Kernels' schedulers are scheduling processes, and the filesystems were flushed; CS513 studies analysis."), " ")
 	want := "kernel scheduler schedul process filesystem flush cs513 study analysis"
+	if got := stem("running") + " " + stem("planned") + " " + stem("classes") + " " + stem("seeing"); got != "run plan class see" {
+		t.Fatalf("stem %q", got)
+	}
 	if got != want {
 		t.Fatalf("tokens %q", got)
 	}

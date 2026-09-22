@@ -20,14 +20,15 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 )
 
-// The thresholds. A pair appears when its names match or are near, its content cosine
-// reaches ContentFloor, or it links LinksFloor of the same names; it is a duplicate at
-// NameDuplicate or ContentDuplicate.
+// The thresholds. A pair appears when its combined score reaches ScoreFloor; it is a
+// duplicate at NameDuplicate or ContentDuplicate. A name scores 1 when it equals the
+// other, NameDuplicate when it is a typing distance away, and its word overlap when at
+// least NameOverlap of the words of the two names coincide.
 const (
-	ContentFloor     = 0.2
-	LinksFloor       = 0.25
+	ScoreFloor       = 0.1
 	NameDuplicate    = 0.8
 	ContentDuplicate = 0.6
+	NameOverlap      = 0.5
 	// The weights that combine the three scores into one.
 	NameWeight    = 0.5
 	ContentWeight = 0.35
@@ -142,13 +143,16 @@ type Report struct {
 
 // doc is one page as the index holds it.
 type doc struct {
-	info   lint.PageInfo
-	origin int
-	names  []string          // the title and the aliases
-	keys   []string          // their name keys
-	terms  []term            // sorted by id, unit length
-	links  map[string]string // link name key -> display name
-	linked map[string]bool   // resolved paths
+	info     lint.PageInfo
+	origin   int
+	names    []string          // the title and the aliases
+	keys     []string          // their name keys
+	runes    [][]rune          // the same keys as runes, for Near
+	words    [][]string        // the distinct words of each name, stemmed and sorted
+	terms    []term            // sorted by id, unit length
+	links    map[string]string // link name key -> display name
+	linkKeys []string          // the link name keys, sorted
+	linked   map[string]bool   // resolved paths
 }
 
 type term struct {
@@ -189,9 +193,20 @@ func Run(root, hub string, opts Options) (*Report, error) {
 		report.Note = "one origin only: the hub has no pages of its own and mirrors one member, so there is nothing to compare across"
 		return report, nil
 	}
-	report.Pairs, report.Summary.PairsScored = ix.pairs(opts)
-	report.Names = ix.names(opts)
-	report.Tags = ix.tags(opts)
+	withPages := 0
+	for _, o := range report.Origins {
+		if o.Pages > 0 {
+			withPages++
+		}
+	}
+	if withPages < 2 {
+		report.Note = "one origin holds pages, so there is nothing to compare across"
+		return report, nil
+	}
+	pairs, scored := ix.pairs(opts)
+	report.Pairs, report.Summary.PairsScored = append(report.Pairs, pairs...), scored
+	report.Names = append(report.Names, ix.names(opts)...)
+	report.Tags = append(report.Tags, ix.tags(opts)...)
 	report.Summary.Pairs, report.Summary.Names, report.Summary.Tags = len(report.Pairs), len(report.Names), len(report.Tags)
 	if len(report.Pairs)+len(report.Names)+len(report.Tags) == 0 {
 		report.Note = "no page of one origin looks like a page of another"
@@ -206,13 +221,15 @@ type index struct {
 	origins_ []Origin
 	originID map[string]int
 	termID   map[string]int
-	// The hub's own pages by name key, and each hub page's resolved links.
+	// vocabulary names each term by id.
+	vocabulary []string
+	// The hub's own pages, and the same by name key.
+	hub_     []int
 	hubByKey map[string][]int
-	hubLinks map[int]map[string]bool
 }
 
 func newIndex(hub string, pages []lint.PageInfo) *index {
-	ix := &index{hub: hub, originID: map[string]int{}, termID: map[string]int{}, hubByKey: map[string][]int{}, hubLinks: map[int]map[string]bool{}}
+	ix := &index{hub: hub, originID: map[string]int{}, termID: map[string]int{}, hubByKey: map[string][]int{}}
 	ix.origin(hub, true, "")
 	counts := map[int]int{}
 	type raw struct {
@@ -238,6 +255,10 @@ func newIndex(hub string, pages []lint.PageInfo) *index {
 		for _, n := range d.names {
 			if k := lint.NameKey(n); len(k) >= 2 {
 				d.keys = append(d.keys, k)
+				d.runes = append(d.runes, []rune(k))
+			}
+			if w := distinct(tokens(n)); len(w) > 0 {
+				d.words = append(d.words, w)
 			}
 		}
 		for _, l := range info.Links {
@@ -251,6 +272,10 @@ func newIndex(hub string, pages []lint.PageInfo) *index {
 				}
 			}
 		}
+		for k := range d.links {
+			d.linkKeys = append(d.linkKeys, k)
+		}
+		sort.Strings(d.linkKeys)
 		tf := map[string]int{}
 		for _, n := range d.names {
 			for _, t := range tokens(n) {
@@ -258,6 +283,9 @@ func newIndex(hub string, pages []lint.PageInfo) *index {
 			}
 		}
 		for _, h := range info.Headings {
+			if templateHeadings[h] {
+				continue
+			}
 			for _, t := range tokens(h) {
 				tf[t] += Emphasis
 			}
@@ -281,12 +309,11 @@ func newIndex(hub string, pages []lint.PageInfo) *index {
 	}
 	// Term ids follow the alphabet, so a tie between two terms breaks the same way on
 	// every run.
-	var vocabulary []string
 	for t := range df {
-		vocabulary = append(vocabulary, t)
+		ix.vocabulary = append(ix.vocabulary, t)
 	}
-	sort.Strings(vocabulary)
-	for id, t := range vocabulary {
+	sort.Strings(ix.vocabulary)
+	for id, t := range ix.vocabulary {
 		ix.termID[t] = id
 	}
 	n := float64(len(raws))
@@ -311,7 +338,7 @@ func newIndex(hub string, pages []lint.PageInfo) *index {
 		for _, k := range d.keys {
 			ix.hubByKey[k] = append(ix.hubByKey[k], i)
 		}
-		ix.hubLinks[i] = d.linked
+		ix.hub_ = append(ix.hub_, i)
 	}
 	return ix
 }
@@ -441,7 +468,8 @@ func tokens(text string) []string {
 	return out
 }
 
-// stem strips the common English suffixes: plural s, ies, ing, ed.
+// stem strips the common English suffixes: plural s, ies, ing, ed, and the doubled
+// letter they leave (running, run).
 func stem(w string) string {
 	switch {
 	case strings.HasSuffix(w, "ies") && len(w) > 4:
@@ -451,11 +479,18 @@ func stem(w string) string {
 	case strings.HasSuffix(w, "ss"), strings.HasSuffix(w, "us"), strings.HasSuffix(w, "is"):
 		return w
 	case strings.HasSuffix(w, "ing") && len(w) > 5:
-		return w[:len(w)-3]
+		return undouble(w[:len(w)-3])
 	case strings.HasSuffix(w, "ed") && len(w) > 4:
-		return w[:len(w)-2]
+		return undouble(w[:len(w)-2])
 	case strings.HasSuffix(w, "s") && len(w) > 3:
 		return w[:len(w)-1]
+	}
+	return w
+}
+
+func undouble(w string) string {
+	if n := len(w); n > 3 && w[n-1] == w[n-2] && !strings.ContainsRune("aeiousz", rune(w[n-1])) {
+		return w[:n-1]
 	}
 	return w
 }
@@ -502,13 +537,13 @@ func (ix *index) score(i, j int) (Pair, bool) {
 		a, b, i, j = b, a, j, i
 	}
 	name := nameScore(a, b)
-	content, shared := contentScore(ix, a, b)
+	content := contentScore(a, b)
 	links, sharedLinks := linkScore(a, b)
-	if name == 0 && content < ContentFloor && links < LinksFloor {
+	score := NameWeight*name + ContentWeight*content + LinksWeight*links
+	if score < ScoreFloor {
 		return Pair{}, false
 	}
-	p := Pair{Kind: Related, A: ix.page(a), B: ix.page(b), Name: name, Content: round(content), Links: round(links), SharedTerms: shared, SharedLinks: sharedLinks}
-	p.Score = round(NameWeight*name + ContentWeight*content + LinksWeight*links)
+	p := Pair{Kind: Related, A: ix.page(a), B: ix.page(b), Name: round(name), Content: round(content), Links: round(links), SharedTerms: ix.sharedTerms(a, b), SharedLinks: sharedLinks, Score: round(score)}
 	if name >= NameDuplicate || content >= ContentDuplicate {
 		p.Kind = Duplicate
 	}
@@ -527,15 +562,14 @@ func (ix *index) score(i, j int) (Pair, bool) {
 			}
 		}
 	}
-	for h, linked := range ix.hubLinks {
+	for _, h := range ix.hub_ {
 		if h == i || h == j {
 			continue
 		}
-		if linked[a.info.Path] && linked[b.info.Path] {
+		if linked := ix.docs[h].linked; linked[a.info.Path] && linked[b.info.Path] {
 			p.BridgedBy = append(p.BridgedBy, ix.docs[h].info.Path)
 		}
 	}
-	sort.Strings(p.BridgedBy)
 	p.Settled = p.UpgradedTo != "" || len(p.BridgedBy) > 0
 	return p, true
 }
@@ -545,7 +579,9 @@ func (ix *index) page(d *doc) Page {
 }
 
 // nameScore is 1 when a title or alias of one page equals one of the other, once reduced
-// to letters and digits; NameDuplicate when one is a typing distance away; else 0.
+// to letters and digits; NameDuplicate when one is a typing distance away; else the
+// largest share of words two of the names have in common, when it reaches NameOverlap,
+// so "CS513 Course Project" and "cs513-project" count; else 0.
 func nameScore(a, b *doc) float64 {
 	for _, ka := range a.keys {
 		for _, kb := range b.keys {
@@ -554,24 +590,83 @@ func nameScore(a, b *doc) float64 {
 			}
 		}
 	}
-	for _, na := range a.names {
-		for _, nb := range b.names {
-			if lint.Near(na, nb) {
+	for _, ra := range a.runes {
+		for _, rb := range b.runes {
+			if lint.NearKeys(ra, rb) {
 				return NameDuplicate
 			}
 		}
 	}
-	return 0
+	best := 0.0
+	for _, wa := range a.words {
+		for _, wb := range b.words {
+			if j, _ := jaccard(wa, wb); j > best {
+				best = j
+			}
+		}
+	}
+	if best < NameOverlap {
+		return 0
+	}
+	return best
 }
 
-// contentScore is the cosine of the two pages' term vectors, with the terms that weigh
-// most in both.
-func contentScore(ix *index, a, b *doc) (float64, []string) {
+// jaccard is the share of the strings two sorted, distinct lists have in common, with
+// the ones in common.
+func jaccard(a, b []string) (float64, []string) {
+	var shared []string
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		switch {
+		case a[i] < b[j]:
+			i++
+		case a[i] > b[j]:
+			j++
+		default:
+			shared = append(shared, a[i])
+			i++
+			j++
+		}
+	}
+	union := len(a) + len(b) - len(shared)
+	if union == 0 {
+		return 0, nil
+	}
+	return float64(len(shared)) / float64(union), shared
+}
+
+// distinct sorts words and drops repeats.
+func distinct(words []string) []string {
+	sort.Strings(words)
+	return dedupe(words)
+}
+
+// contentScore is the cosine of the two pages' term vectors.
+func contentScore(a, b *doc) float64 {
+	var dot float64
+	i, j := 0, 0
+	for i < len(a.terms) && j < len(b.terms) {
+		switch {
+		case a.terms[i].id < b.terms[j].id:
+			i++
+		case a.terms[i].id > b.terms[j].id:
+			j++
+		default:
+			dot += a.terms[i].weight * b.terms[j].weight
+			i++
+			j++
+		}
+	}
+	return dot
+}
+
+// sharedTerms lists the terms that weigh most in both pages, for a pair the report
+// keeps.
+func (ix *index) sharedTerms(a, b *doc) []string {
 	type hit struct {
 		id int
 		w  float64
 	}
-	var dot float64
 	var hits []hit
 	i, j := 0, 0
 	for i < len(a.terms) && j < len(b.terms) {
@@ -581,15 +676,13 @@ func contentScore(ix *index, a, b *doc) (float64, []string) {
 		case a.terms[i].id > b.terms[j].id:
 			j++
 		default:
-			w := a.terms[i].weight * b.terms[j].weight
-			dot += w
-			hits = append(hits, hit{a.terms[i].id, w})
+			hits = append(hits, hit{a.terms[i].id, a.terms[i].weight * b.terms[j].weight})
 			i++
 			j++
 		}
 	}
-	if dot < ContentFloor {
-		return dot, nil
+	if len(hits) == 0 {
+		return nil
 	}
 	sort.Slice(hits, func(x, y int) bool {
 		if hits[x].w != hits[y].w {
@@ -600,32 +693,28 @@ func contentScore(ix *index, a, b *doc) (float64, []string) {
 	if len(hits) > MaxEvidence {
 		hits = hits[:MaxEvidence]
 	}
-	names := make([]string, len(ix.termID))
-	for t, id := range ix.termID {
-		names[id] = t
-	}
 	var shared []string
 	for _, h := range hits {
-		shared = append(shared, names[h.id])
+		shared = append(shared, ix.vocabulary[h.id])
 	}
-	return dot, shared
+	return shared
 }
 
 // linkScore is the Jaccard index of the names the two pages link, with the names both
 // link.
 func linkScore(a, b *doc) (float64, []string) {
-	if len(a.links) == 0 || len(b.links) == 0 {
+	if len(a.linkKeys) == 0 || len(b.linkKeys) == 0 {
+		return 0, nil
+	}
+	score, keys := jaccard(a.linkKeys, b.linkKeys)
+	if len(keys) == 0 {
 		return 0, nil
 	}
 	var shared []string
-	for k, name := range a.links {
-		if _, ok := b.links[k]; ok {
-			shared = append(shared, name)
-		}
+	for _, k := range keys {
+		shared = append(shared, a.links[k])
 	}
 	sort.Strings(shared)
-	union := len(a.links) + len(b.links) - len(shared)
-	score := float64(len(shared)) / float64(union)
 	if len(shared) > MaxEvidence {
 		shared = shared[:MaxEvidence]
 	}
@@ -710,6 +799,16 @@ func (ix *index) names(opts Options) []Name {
 	}
 	return out
 }
+
+// templateHeadings are the headings the page skeletons give every page of a type,
+// normalized as lint normalizes them; they say nothing about the page.
+var templateHeadings = func() map[string]bool {
+	m := map[string]bool{}
+	for _, h := range project.TemplateHeadings() {
+		m[strings.ToLower(strings.Join(strings.Fields(h), " "))] = true
+	}
+	return m
+}()
 
 // typeTags are the tags the page skeletons give every page of a type; they say nothing
 // about what two origins share.

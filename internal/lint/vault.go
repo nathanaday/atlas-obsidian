@@ -107,8 +107,11 @@ func NameKey(name string) string { return string(nameKey(name)) }
 // Near reports whether two names are the same name with a small typing difference, by
 // the rule the wanted-page suggestions use: one edit for 5 to 8 letters and digits, two
 // for more, and the same digits.
-func Near(a, b string) bool {
-	ka, kb := nameKey(a), nameKey(b)
+func Near(a, b string) bool { return NearKeys(nameKey(a), nameKey(b)) }
+
+// NearKeys is Near over two keys NameKey made, as runes, for a caller that compares
+// many names and keeps the keys.
+func NearKeys(ka, kb []rune) bool {
 	if len(ka) == 0 || len(kb) == 0 || digits(ka) != digits(kb) {
 		return false
 	}

@@ -134,6 +134,16 @@ func Skeleton(pageType, title string, now time.Time) string {
 	return b.String()
 }
 
+// TemplateHeadings lists every heading a skeleton gives a page of some type, so a
+// reader can tell a page's own headings from the template's.
+func TemplateHeadings() []string {
+	var out []string
+	for _, t := range []string{"source", "entity", "concept", "question", "session", "note", "moc"} {
+		out = append(out, headingsFor(t)...)
+	}
+	return out
+}
+
 func headingsFor(pageType string) []string {
 	switch pageType {
 	case "source":
