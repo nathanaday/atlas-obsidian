@@ -26,6 +26,7 @@ type InitProject struct {
 	Description string
 	Mode        string // generic or lyt
 	NoGit       bool   // leave a work folder that is in no repository without one
+	NoThreads   bool   // leave threads off
 }
 
 // Atlas is every action the CLI, the view, and the tools reach. Each field is one
@@ -135,7 +136,7 @@ func Bind(h home.Home, cfg *home.Config, c *console.Console) Atlas {
 					return nil, err
 				}
 			}
-			opts := project.Options{Name: choice.Name, Description: choice.Description, Mode: mode, NoGit: choice.NoGit}
+			opts := project.Options{Name: choice.Name, Description: choice.Description, Mode: mode, NoGit: choice.NoGit, NoThreads: choice.NoThreads}
 			return manage.Init(h, cfg, choice.Work, opts, c, c != nil)
 		},
 		EditProject: func(en registry.Entry, edit manage.Edit) error {

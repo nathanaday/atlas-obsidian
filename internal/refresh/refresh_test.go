@@ -21,7 +21,7 @@ func fakeProject(t *testing.T, log, hot string, pages map[string]string) (string
 	work := filepath.Join(t.TempDir(), "work")
 	atlas := filepath.Join(work, project.Dir, "v")
 	os.MkdirAll(filepath.Join(atlas, "wiki"), 0o755)
-	os.WriteFile(filepath.Join(atlas, project.Marker), []byte(`{"schema":"`+project.Schema+`","id":"00000000-0000-4000-8000-000000000001","name":"v","mode":"generic"}`), 0o644)
+	os.WriteFile(filepath.Join(atlas, project.Marker), []byte(`{"schema":"`+project.Schema+`","id":"00000000-0000-4000-8000-000000000001","name":"v","mode":"generic","threads":true}`), 0o644)
 	os.WriteFile(filepath.Join(atlas, "wiki", "log.md"), []byte(log), 0o644)
 	os.WriteFile(filepath.Join(atlas, "wiki", "hot.md"), []byte(hot), 0o644)
 	for name, text := range pages {

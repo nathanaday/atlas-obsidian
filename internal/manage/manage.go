@@ -100,6 +100,7 @@ type Edit struct {
 	Name          string
 	Description   *string
 	Mode          project.Mode
+	Threads       *bool
 	AddMembers    []string
 	RemoveMembers []string
 }
@@ -115,6 +116,9 @@ func (e Edit) Fields() []string {
 	}
 	if e.Mode != "" {
 		out = append(out, "mode")
+	}
+	if e.Threads != nil {
+		out = append(out, "threads")
 	}
 	if len(e.AddMembers)+len(e.RemoveMembers) > 0 {
 		out = append(out, "members")
@@ -148,6 +152,9 @@ func EditProject(cfg *home.Config, work string, edit Edit, now time.Time) error 
 		}
 		if edit.Mode != "" {
 			c.Mode = edit.Mode
+		}
+		if edit.Threads != nil {
+			c.Threads = *edit.Threads
 		}
 		if members != nil {
 			list, err := members(c)

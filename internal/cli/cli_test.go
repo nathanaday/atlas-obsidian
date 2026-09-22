@@ -713,3 +713,36 @@ func TestEditMembersAndSync(t *testing.T) {
 		t.Fatalf("members %v", p.Config.Members)
 	}
 }
+
+func TestInitNoThreadsAndEditThreads(t *testing.T) {
+	h := setup(t)
+	dir := work(t, "quiet", true)
+	if code := h.run("init", dir, "--no-threads"); code != 0 {
+		t.Fatalf("init exit %d\n%s%s", code, h.out.String(), h.err.String())
+	}
+	p, err := project.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Config.Threads {
+		t.Fatal("--no-threads leaves threads off")
+	}
+	if code := h.run("threads", "quiet"); code == 0 || !strings.Contains(h.err.String(), "threads are off") {
+		t.Fatalf("threads exit %d %s", code, h.err.String())
+	}
+	if code := h.run("show", "quiet"); code != 0 || !strings.Contains(h.out.String(), "off; `atlas-obsidian edit NAME --threads on`") {
+		t.Fatalf("show exit %d:\n%s", code, h.out.String())
+	}
+	if code := h.run("edit", "quiet", "--threads", "maybe"); code != 2 {
+		t.Fatalf("a bad value: exit %d", code)
+	}
+	if code := h.run("edit", "quiet", "--threads", "on"); code != 0 {
+		t.Fatalf("edit exit %d %s", code, h.err.String())
+	}
+	if code := h.run("thread", "quiet", "new", "First"); code != 0 {
+		t.Fatalf("thread exit %d %s", code, h.err.String())
+	}
+	if code := h.run("threads", "quiet"); code != 0 || !strings.Contains(h.out.String(), "First") {
+		t.Fatalf("threads exit %d:\n%s", code, h.out.String())
+	}
+}

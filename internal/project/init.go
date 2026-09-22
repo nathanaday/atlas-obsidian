@@ -266,6 +266,8 @@ type Options struct {
 	// NoGit leaves a work folder that is in no repository without one. The project then has
 	// no history, and no operation can run until it gets one.
 	NoGit bool
+	// NoThreads leaves threads off: no thread folders, and the thread tools refuse.
+	NoThreads bool
 }
 
 // InitResult reports what Init made.
@@ -307,6 +309,7 @@ func newConfig(work string, opts Options, now time.Time) (Config, error) {
 		Description: strings.TrimSpace(opts.Description),
 		Mode:        mode,
 		Created:     now.Format("2006-01-02"),
+		Threads:     !opts.NoThreads,
 	}, nil
 }
 

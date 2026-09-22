@@ -5,6 +5,7 @@ package hooks
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -249,6 +250,9 @@ func namesList(names []string) string {
 func threadLines(p *project.Project, now time.Time) string {
 	var b strings.Builder
 	board, err := threads.Sync(p, now)
+	if errors.Is(err, threads.ErrOff) {
+		return "Threads: off in this project. The project tool turns them on (threads: true); until then the thread skills have nothing to work on here.\n"
+	}
 	if err != nil {
 		return b.String()
 	}

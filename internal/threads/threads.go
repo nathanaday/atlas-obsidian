@@ -278,6 +278,9 @@ func NewID(now time.Time) string {
 	return fmt.Sprintf("thr-%s-%s", now.Format("20060102"), hex.EncodeToString(b[:]))
 }
 
+// ErrOff says the project does not track threads.
+var ErrOff = errors.New("threads are off in this project; turn them on with the project tool (threads: true) or `atlas-obsidian edit NAME --threads on`")
+
 // Problem is a page that is not valid, or a document no thread claims.
 type Problem struct {
 	Path   string `json:"path"`
@@ -298,6 +301,9 @@ func (b *Board) problem(rel string, err error) {
 // Load reads every card, document, and phase page of the project. A page it cannot
 // parse is a Problem, not an error; only an unreadable folder fails.
 func Load(p *project.Project) (*Board, error) {
+	if !p.Config.Threads {
+		return nil, ErrOff
+	}
 	b := &Board{Threads: []Thread{}, Phases: []Phase{}}
 	byID := map[string]int{}
 	for _, dir := range []string{project.ThreadsDir, project.ArchiveDir} {
@@ -876,7 +882,7 @@ func touch(p *project.Project, t *Thread, now time.Time, unblock bool) error {
 // Touch marks the thread that owns a document as updated today. rel is the document's
 // path relative to the project folder; any other path does nothing.
 func Touch(p *project.Project, rel string, now time.Time) error {
-	if DocStage(rel) == "" {
+	if DocStage(rel) == "" || !p.Config.Threads {
 		return nil
 	}
 	board, err := Load(p)

@@ -72,7 +72,10 @@ const (
 )
 
 // Folders are the folders every project holds, relative to its folder.
-var Folders = []string{WikiDir, ThreadsDir, ArchiveDir, StubsDir, SpecsDir, PlansDir, ReceiptsDir, PhasesDir, InboxDir, IdeasDir}
+var Folders = []string{WikiDir, InboxDir, IdeasDir}
+
+// ThreadFolders are the folders a project with threads on holds as well.
+var ThreadFolders = []string{ThreadsDir, ArchiveDir, StubsDir, SpecsDir, PlansDir, ReceiptsDir, PhasesDir}
 
 // StageDirs are the folders a thread's documents sit in, in stage order.
 var StageDirs = []string{StubsDir, SpecsDir, PlansDir, ReceiptsDir}
@@ -114,6 +117,9 @@ type Config struct {
 	Description string `json:"description,omitempty"`
 	Mode        Mode   `json:"mode"`
 	Created     string `json:"created"`
+	// Threads says whether the project tracks threads. Off, the thread tools refuse and
+	// nothing reads threads/; a folder that exists stays as it is.
+	Threads bool `json:"threads,omitempty"`
 	// Members are the projects, by id, whose wikis this project mirrors under
 	// wiki/projects/. A member never knows it is listed.
 	Members []string `json:"members,omitempty"`
@@ -456,7 +462,11 @@ func (p *Project) moveFolder(folder string) error {
 // EnsureFolders creates the folders a project should hold but may lack, as after a clone
 // that did not carry empty ones.
 func (p *Project) EnsureFolders() error {
-	for _, dir := range Folders {
+	dirs := Folders
+	if p.Config.Threads {
+		dirs = append(append([]string(nil), Folders...), ThreadFolders...)
+	}
+	for _, dir := range dirs {
 		if err := os.MkdirAll(p.Path(dir), 0o755); err != nil {
 			return err
 		}

@@ -369,3 +369,32 @@ func TestDisplayPathsInErrors(t *testing.T) {
 }
 
 // A project made before the rename opens, and its schema rises on the next save.
+
+func TestThreadsAreOnUnlessAskedOff(t *testing.T) {
+	p := newProject(t)
+	if !p.Config.Threads {
+		t.Fatal("a new project tracks threads")
+	}
+	for _, dir := range ThreadFolders {
+		if info, err := os.Stat(p.Path(dir)); err != nil || !info.IsDir() {
+			t.Errorf("a new project lacks %s", dir)
+		}
+	}
+	res, err := Init(newWork(t, "quiet"), Options{NoThreads: true}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := res.Project
+	if q.Config.Threads {
+		t.Fatal("--no-threads leaves threads off")
+	}
+	if _, err := os.Stat(q.Path(ThreadsDir)); err == nil {
+		t.Fatal("a project with threads off has no threads/ folder")
+	}
+	if err := q.EnsureFolders(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(q.Path(ThreadsDir)); err == nil {
+		t.Fatal("EnsureFolders makes no thread folder while threads are off")
+	}
+}

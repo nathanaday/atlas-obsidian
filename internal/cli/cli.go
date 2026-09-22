@@ -52,13 +52,14 @@ Getting started:
   init [PATH]               make the current folder (or PATH) a project: an atlas/<name>/ folder
                             inside your work, with its wiki and its threads
                             --name N, --description TEXT, --mode generic|lyt;
-                            a folder in no git repository becomes one unless --no-git
+                            a folder in no git repository becomes one unless --no-git;
+                            threads are on unless --no-threads
 
 Projects (PROJECT is a name, a path, or nothing for the project you are in):
   list                      every project
   show NAME                 everything the atlas knows about one
   edit NAME                 change it: --name N, --description TEXT, --mode generic|lyt,
-                            --add-member P, --remove-member P (each repeatable)
+                            --threads on|off, --add-member P, --remove-member P (each repeatable)
   sync [PROJECT]            mirror the wikis of its members under wiki/projects/, as one operation
   describe PROJECT          stage a snapshot of the work; the describe skill writes its page
   forget PROJECT            drop a project from the atlas; its atlas/<name>/ folder stays
@@ -517,12 +518,13 @@ func (e *env) initProject(args []string) (int, error) {
 	description := fs.String("description", "", "what the work is and what its wiki should remember")
 	mode := fs.String("mode", "", "the filing mode for new wiki pages: generic (default) or lyt")
 	noGit := fs.Bool("no-git", false, "leave a folder that is in no git repository without one")
+	noThreads := fs.Bool("no-threads", false, "leave threads off: no thread folders, and the thread tools refuse")
 	positional, err := parse(fs, args)
 	if err != nil {
 		return 2, nil
 	}
 	if len(positional) > 1 {
-		return 2, errors.New("usage: atlas-obsidian init [PATH] [--name N] [--description TEXT] [--mode generic|lyt] [--no-git]")
+		return 2, errors.New("usage: atlas-obsidian init [PATH] [--name N] [--description TEXT] [--mode generic|lyt] [--no-git] [--no-threads]")
 	}
 	work := cwd()
 	if len(positional) == 1 {
@@ -549,9 +551,16 @@ func (e *env) initProject(args []string) (int, error) {
 		if !set["description"] {
 			*description = c.Ask("Description: what the work is, and what its wiki should remember", "")
 		}
+		if !set["no-threads"] {
+			on, err := c.Confirm("Track threads here (issues, features, chores, each as stub, spec, plan, receipt)?", true)
+			if err != nil {
+				return 1, err
+			}
+			*noThreads = !on
+		}
 	}
 	acts := actions.Bind(e.home, cfg, c)
-	made, err := acts.InitProject(actions.InitProject{Work: work, Name: *name, Description: *description, Mode: *mode, NoGit: *noGit})
+	made, err := acts.InitProject(actions.InitProject{Work: work, Name: *name, Description: *description, Mode: *mode, NoGit: *noGit, NoThreads: *noThreads})
 	if err != nil {
 		return 1, err
 	}
@@ -1489,6 +1498,7 @@ func (e *env) show(args []string) (int, error) {
 	row("Wiki", home.Display(entry.Wiki()))
 	row("Created", entry.Created)
 	row("Mode", string(entry.Mode))
+	row("Threads", map[bool]string{true: "on", false: "off; `atlas-obsidian edit NAME --threads on` turns them on"}[entry.Threads])
 	row("Description", entry.Description)
 	if len(entry.Members) > 0 {
 		var names []string
@@ -1590,6 +1600,7 @@ func (e *env) edit(args []string) (int, error) {
 	name := fs.String("name", "", "the project's name; it renames atlas/<name>/ too")
 	description := fs.String("description", "", "what the work is and what its wiki should remember; \"\" clears it")
 	mode := fs.String("mode", "", "the filing mode for new wiki pages: generic or lyt")
+	threadsFlag := fs.String("threads", "", "on or off: whether the project tracks threads")
 	var add, remove repeated
 	fs.Var(&add, "add-member", "a project whose wiki this one mirrors, by name, id, or path; repeatable")
 	fs.Var(&remove, "remove-member", "a member to drop, by name, id, or path; repeatable")
@@ -1599,7 +1610,7 @@ func (e *env) edit(args []string) (int, error) {
 	}
 	set := setFlags(fs)
 	if len(positional) != 1 || len(set) == 0 {
-		return 2, errors.New("usage: atlas-obsidian edit NAME [--name N] [--description TEXT] [--mode generic|lyt] [--add-member P]... [--remove-member P]...")
+		return 2, errors.New("usage: atlas-obsidian edit NAME [--name N] [--description TEXT] [--mode generic|lyt] [--threads on|off] [--add-member P]... [--remove-member P]...")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -1619,6 +1630,16 @@ func (e *env) edit(args []string) (int, error) {
 			return 2, err
 		}
 		change.Mode = m
+	}
+	if set["threads"] {
+		switch *threadsFlag {
+		case "on":
+			change.Threads = ptrBool(true)
+		case "off":
+			change.Threads = ptrBool(false)
+		default:
+			return 2, fmt.Errorf("--threads must be on or off, not %q", *threadsFlag)
+		}
 	}
 	if err := actions.Bind(e.home, cfg, e.console).EditProject(entry, change); err != nil {
 		return 1, err
@@ -2205,3 +2226,5 @@ func entryStatus(en registry.Entry) string {
 	}
 	return "ok"
 }
+
+func ptrBool(b bool) *bool { return &b }

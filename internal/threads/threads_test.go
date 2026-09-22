@@ -1,6 +1,7 @@
 package threads
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -367,5 +368,41 @@ func TestPhases(t *testing.T) {
 	}
 	if ph, err := ReorderPhase(p, "Beta", 5, now); err != nil || ph.Order != 5 {
 		t.Fatal(err)
+	}
+}
+
+func TestEveryFunctionRefusesWhileThreadsAreOff(t *testing.T) {
+	p := newProject(t)
+	th, err := Start(p, New{Title: "Before"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Config.Threads = false
+	if _, err := Load(p); !errors.Is(err, ErrOff) {
+		t.Fatalf("Load: %v", err)
+	}
+	if _, err := Sync(p, now); !errors.Is(err, ErrOff) {
+		t.Fatalf("Sync: %v", err)
+	}
+	if _, err := Start(p, New{Title: "After"}, now); !errors.Is(err, ErrOff) {
+		t.Fatalf("Start: %v", err)
+	}
+	if _, err := File(p, th.ID, Filing{Stage: Spec, Text: "x"}, now); !errors.Is(err, ErrOff) {
+		t.Fatalf("File: %v", err)
+	}
+	if _, err := Set(p, th.ID, Changes{}, now); !errors.Is(err, ErrOff) {
+		t.Fatalf("Set: %v", err)
+	}
+	if _, err := CreatePhase(p, "P", "", nil, now); !errors.Is(err, ErrOff) {
+		t.Fatalf("CreatePhase: %v", err)
+	}
+	if err := Touch(p, th.Doc(Stub).Path, now.AddDate(0, 0, 1)); err != nil {
+		t.Fatalf("Touch is silent: %v", err)
+	}
+	// The pages stay as they were: turning threads back on finds the thread.
+	p.Config.Threads = true
+	board, err := Load(p)
+	if err != nil || board.Find(th.ID) == nil || board.Find(th.ID).Updated != now.Format("2006-01-02") {
+		t.Fatalf("after: %v %+v", err, board)
 	}
 }

@@ -124,6 +124,7 @@ type ProjectToolArgs struct {
 	Description   *string  `json:"description,omitempty" jsonschema:"init, edit: one to three sentences saying what the work is and what its wiki should remember; the ingest and query skills read it. On edit an empty string clears it"`
 	Mode          string   `json:"mode,omitempty" jsonschema:"init, edit: the filing mode for new wiki pages, generic (default, a folder per type) or lyt (atomic notes and Maps of Content)"`
 	NoGit         bool     `json:"no_git,omitempty" jsonschema:"init: leave a folder that is in no git repository without one. The wiki then has no history and no operation can run"`
+	Threads       *bool    `json:"threads,omitempty" jsonschema:"init, edit: whether the project tracks threads (default true on init). Off, the thread tools refuse and the session hook lists none; a threads/ folder that exists stays as it is"`
 	AddMembers    []string `json:"add_members,omitempty" jsonschema:"edit: projects whose wikis this one mirrors under wiki/projects/, each by name, id, or path. Refused when one is this project, is unknown, or would close a cycle"`
 	RemoveMembers []string `json:"remove_members,omitempty" jsonschema:"edit: members to drop, each by name, id, or path; the next sync removes their mirrors"`
 }
@@ -152,7 +153,7 @@ func (s *Server) projectTool(ctx context.Context, req *mcp.CallToolRequest, a Pr
 		if work == "" {
 			return nil, ProjectToolOut{}, errors.New("init needs work: the folder that becomes a project")
 		}
-		choice := actions.InitProject{Work: home.Expand(work), Name: a.Name, Mode: a.Mode, NoGit: a.NoGit}
+		choice := actions.InitProject{Work: home.Expand(work), Name: a.Name, Mode: a.Mode, NoGit: a.NoGit, NoThreads: a.Threads != nil && !*a.Threads}
 		if a.Description != nil {
 			choice.Description = *a.Description
 		}
@@ -199,7 +200,7 @@ func (s *Server) projectTool(ctx context.Context, req *mcp.CallToolRequest, a Pr
 		out.Sync = res
 		return nil, out, err
 	case "edit":
-		edit := manage.Edit{Name: a.Name, Description: a.Description, AddMembers: a.AddMembers, RemoveMembers: a.RemoveMembers}
+		edit := manage.Edit{Name: a.Name, Description: a.Description, Threads: a.Threads, AddMembers: a.AddMembers, RemoveMembers: a.RemoveMembers}
 		if a.Mode != "" {
 			mode, err := project.ParseMode(a.Mode)
 			if err != nil {
@@ -208,7 +209,7 @@ func (s *Server) projectTool(ctx context.Context, req *mcp.CallToolRequest, a Pr
 			edit.Mode = mode
 		}
 		if len(edit.Fields()) == 0 {
-			return nil, ProjectToolOut{}, errors.New("edit needs name, description, mode, add_members, or remove_members")
+			return nil, ProjectToolOut{}, errors.New("edit needs name, description, mode, threads, add_members, or remove_members")
 		}
 		if err := acts.EditProject(en, edit); err != nil {
 			return nil, ProjectToolOut{}, err

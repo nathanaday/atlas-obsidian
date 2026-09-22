@@ -176,3 +176,29 @@ func TestResolvePath(t *testing.T) {
 		t.Fatalf("~: %q %v", got, err)
 	}
 }
+
+func TestEditProjectTurnsThreadsOffAndOn(t *testing.T) {
+	h, cfg := atlas(t)
+	dir := work(t, "webapp")
+	if _, err := Init(h, cfg, dir, project.Options{}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	off := false
+	if err := EditProject(cfg, dir, Edit{Threads: &off}, now); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := project.Open(dir)
+	if p.Config.Threads {
+		t.Fatal("threads still on")
+	}
+	if _, err := os.Stat(p.Path(project.ThreadsDir)); err != nil {
+		t.Fatal("turning threads off removes nothing")
+	}
+	on := true
+	if err := EditProject(cfg, dir, Edit{Threads: &on}, now); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := project.Open(dir); !p.Config.Threads {
+		t.Fatal("threads still off")
+	}
+}

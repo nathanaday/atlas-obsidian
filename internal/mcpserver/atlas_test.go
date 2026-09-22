@@ -204,3 +204,27 @@ func TestProjectMembersAndSync(t *testing.T) {
 		t.Fatal("the mirror stayed")
 	}
 }
+
+func TestProjectToolTurnsThreadsOff(t *testing.T) {
+	a := newAtlas(t)
+	c := a.session(t)
+	var out ProjectToolOut
+	if msg := c.call("project", map[string]any{"action": "edit", "threads": false}, &out); msg != "" || out.Project == nil || out.Project.Threads {
+		t.Fatalf("edit %q %+v", msg, out.Project)
+	}
+	if msg := c.call("thread", map[string]any{"text": "Now."}, nil); !strings.Contains(msg, "threads are off") {
+		t.Fatalf("thread: %q", msg)
+	}
+	if msg := c.call("threads", nil, nil); !strings.Contains(msg, "threads are off") {
+		t.Fatalf("threads: %q", msg)
+	}
+	if msg := c.call("project", map[string]any{"action": "edit", "threads": true}, &out); msg != "" || !out.Project.Threads {
+		t.Fatalf("edit back %q %+v", msg, out.Project)
+	}
+	other := filepath.Join(filepath.Dir(a.work), "quiet")
+	os.MkdirAll(other, 0o755)
+	var made ProjectToolOut
+	if msg := c.call("project", map[string]any{"action": "init", "work": other, "threads": false}, &made); msg != "" || made.Project.Threads {
+		t.Fatalf("init %q %+v", msg, made.Project)
+	}
+}

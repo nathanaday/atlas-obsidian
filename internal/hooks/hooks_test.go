@@ -413,3 +413,16 @@ func TestSessionStartSyncsTheMembers(t *testing.T) {
 		t.Fatalf("the guard names the mirror: %s", out.String())
 	}
 }
+
+func TestSessionStartSaysWhenThreadsAreOff(t *testing.T) {
+	now := time.Now()
+	h, work := atlas(t, now)
+	if err := project.UpdateConfig(work, "threads", now, func(c *project.Config) error { c.Threads = false; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	e := env(t, map[string]string{home.EnvHome: h.Root})
+	text := run(t, work, e, false, now)
+	if !strings.Contains(text, "Threads: off in this project.") || strings.Contains(text, "Open threads") {
+		t.Fatalf("got:\n%s", text)
+	}
+}
