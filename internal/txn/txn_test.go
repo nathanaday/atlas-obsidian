@@ -91,6 +91,8 @@ func TestPrepareValidates(t *testing.T) {
 		{"frontmatter", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: "wiki/a.md", Mode: Create, Content: []byte("# no front\n")}}}, "no frontmatter"},
 		{"mirror is derived", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: "wiki/projects/svc/a.md", Mode: Create, Content: mkpage("A", "")}}}, "rewritten by sync"},
 		{"mirror by ingest", Request{Kind: Ingest, Summary: "x", Writes: []Write{{Path: "wiki/projects/svc/a.md", Mode: Create, Content: mkpage("A", "")}}}, "rewritten by sync"},
+		{"merge scope", Request{Kind: Merge, Summary: "x", Writes: []Write{{Path: "notes/a.md", Mode: Create, Content: mkpage("A", "")}}}, "only under wiki/"},
+		{"merge into a mirror", Request{Kind: Merge, Summary: "x", Writes: []Write{{Path: "wiki/projects/svc/a.md", Mode: Create, Content: mkpage("A", "")}}}, "rewritten by sync"},
 		{"sync scope", Request{Kind: Sync, Summary: "x", Writes: []Write{{Path: "wiki/a.md", Mode: Create, Content: mkpage("A", "")}}}, "only under wiki/projects/"},
 		{"required keys", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: "wiki/a.md", Mode: Create, Content: []byte("---\ntitle: A\n---\n")}}}, "lacks type"},
 		{"json", Request{Kind: Canvas, Summary: "x", Writes: []Write{{Path: "wiki/canvases/a.canvas", Mode: Create, Content: []byte("{")}}}, "not valid JSON"},

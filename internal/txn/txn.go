@@ -44,15 +44,19 @@ const (
 	// Sync rewrites the mirrors under wiki/projects/ from the project's members. The
 	// mirror package builds it; nothing else writes there.
 	Sync Kind = "sync"
+	// Merge is the wiki-merge skill's kind: in a hub, the pages it upgrades from its
+	// members and the bridges it builds between them; in a member, the pointer each
+	// upgraded page leaves behind. It writes under wiki/ like a save.
+	Merge Kind = "merge"
 )
 
 // ModelKinds are the kinds a plan from the model may use. Capture, undo, and stub are the
 // core's own, and the identity file changes only through project.UpdateConfig.
-var ModelKinds = []Kind{Ingest, Save, Markdown, Repair, Fold, Canvas, Base}
+var ModelKinds = []Kind{Ingest, Save, Markdown, Repair, Fold, Canvas, Base, Merge}
 
 func validKind(k Kind) bool {
 	switch k {
-	case Ingest, Save, Markdown, Repair, Fold, Canvas, Base, Capture, Stub, Sync:
+	case Ingest, Save, Markdown, Repair, Fold, Canvas, Base, Merge, Capture, Stub, Sync:
 		return true
 	}
 	return false
@@ -224,7 +228,7 @@ func allowed(kind Kind, p string, mode WriteMode) error {
 		if !under(project.WikiDir) || !strings.HasSuffix(p, ".base") {
 			return fmt.Errorf("a base operation writes only .base files under wiki/: %s", p)
 		}
-	case Save, Markdown, Repair, Fold:
+	case Save, Markdown, Repair, Fold, Merge:
 		if !under(project.WikiDir) {
 			return fmt.Errorf("a %s operation writes only under wiki/: %s", kind, p)
 		}

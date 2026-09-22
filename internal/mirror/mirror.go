@@ -196,6 +196,14 @@ const (
 	CommitKey   = "commit"
 )
 
+// The frontmatter a merge leaves on a member page whose content moved into a hub:
+// the page's path in the hub and the hub's id. The hub named does not mirror the page
+// and sends every link to it to the hub's page; any other hub mirrors it as written.
+const (
+	MovedToKey        = "moved_to"
+	MovedToProjectKey = "moved_to_project"
+)
+
 // Build computes the sync for p over the projects ix lists. The plan's writes are the
 // difference between each mirror folder and what the closure produces.
 func Build(p *project.Project, ix *registry.Index) (*Plan, error) {
@@ -211,7 +219,7 @@ func Build(p *project.Project, ix *registry.Index) (*Plan, error) {
 			continue
 		}
 		own, ownThreads := map[string][]byte{}, map[string][]byte{}
-		if err := mirrorMember(m, p.Config.Threads, own, ownThreads); err != nil {
+		if err := mirrorMember(m, p, own, ownThreads); err != nil {
 			m.Error = err.Error()
 			m.Folder = ""
 			m.Pages, m.Threads = 0, 0
@@ -417,8 +425,10 @@ func destination(folder string, withThreads bool, rel string) string {
 // mirrorMember reads one member's folder and adds its transformed wiki files to wiki and
 // its thread pages to thr. Threads are mirrored only when the hub and the member both
 // track them. One link resolver covers both halves, so a wiki page that cites a thread
-// document, or a thread document that cites a wiki page, resolves in the hub.
-func mirrorMember(m *Member, hubThreads bool, wiki, thr map[string][]byte) error {
+// document, or a thread document that cites a wiki page, resolves in the hub. A page
+// whose content moved into this hub is left out, and a link to it lands on the hub's
+// page.
+func mirrorMember(m *Member, hub *project.Project, wiki, thr map[string][]byte) error {
 	mp, err := project.Open(m.Path)
 	if err != nil {
 		return err
@@ -433,11 +443,17 @@ func mirrorMember(m *Member, hubThreads bool, wiki, thr map[string][]byte) error
 	if err != nil {
 		return err
 	}
-	withThreads := hubThreads && mp.Config.Threads
-	replace := func(resolved string) string { return destination(m.Folder, withThreads, resolved) }
+	moved := movedInto(hub, vault)
+	withThreads := hub.Config.Threads && mp.Config.Threads
+	replace := func(resolved string) string {
+		if to, ok := moved[resolved]; ok {
+			return to
+		}
+		return destination(m.Folder, withThreads, resolved)
+	}
 	for _, rel := range vault.Files() {
 		dest := destination(m.Folder, withThreads, rel)
-		if dest == "" {
+		if dest == "" || moved[rel] != "" {
 			continue
 		}
 		data, err := os.ReadFile(mp.Path(rel))
@@ -464,12 +480,33 @@ func mirrorMember(m *Member, hubThreads bool, wiki, thr map[string][]byte) error
 				if resolved == "" {
 					return ""
 				}
-				return destination(m.Folder, withThreads, resolved)
+				return replace(resolved)
 			})
 		}
 		wiki[dest] = data
 	}
 	return nil
+}
+
+// movedInto maps each member page whose content moved into hub to its page there: the
+// pages whose moved_to_project is the hub's id and whose moved_to names a page the hub
+// holds under wiki/. A pointer to a page the hub does not hold is mirrored as written.
+func movedInto(hub *project.Project, vault *lint.Vault) map[string]string {
+	moved := map[string]string{}
+	for _, pg := range vault.Pages() {
+		if project.StringField(pg.Fields, MovedToProjectKey) != hub.Config.ID {
+			continue
+		}
+		to := project.StringField(pg.Fields, MovedToKey)
+		if to == "" || !strings.HasPrefix(to, project.WikiDir+"/") || lint.Mirrored(to) {
+			continue
+		}
+		if _, err := os.Stat(hub.Path(to)); err != nil {
+			continue
+		}
+		moved[pg.Path] = to
+	}
+	return moved
 }
 
 var frontKey = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*):`)

@@ -2,6 +2,7 @@ package mirror
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -481,5 +482,50 @@ func TestFindThreadReachesIntoTheMembers(t *testing.T) {
 	hub.Config.Threads = false
 	if _, _, err := FindThread(hub, ix, inA.ID); !errors.Is(err, threads.ErrOff) {
 		t.Fatalf("threads off: %v", err)
+	}
+}
+
+func TestSyncSendsLinksToAPageThatMovedIntoTheHub(t *testing.T) {
+	needGit(t)
+	hub := initProject(t, "hub", "hub")
+	a := initProject(t, "svc-a", "svc-a")
+	other := initProject(t, "other", "other")
+	front := "---\ntitle: %s\ntype: concept\nstatus: evergreen\ncreated: 2026-09-01\nupdated: 2026-09-01\ntags: []\n%s---\n"
+	// The hub holds the merged page; a keeps a pointer to it and a page that links the
+	// pointer; a second pointer names a hub the page is not in, and a third names a page
+	// the hub does not hold.
+	writePage(t, hub, "wiki/concepts/Widget.md", fmt.Sprintf(front, "Widget", "")+"# Widget\n\nMerged.\n")
+	writePage(t, a, "wiki/concepts/Widget.md", fmt.Sprintf(front, "Widget", "moved_to: \"wiki/concepts/Widget.md\"\nmoved_to_project: \""+hub.Config.ID+"\"\n")+"# Widget\n\nMoved to hub.\n")
+	writePage(t, a, "wiki/concepts/Gadget.md", fmt.Sprintf(front, "Gadget", "moved_to: \"wiki/concepts/Gadget.md\"\nmoved_to_project: \""+other.Config.ID+"\"\n")+"# Gadget\n\nMoved to other.\n")
+	writePage(t, a, "wiki/concepts/Gone.md", fmt.Sprintf(front, "Gone", "moved_to: \"wiki/concepts/Gone.md\"\nmoved_to_project: \""+hub.Config.ID+"\"\n")+"# Gone\n\nMoved to a page the hub lacks.\n")
+	writePage(t, a, "wiki/concepts/Uses.md", fmt.Sprintf(front, "Uses", "")+"# Uses\n\nSee [[Widget]], [[Widget|the widget]], [[Gadget]], [[Gone]], and [w](Widget.md).\n")
+	writePage(t, a, "wiki/canvases/map.canvas", "{\"nodes\":[{\"id\":\"1\",\"type\":\"file\",\"file\":\"wiki/concepts/Widget.md\",\"x\":0,\"y\":0,\"width\":100,\"height\":50}],\"edges\":[]}\n")
+	setMembers(t, hub, a.Config.ID)
+	ix := index(entryOf(hub), entryOf(a), entryOf(other))
+	if _, err := Sync(hub, ix, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(hub.Path("wiki/projects/svc-a/concepts/Widget.md")); err == nil {
+		t.Fatal("the moved page was mirrored")
+	}
+	for _, rel := range []string{"wiki/projects/svc-a/concepts/Gadget.md", "wiki/projects/svc-a/concepts/Gone.md"} {
+		if _, err := os.Stat(hub.Path(rel)); err != nil {
+			t.Fatalf("%s: %v", rel, err)
+		}
+	}
+	uses := readPage(t, hub, "wiki/projects/svc-a/concepts/Uses.md")
+	for _, want := range []string{
+		"[[wiki/concepts/Widget|Widget]]",
+		"[[wiki/concepts/Widget|the widget]]",
+		"[[wiki/projects/svc-a/concepts/Gadget|Gadget]]",
+		"[[wiki/projects/svc-a/concepts/Gone|Gone]]",
+		"[w](wiki/concepts/Widget.md)",
+	} {
+		if !strings.Contains(uses, want) {
+			t.Fatalf("mirrored page lacks %q:\n%s", want, uses)
+		}
+	}
+	if canvas := readPage(t, hub, "wiki/projects/svc-a/canvases/map.canvas"); !strings.Contains(canvas, "wiki/concepts/Widget.md") || strings.Contains(canvas, "projects/svc-a") {
+		t.Fatalf("canvas node not sent to the hub's page:\n%s", canvas)
 	}
 }
