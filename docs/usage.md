@@ -25,6 +25,7 @@ one tool from a Claude Code session, so scripts, muscle memory, and the
 | arrows and Tab select; `/` finds; Enter opens the card; `?` shows every key; `q` quits | — | — |
 | — | `init [PATH]`, `edit NAME`, `forget NAME` | `project` |
 | — | `edit NAME --add-member P`, `sync [PROJECT]` | `project` with `add_members`, then `sync` |
+| — | `init --no-threads`, `edit NAME --threads on\|off` | `project` with `threads` |
 | — | `describe PROJECT` | `stage` with `snapshot`, then the `describe` skill |
 | — | `ingest PROJECT [PATH...]` | `stage`, then the `wiki-ingest` skill |
 | — | `threads [PROJECT]`, `thread PROJECT new\|show\|file\|close\|set\|reopen …`, `phase PROJECT …` | `threads`, `thread`, `phase` |
@@ -43,7 +44,8 @@ halves of what the project knows:
   `.raw/captured/` for the immutable copy of every source it ingested. Every
   change to `wiki/` is one reviewed operation and one git commit.
 - the **threads** under `threads/`, one line of work each, with a document per
-  stage and the phases that order them.
+  stage and the phases that order them. Threads are on by default and can be
+  turned off per project.
 
 The folder takes the project's name, so Obsidian shows each project by its own
 name. It has no git of its own: the repository that holds your work tracks it
@@ -57,6 +59,7 @@ cd ~/code/webapp
 atlas-obsidian init                                   # name: the folder's; asks for a description
 atlas-obsidian init --name "Web App" --description "The customer-facing web application." --mode lyt
 atlas-obsidian init ~/code/notes --no-git             # another folder, and no repository
+atlas-obsidian init ~/code/notes --no-threads         # a wiki only; the thread tools refuse here
 ```
 
 `init` writes `atlas/<name>/` in the current folder: `project.json`, `wiki/`
@@ -83,6 +86,7 @@ Then:
 
 ```bash
 atlas-obsidian edit webapp --name "Web App" --description "…" --mode lyt
+atlas-obsidian edit webapp --threads off              # the folder stays; the tools refuse until on
 atlas-obsidian show webapp
 atlas-obsidian forget webapp                          # drop it from the config; atlas/webapp/ stays
 atlas-obsidian describe webapp                        # stage a snapshot for the describe skill
@@ -132,6 +136,14 @@ not target them: change the page in its own project, and sync again. A member
 the atlas cannot read keeps its old mirror, and the index page says so. The
 session-start hook runs sync in a project that lists members, so a session
 opens over a current mirror.
+
+The same sync mirrors each member's threads under `threads/projects/<name>/`,
+when the project and the member both track threads: the cards, the documents,
+the phases, and the member's board, which the project's own board embeds at
+the end. These are plain files, not an operation. A thread named on the hub,
+by id or title, may belong to a member: `thread PROJECT file|set|close|reopen`
+and the `thread` tool find the owner, make the change there, and bring the
+mirror up to date. `threads` on a hub lists the member boards after its own.
 
 **A moved project heals itself.** The config holds the work folder's path.
 Move the folder, then start a session in it: the hook finds the project's id

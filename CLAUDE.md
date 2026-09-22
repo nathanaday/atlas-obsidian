@@ -50,12 +50,14 @@ over projects that each hold a wiki; see "Left for later" in
    the only way a thread moves, so every change of state is a page the user can
    see. A receipt closes the thread and its card moves to `threads/archive/`. A
    thread names its phase; a phase never lists its threads and has no status.
+   Threads are an opt-in (`threads: true` in `project.json`); off, every
+   thread function returns `threads.ErrOff` and nothing reads `threads/`.
 4. **Code owns what code can derive.** `wiki/log.md`, the source ledger, the
    thread cards, the first callout of every document, the board, and the
-   mirrors under `wiki/projects/`. The model writes prose; it never targets a
-   derived page. The guard refuses the cards and the board (the pages directly
-   under `threads/`), `project.json`, the mirrors, and a new file written
-   straight into a stage folder.
+   mirrors under `wiki/projects/` and `threads/projects/`. The model writes
+   prose; it never targets a derived page. The guard refuses the cards and the
+   board (the pages directly under `threads/`), `project.json`, both mirrors,
+   and a new file written straight into a stage folder.
 5. **Ids travel; paths stay.** `project.json` holds no path; the atlas config
    holds every project's work folder and nothing else. A project heals its own
    entry when a session starts in it (`manage.RegisterProject`).
@@ -70,7 +72,7 @@ may write:
 | Half | Paths | Who writes |
 |---|---|---|
 | The wiki | `wiki/`, `.raw/`, the source ledger, `project.json` | `plan` then `apply`, `capture`, and `project.UpdateConfig` for the identity file |
-| The threads | `threads/` | the `thread` and `phase` tools write the cards, the frontmatter, the callouts, and the board; the model writes a document's prose with Edit |
+| The threads | `threads/` | the `thread` and `phase` tools write the cards, the frontmatter, the callouts, and the board; the model writes a document's prose with Edit; `mirror.Sync` writes `threads/projects/` |
 | Neither | `inbox/`, `ideas/`, `.obsidian/` | the user; `stage` and `capture` for `inbox/` |
 
 ## Tool, skill, or hook
@@ -133,7 +135,7 @@ internal/describe/      the page in the wiki that describes the work, how far th
 internal/capture/       inbox listing with a hint per file, staging into inbox/ (files, and the work's snapshot), capture into .raw/captured/
 internal/ledger/        the source ledger
 internal/lint/          the health check, and the link resolver the mirror shares
-internal/mirror/        members: the closure of a project's members, the transform, and sync, one operation
+internal/mirror/        members: the closure of a project's members, the transform of both halves, sync (the wiki as one operation, the threads as files), and FindThread
 internal/mcpserver/     the tools, thin over the packages above
 internal/hooks/         session-start (the project, its wiki, the page that describes the work, the open threads, the inbox, and hot.md), guard, touched, stop
 internal/claudecode/    Claude Code's plugin registry, `claude plugin`, launching claude in the work
@@ -233,7 +235,11 @@ claude-atlas or claude-obsidian name any more, and the schemas restarted at
   (`docs/members-design.md`). The closure excludes the project itself,
   `mirror.Validate` refuses a cycle or an unknown id when the list is edited,
   and `project.MaxMembers` bounds both the list and the closure. A member
-  never knows; nothing writes into one. Sync reads the member's working tree
+  never knows; nothing writes into one. The same sync mirrors each member's
+  threads under `threads/projects/<folder>/` as plain files when both track
+  threads; `mirror.FindThread` finds the project that owns a thread named on
+  a hub, and the `thread` tool and command make the change there, then
+  `mirror.SyncThreads`. There is no reverse sync. Sync reads the member's working tree
   and records its newest engine commit as a fact. The transform stamps
   `project`, `mirror_of`, and `commit` into each page's frontmatter and
   rewrites every resolvable link to a full vault path through `lint.Vault`,

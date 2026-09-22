@@ -11,7 +11,9 @@ Read [threads.md](../wiki/references/threads.md). Tools: `status`, `threads`,
 A thread is one line of work. It moves stub, spec, plan, receipt, and each
 stage is a document the user can open, under `threads/` in the project's folder.
 Pass `project` to reach another project the atlas lists; this session's project
-is implied.
+is implied. In a project with members, the board also carries each member's
+threads, and a thread named by id or title may be one of theirs: the tool makes
+the change in the project that owns it. Say which project took the change.
 
 ## Show the board
 

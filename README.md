@@ -162,7 +162,10 @@ atlas-obsidian sync platform
 ```
 
 The mirrors are derived: sync rewrites them as one operation, the guard refuses
-edits there, and a member never knows it is listed. The design and its reasons:
+edits there, and a member never knows it is listed. The members' threads come
+along too, under `threads/projects/<name>/`, and the hub's board shows every
+open thread in the ecosystem; a change to a member's thread, made from the hub,
+lands in the member. The design and its reasons:
 [docs/members-design.md](docs/members-design.md).
 
 ## Seeing every project
@@ -223,9 +226,9 @@ webapp/                          your repository
 ├── ...                          your work, untouched
 └── atlas/
     └── webapp/                  named after the project; a rename moves it
-        ├── project.json         name, description, filing mode
+        ├── project.json         name, description, filing mode, threads on or off
         ├── wiki/                index.md, log.md, hot.md, overview.md
-        ├── threads/             stubs/ specs/ plans/ receipts/ phases/ archive/
+        ├── threads/             stubs/ specs/ plans/ receipts/ phases/ archive/; optional
         ├── inbox/               what you drop in: sources, and notes
         ├── ideas/               your scratch notes, which nothing reads
         └── .obsidian/           vault settings and the CSS snippet

@@ -170,6 +170,54 @@ members through the thread tool's `project` argument, which exists today.
 - Two projects in one closure with the same folder name refuse the sync.
   Rename one.
 
+## Threads cross projects
+
+Added 2026-09-22, with 5.4.0. The same closure, the same transform, and the
+same reconcile loop, pointed at `threads/` as well as `wiki/`.
+
+A hub that tracks threads holds `threads/projects/<name>/` for every project
+in its closure that tracks them: the member's cards, `archive/`, the four
+stage folders, `phases/`, and its board, at the paths they have in the
+member, so the relative links inside a document still hold. Every mirrored
+page carries `project` and `mirror_of`; a thread page carries no `commit`,
+because the threads are outside the engine. One link resolver covers both
+halves: a wiki page that cites a thread document, or a thread document that
+cites a wiki page, resolves in the hub. The hub's own board ends with one
+section per mirrored member that embeds the member's mirrored board, so a
+session in the hub reads one page for the whole ecosystem.
+
+`sync` does both halves in one pass over one closure. The wiki half commits
+as one `sync` operation, as before. The thread half is plain files, reconciled
+the way `threads.Sync` reconciles: write on difference, delete on absence,
+remove a member's folder when it leaves the closure. A stray file under
+`threads/projects/` goes at the next sync. `mirror.SyncThreads` applies the
+thread half alone, for the thread tools to call after a write in a member.
+
+**A thread's writes go to its owner.** `mirror.FindThread` resolves a key in
+the project, then in the projects it mirrors, and returns the owner. The
+`thread` tool and the CLI's `thread` command run the change there and bring
+the hub's thread mirror up to date; the `threads` tool in a hub lists the
+member boards after its own, live from the members' working trees, never from
+the mirror. A title that matches in two projects is refused with the ids. A
+thread the hub owns is an ecosystem-wide thread; nothing new is needed for it.
+There is no reverse sync: a hand-made file in a mirror is removed, not moved.
+
+**Threads are an opt-in.** `project.json` gains `threads: true`, and a
+project without it has no thread folders, no thread lines in the hook, and
+thread tools that refuse with the call that turns them on. A hub mirrors the
+threads of a member only when both have them on. Turning them off changes no
+file. This is the first step toward a project that holds only the models its
+user wants; a user-defined model, with its own stages, fields, templates, and
+skills, is left for later.
+
+| Question | Decision |
+|---|---|
+| The thread mirror's writer | plain files, like every other page under `threads/`; not the engine |
+| Where the hub reads member boards for routing | the members' working trees, live; the mirror is for reading in Obsidian |
+| How the hub board shows members | an embed of each mirrored board, so the board renders with no member present |
+| A hand-made file in a mirror | removed at the next sync; the guard makes it rare |
+| The opt-in key | `threads: true`; absent means off; a future model adds its own key |
+
 ## Left for later
 
 - A derived "cited by" callout on a member's page, written by the member's

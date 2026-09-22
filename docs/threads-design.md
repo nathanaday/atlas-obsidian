@@ -281,6 +281,19 @@ version.
 | Tools | two, `threads` and `thread`, plus `phase` |
 | The wiki term "Active Threads" in `wiki/hot.md` | the atlas shows it as "Hot topics", so "thread" means one thing |
 
+## The opt-in, and threads across projects
+
+Added 2026-09-22, with 5.4.0. `project.json` carries `threads: true`; a
+project without it tracks no threads: `threads.Load` returns `ErrOff`, so
+every thread function and tool refuses with the call that turns them on, the
+session hook says so in one line, and `EnsureFolders` makes no thread folder.
+`init` offers threads (default on, `--no-threads`); `edit --threads on|off`
+and the `project` tool flip the flag. Turning threads off removes nothing.
+
+A project with members mirrors their threads under `threads/projects/<name>/`
+and routes a write to the project that owns the thread. See "Threads cross
+projects" in `members-design.md`.
+
 ## Left for later
 
 - A Threads tab in the view.

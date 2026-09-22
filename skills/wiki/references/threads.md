@@ -81,6 +81,23 @@ nothing else needs to say so.
 Every tool acts on this session's project. `project` names another project the
 atlas lists.
 
+## Threads across projects
+
+A project that lists members mirrors their threads under
+`threads/projects/<name>/`, and its board embeds each member's board at the
+end. The mirror is read-only: the hook refuses an edit there and names the
+owner. A thread named by id or title may belong to a member; the `thread` tool
+finds the owner, makes the change there, and brings the mirror up to date, so
+call it as you would for the project's own thread. `threads` on such a project
+lists the member boards after its own. A thread the project itself owns is an
+ecosystem-wide one.
+
+## Off
+
+A project may have threads off (`threads: false` in `project.json`). The
+tools then refuse and say so; the `project` tool with `threads: true` turns
+them on. Do not open threads elsewhere to get around it.
+
 ## Phases
 
 A phase is a named slice of the timeline with an order and a goal, a page

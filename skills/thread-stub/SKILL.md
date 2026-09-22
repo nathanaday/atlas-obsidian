@@ -22,7 +22,8 @@ said it; the thinking comes later, in the spec.
    the note is removed. A note that holds several ideas becomes several
    threads: pass `text` for each and `from` on the last. Say which files you
    read as notes before you open anything, because the hint is a guess.
-3. **Another project.** The same call with `project`.
+3. **Another project.** The same call with `project`. A new thread always
+   opens in the project named, or this one; nothing routes a new thread.
 
 Ask nothing. Do not improve the text, research it, or plan it. When
 something you noticed during other work deserves a thread, open one in your
