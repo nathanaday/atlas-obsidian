@@ -104,6 +104,10 @@ func DocStage(p string) string {
 // IsPhasePage reports whether a path relative to the project folder is a phase page.
 func IsPhasePage(p string) bool { return isMarkdown(p) && path.Dir(p) == project.PhasesDir }
 
+// Mirrored reports whether a path relative to the project folder lies in the thread
+// mirrors sync derives from the project's members.
+func Mirrored(p string) bool { return strings.HasPrefix(p, project.ThreadMirrorDir+"/") }
+
 // Owned reports whether code owns a path relative to the project folder in full: the
 // cards and the board.
 func Owned(p string) bool { return p == project.ThreadsIndex || IsCard(p) }

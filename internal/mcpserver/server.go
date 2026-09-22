@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -153,7 +154,9 @@ type MemberStatus struct {
 	Name     string `json:"name,omitempty"`
 	Folder   string `json:"folder,omitempty"`
 	Mirrored bool   `json:"mirrored"`
-	Error    string `json:"error,omitempty"`
+	// Threads says whether the member's threads are mirrored under threads/projects/.
+	Threads bool   `json:"threads"`
+	Error   string `json:"error,omitempty"`
 }
 
 // Status is the status tool's output: the project, its wiki, and its threads.
@@ -291,6 +294,8 @@ func memberStatus(pl *place.Place, p *project.Project, warnings []string) ([]Mem
 		if m.Folder != "" {
 			_, err := os.Stat(p.Path(project.MirrorDir + "/" + m.Folder + "/" + m.Folder + ".md"))
 			ms.Mirrored = err == nil
+			_, err = os.Stat(p.Path(project.ThreadMirrorDir + "/" + m.Folder + "/" + path.Base(project.ThreadsIndex)))
+			ms.Threads = err == nil
 		}
 		if m.Error == "" && !ms.Mirrored {
 			due++

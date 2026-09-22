@@ -153,7 +153,7 @@ func membersLine(pl *place.Place, now time.Time) string {
 		return fmt.Sprintf("Members: %d listed, not synced: %v\n", len(p.Config.Members), err)
 	}
 	var names, failed []string
-	pages := 0
+	pages, threadPages := 0, 0
 	for _, m := range res.Members {
 		if m.Error != "" {
 			failed = append(failed, m.Name+": "+m.Error)
@@ -161,12 +161,16 @@ func membersLine(pl *place.Place, now time.Time) string {
 		}
 		names = append(names, m.Name)
 		pages += m.Pages
+		threadPages += m.Threads
 	}
 	line := fmt.Sprintf("Members: %s mirrored under %s/%s/ (%d pages, %s)", namesList(names), p.Rel(), project.MirrorDir, pages, project.MirrorIndex)
+	if threadPages > 0 {
+		line += fmt.Sprintf(" and their threads under %s/%s/ (%d pages, shown on the board)", p.Rel(), project.ThreadMirrorDir, threadPages)
+	}
 	if n := res.Creates + res.Updates + res.Removes; n > 0 {
 		line += fmt.Sprintf("; synced now, %d file%s changed", n, plural(n))
 	}
-	line += ". A mirrored page changes in its own project."
+	line += ". A mirrored page changes in its own project; a member's thread changes through the thread tool, which routes to its owner."
 	if len(failed) > 0 {
 		line += " Not read: " + strings.Join(failed, "; ") + "."
 	}
@@ -399,6 +403,8 @@ func guardPath(target string, w io.Writer) error {
 	rel = filepath.ToSlash(rel)
 	reason := ""
 	switch {
+	case threads.Mirrored(rel):
+		reason = mirroredThreadReason(target, rel)
 	case threads.Owned(rel):
 		reason = "the cards and the board under threads/ are generated; write in the thread's documents, and change its card with the thread tool"
 	case threads.DocStage(rel) != "" && !exists(target):
@@ -424,6 +430,24 @@ func guardPath(target string, w io.Writer) error {
 		"permissionDecisionReason": "atlas-obsidian: " + reason,
 	}}
 	return json.NewEncoder(w).Encode(out)
+}
+
+// mirroredThreadReason names the project a page under threads/projects/ came from, and
+// the way to change it there.
+func mirroredThreadReason(target, rel string) string {
+	folder, _, _ := strings.Cut(strings.TrimPrefix(rel, project.ThreadMirrorDir+"/"), "/")
+	owner := "project " + folder
+	if data, err := os.ReadFile(target); err == nil {
+		if fields, _, err := project.Frontmatter(string(data)); err == nil && fields != nil {
+			if of := project.StringField(fields, "mirror_of"); of != "" {
+				owner = of + " of " + owner
+			}
+			if id := project.StringField(fields, "project"); id != "" {
+				owner += " (" + id + ")"
+			}
+		}
+	}
+	return "this page mirrors " + owner + " and sync rewrites it; the thread tool routes a change to the project that owns the thread, so call it with the thread's id, or edit the document in that project's own folder"
 }
 
 func exists(path string) bool {

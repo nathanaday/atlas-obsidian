@@ -11,6 +11,7 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/gitx"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
 	"github.com/nathanaday/atlas-obsidian/internal/txn"
 )
 
@@ -323,4 +324,128 @@ func readPage(t *testing.T, p *project.Project, rel string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func TestSyncMirrorsTheThreadsOfMembersThatTrackThem(t *testing.T) {
+	needGit(t)
+	hub := initProject(t, "hub", "hub")
+	a := initProject(t, "svc-a", "svc-a")
+	b := initProject(t, "svc-b", "svc-b")
+	// b tracks no threads; a has one with a stub and a spec that cites a wiki page, and a
+	// wiki page that cites the thread.
+	if err := project.UpdateConfig(b.Root, "threads", now, func(c *project.Config) error { c.Threads = false; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	b.Config.Threads = false
+	th, err := threads.Start(a, threads.New{Title: "Fix it", Text: "Do it."}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := threads.File(a, th.ID, threads.Filing{Stage: threads.Spec, Text: "See [[Config]] and [the stub](<../stubs/Fix it.md>)."}, now); err != nil {
+		t.Fatal(err)
+	}
+	writePage(t, a, "wiki/entities/Config.md", "---\ntitle: Config\ntype: entity\nstatus: evergreen\ncreated: 2026-09-01\nupdated: 2026-09-01\ntags: []\n---\n# Config\n\nTracked in [[threads/stubs/Fix it]].\n")
+	setMembers(t, hub, a.Config.ID, b.Config.ID)
+	ix := index(entryOf(hub), entryOf(a), entryOf(b))
+
+	res, err := Sync(hub, ix, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Members[0].Threads == 0 || res.Members[1].Threads != 0 {
+		t.Fatalf("members %+v", res.Members)
+	}
+	card := readPage(t, hub, "threads/projects/svc-a/Fix it.md")
+	for _, want := range []string{
+		"project: \"" + a.Config.ID + "\"",
+		"mirror_of: \"threads/Fix it.md\"",
+		"thread_id: " + th.ID,
+		"[Stub](threads/projects/svc-a/stubs/Fix%20it.md)",
+		"![[threads/projects/svc-a/stubs/Fix it|threads/stubs/Fix it]]",
+	} {
+		if !strings.Contains(card, want) {
+			t.Fatalf("mirrored card lacks %q:\n%s", want, card)
+		}
+	}
+	if spec := readPage(t, hub, "threads/projects/svc-a/specs/Fix it.md"); !strings.Contains(spec, "[[wiki/projects/svc-a/entities/Config|Config]]") || !strings.Contains(spec, "[the stub](threads/projects/svc-a/stubs/Fix%20it.md)") || strings.Contains(spec, "commit:") {
+		t.Fatalf("mirrored spec:\n%s", spec)
+	}
+	if page := readPage(t, hub, "wiki/projects/svc-a/entities/Config.md"); !strings.Contains(page, "[[threads/projects/svc-a/stubs/Fix it|threads/stubs/Fix it]]") {
+		t.Fatalf("mirrored wiki page:\n%s", page)
+	}
+	board := readPage(t, hub, project.ThreadsIndex)
+	if !strings.Contains(board, "## svc-a\n") || !strings.Contains(board, "![[threads/projects/svc-a/threads]]") || strings.Contains(board, "## svc-b") {
+		t.Fatalf("hub board:\n%s", board)
+	}
+	if _, err := os.Stat(hub.Path("threads/projects/svc-b")); err == nil {
+		t.Fatal("a member with threads off was mirrored")
+	}
+	if _, err := os.Stat(hub.Path("threads/projects/svc-a/threads.md")); err != nil {
+		t.Fatal("the member's board was not mirrored")
+	}
+	// The hub's own threads are untouched by the mirror, and Load sees none of it.
+	hubBoard, err := threads.Load(hub)
+	if err != nil || len(hubBoard.Threads) != 0 || len(hubBoard.Problems) != 0 {
+		t.Fatalf("hub board %+v %v", hubBoard, err)
+	}
+
+	// Idempotent.
+	again, err := Sync(hub, ix, now)
+	if err != nil || again.Creates+again.Updates+again.Removes != 0 || again.Commit != "" {
+		t.Fatalf("second sync %+v %v", again, err)
+	}
+
+	// A thread filed in the member, and a stray file in the mirror: the thread half
+	// changes with no wiki commit.
+	if _, err := threads.File(a, th.ID, threads.Filing{Stage: threads.Plan, Text: "1. Do it."}, now); err != nil {
+		t.Fatal(err)
+	}
+	writePage(t, hub, "threads/projects/svc-a/stubs/Stray.md", "---\ntype: stub\nthread: thr-20260101-0000\n---\nstray\n")
+	third, err := SyncThreads(hub, ix, now)
+	if err != nil || third.Creates != 1 || third.Removes != 1 || third.Updates == 0 {
+		t.Fatalf("third sync %+v %v", third, err)
+	}
+	if _, err := os.Stat(hub.Path("threads/projects/svc-a/plans/Fix it.md")); err != nil {
+		t.Fatal("the plan was not mirrored")
+	}
+	if _, err := os.Stat(hub.Path("threads/projects/svc-a/stubs/Stray.md")); err == nil {
+		t.Fatal("the stray file stayed")
+	}
+	if ops, _ := txn.History(hub, 1, true); len(ops) != 1 || ops[0].ID != res.OperationID {
+		t.Fatalf("SyncThreads committed: %+v", ops)
+	}
+
+	// The member leaves: its thread mirror goes, and the board no longer embeds it.
+	setMembers(t, hub, b.Config.ID)
+	ix = index(entryOf(hub), entryOf(a), entryOf(b))
+	if _, err := Sync(hub, ix, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(hub.Path("threads/projects/svc-a")); err == nil {
+		t.Fatal("svc-a's thread mirror stayed")
+	}
+	if strings.Contains(readPage(t, hub, project.ThreadsIndex), "## svc-a") {
+		t.Fatal("the board still embeds svc-a")
+	}
+}
+
+func TestAHubWithThreadsOffMirrorsNoThreads(t *testing.T) {
+	needGit(t)
+	hub := initProject(t, "hub", "hub")
+	a := initProject(t, "svc-a", "svc-a")
+	if err := project.UpdateConfig(hub.Root, "threads", now, func(c *project.Config) error { c.Threads = false; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	hub.Config.Threads = false
+	if _, err := threads.Start(a, threads.New{Title: "Fix it"}, now); err != nil {
+		t.Fatal(err)
+	}
+	setMembers(t, hub, a.Config.ID)
+	res, err := Sync(hub, index(entryOf(hub), entryOf(a)), now)
+	if err != nil || res.Members[0].Threads != 0 || res.Members[0].Pages == 0 {
+		t.Fatalf("result %+v %v", res, err)
+	}
+	if _, err := os.Stat(hub.Path(project.ThreadMirrorDir)); err == nil {
+		t.Fatal("threads were mirrored into a hub with threads off")
+	}
 }

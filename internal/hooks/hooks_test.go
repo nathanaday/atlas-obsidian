@@ -43,6 +43,7 @@ func TestCodexPatchGuard(t *testing.T) {
 		{"identity", "*** Update File: atlas/code/project.json", true},
 		{"board", "*** Update File: atlas/code/threads/threads.md", true},
 		{"new stage", "*** Add File: atlas/code/threads/specs/new.md\n+new", true},
+		{"mirrored thread", "*** Update File: atlas/code/threads/projects/svc/specs/new.md\n@@\n-old\n+new", true},
 		{"raw", "*** Delete File: atlas/code/.raw/captured/source.md", true},
 		{"multiple protected", "*** Delete File: atlas/code/wiki/hot.md\n*** Delete File: atlas/code/wiki/index.md", true},
 		{"absolute", "*** Delete File: " + filepath.Join(work, "atlas/code/wiki/hot.md"), true},

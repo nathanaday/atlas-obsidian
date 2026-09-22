@@ -1,7 +1,8 @@
-// Package mirror copies the wikis of a project's members into the project's own wiki,
-// under wiki/projects/, as one sync operation. The copy is derived: sync computes every
-// file the closure of members produces, makes the folder match, and commits once through
-// the engine. Nothing is written into a member. See docs/members-design.md.
+// Package mirror copies the wikis and the threads of a project's members into the
+// project's own folder: wikis under wiki/projects/ as one sync operation, threads under
+// threads/projects/ as plain files, because the threads have no engine. The copy is
+// derived: sync computes every file the closure of members produces and makes each
+// folder match. Nothing is written into a member. See docs/members-design.md.
 package mirror
 
 import (
@@ -23,6 +24,7 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/lint"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/threads"
 	"github.com/nathanaday/atlas-obsidian/internal/txn"
 )
 
@@ -38,6 +40,9 @@ type Member struct {
 	// Error says why the member could not be mirrored; its old mirror stays.
 	Error string `json:"error,omitempty"`
 	Pages int    `json:"pages"`
+	// Threads counts the thread pages mirrored: zero when the hub or the member has
+	// threads off.
+	Threads int `json:"threads"`
 }
 
 // ErrCycle means the member graph reaches a project again.
@@ -163,16 +168,18 @@ func Validate(ix *registry.Index, root registry.Entry, members []string) error {
 	return err
 }
 
-// Plan is what one sync would do.
+// Plan is what one sync would do: the wiki writes, which go through the engine, and
+// the thread writes, which are plain files. The counts cover both.
 type Plan struct {
 	Members []Member `json:"members"`
 	Creates int      `json:"creates"`
 	Updates int      `json:"updates"`
 	Removes int      `json:"removes"`
 	request txn.Request
+	threads []txn.Write
 }
 
-// Result reports a sync. OperationID and Commit are empty when nothing changed.
+// Result reports a sync. OperationID and Commit are empty when no wiki file changed.
 type Result struct {
 	Members     []Member `json:"members"`
 	Creates     int      `json:"creates"`
@@ -190,35 +197,38 @@ const (
 )
 
 // Build computes the sync for p over the projects ix lists. The plan's writes are the
-// difference between the folder and what the closure produces.
+// difference between each mirror folder and what the closure produces.
 func Build(p *project.Project, ix *registry.Index) (*Plan, error) {
 	root := registry.Entry{ID: p.Config.ID, Name: p.Name(), Path: p.Root, Members: p.Config.Members}
 	members, err := Closure(ix, root)
 	if err != nil {
 		return nil, err
 	}
-	desired := map[string][]byte{}
-	keep := map[string]bool{} // mirror folders of members that could not be read
+	wiki, thr := map[string][]byte{}, map[string][]byte{}
 	for i := range members {
 		m := &members[i]
 		if m.Error != "" {
 			continue
 		}
-		own := map[string][]byte{}
-		if err := mirrorMember(m, own); err != nil {
+		own, ownThreads := map[string][]byte{}, map[string][]byte{}
+		if err := mirrorMember(m, p.Config.Threads, own, ownThreads); err != nil {
 			m.Error = err.Error()
 			m.Folder = ""
-			m.Pages = 0
+			m.Pages, m.Threads = 0, 0
 			continue
 		}
 		for rel, data := range own {
-			desired[rel] = data
+			wiki[rel] = data
+		}
+		for rel, data := range ownThreads {
+			thr[rel] = data
 		}
 	}
 	existing, err := existingMirrors(p)
 	if err != nil {
 		return nil, err
 	}
+	keep := map[string]bool{} // mirror folders of members that could not be read
 	for _, m := range members {
 		if m.Error != "" {
 			if folder := existing.folderOf(m.ID); folder != "" {
@@ -226,7 +236,7 @@ func Build(p *project.Project, ix *registry.Index) (*Plan, error) {
 			}
 		}
 	}
-	desired[project.MirrorIndex] = indexPage(members, existing)
+	wiki[project.MirrorIndex] = indexPage(members, existing)
 	plan := &Plan{Members: members}
 	var names []string
 	for _, m := range members {
@@ -234,6 +244,19 @@ func Build(p *project.Project, ix *registry.Index) (*Plan, error) {
 			names = append(names, m.Folder)
 		}
 	}
+	writes := reconcile(existing.wiki, wiki, keep, project.MirrorDir, plan)
+	plan.threads = reconcile(existing.threads, thr, keep, project.ThreadMirrorDir, plan)
+	summary := fmt.Sprintf("sync %d project%s", len(names), plural(len(names)))
+	if len(names) > 0 {
+		summary += ": " + strings.Join(names, ", ")
+	}
+	plan.request = txn.Request{Kind: txn.Sync, Summary: summary, Writes: writes}
+	return plan, nil
+}
+
+// reconcile is the writes that make one mirror folder hold desired and nothing else,
+// except the folders in keep. It adds what it counts to the plan.
+func reconcile(existing, desired map[string][]byte, keep map[string]bool, dir string, plan *Plan) []txn.Write {
 	var writes []txn.Write
 	var paths []string
 	for rel := range desired {
@@ -242,7 +265,7 @@ func Build(p *project.Project, ix *registry.Index) (*Plan, error) {
 	sort.Strings(paths)
 	for _, rel := range paths {
 		content := desired[rel]
-		current, ok := existing.files[rel]
+		current, ok := existing[rel]
 		switch {
 		case !ok:
 			writes = append(writes, txn.Write{Path: rel, Mode: txn.Create, Content: content})
@@ -253,50 +276,92 @@ func Build(p *project.Project, ix *registry.Index) (*Plan, error) {
 		}
 	}
 	var stale []string
-	for rel := range existing.files {
+	for rel := range existing {
 		if _, wanted := desired[rel]; wanted {
 			continue
 		}
-		if keep[mirrorFolder(rel)] {
+		if keep[mirrorFolder(dir, rel)] {
 			continue
 		}
 		stale = append(stale, rel)
 	}
 	sort.Strings(stale)
 	for _, rel := range stale {
-		writes = append(writes, txn.Write{Path: rel, Mode: txn.Delete, BaseSHA256: sha(existing.files[rel])})
+		writes = append(writes, txn.Write{Path: rel, Mode: txn.Delete, BaseSHA256: sha(existing[rel])})
 		plan.Removes++
 	}
-	summary := fmt.Sprintf("sync %d project%s", len(names), plural(len(names)))
-	if len(names) > 0 {
-		summary += ": " + strings.Join(names, ", ")
-	}
-	plan.request = txn.Request{Kind: txn.Sync, Summary: summary, Writes: writes}
-	return plan, nil
+	return writes
 }
 
-// Sync makes wiki/projects/ match the closure of p's members and commits the change as one
-// sync operation. Nothing changed means no commit.
+// Sync makes wiki/projects/ and threads/projects/ match the closure of p's members. The
+// wiki half commits as one sync operation; the thread half is written as it is, and the
+// board is regenerated to show it. Nothing changed means no commit.
 func Sync(p *project.Project, ix *registry.Index, now time.Time) (*Result, error) {
 	plan, err := Build(p, ix)
 	if err != nil {
 		return nil, err
 	}
 	res := &Result{Members: plan.Members, Creates: plan.Creates, Updates: plan.Updates, Removes: plan.Removes}
-	if len(plan.request.Writes) == 0 {
-		return res, nil
+	if len(plan.request.Writes) > 0 {
+		prepared, err := txn.Prepare(p, plan.request, now)
+		if err != nil {
+			return nil, err
+		}
+		applied, err := txn.Apply(p, prepared, now)
+		if err != nil {
+			return nil, err
+		}
+		res.OperationID, res.Commit = applied.OperationID, applied.Commit
+		pruneEmpty(p.Path(project.MirrorDir))
 	}
-	prepared, err := txn.Prepare(p, plan.request, now)
+	return res, applyThreads(p, plan, now)
+}
+
+// SyncThreads makes threads/projects/ alone match the closure, for the thread tools to
+// call after a write in a member, when the wiki can wait for the next full sync.
+func SyncThreads(p *project.Project, ix *registry.Index, now time.Time) (*Result, error) {
+	plan, err := Build(p, ix)
 	if err != nil {
 		return nil, err
 	}
-	applied, err := txn.Apply(p, prepared, now)
-	if err != nil {
-		return nil, err
+	res := &Result{Members: plan.Members}
+	for _, w := range plan.threads {
+		switch w.Mode {
+		case txn.Create:
+			res.Creates++
+		case txn.Replace:
+			res.Updates++
+		case txn.Delete:
+			res.Removes++
+		}
 	}
-	res.OperationID, res.Commit = applied.OperationID, applied.Commit
-	pruneEmpty(p.Path(project.MirrorDir))
-	return res, nil
+	return res, applyThreads(p, plan, now)
+}
+
+// applyThreads writes the thread half of a plan and regenerates the board, which embeds
+// each mirrored board. A hub with threads off writes nothing and has no board.
+func applyThreads(p *project.Project, plan *Plan, now time.Time) error {
+	for _, w := range plan.threads {
+		file := p.Path(w.Path)
+		if w.Mode == txn.Delete {
+			if err := os.Remove(file); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(file, w.Content, 0o644); err != nil {
+			return err
+		}
+	}
+	pruneEmpty(p.Path(project.ThreadMirrorDir))
+	if !p.Config.Threads {
+		return nil
+	}
+	_, err := threads.Sync(p, now)
+	return err
 }
 
 // pruneEmpty removes the folders a sync emptied. Git never tracked them, so the commit
@@ -329,20 +394,31 @@ func excluded(rel string) bool {
 	return false
 }
 
-// destination is where a member's wiki file lands in the hub, or "" when it is not
-// mirrored. The member's index page takes the folder's name.
-func destination(folder, rel string) string {
-	if !strings.HasPrefix(rel, project.WikiDir+"/") || excluded(rel) {
-		return ""
+// destination is where a member's file lands in the hub, or "" when it is not mirrored.
+// A wiki file lands under wiki/projects/<folder>/, and the member's index page takes the
+// folder's name. A thread page lands under threads/projects/<folder>/ at the path it has
+// in the member, when withThreads, so the relative links inside it still hold.
+func destination(folder string, withThreads bool, rel string) string {
+	switch {
+	case strings.HasPrefix(rel, project.WikiDir+"/"):
+		if excluded(rel) {
+			return ""
+		}
+		if rel == project.IndexPage {
+			return project.MirrorDir + "/" + folder + "/" + folder + ".md"
+		}
+		return project.MirrorDir + "/" + folder + "/" + strings.TrimPrefix(rel, project.WikiDir+"/")
+	case withThreads && strings.HasPrefix(rel, project.ThreadsDir+"/") && !threads.Mirrored(rel):
+		return project.ThreadMirrorDir + "/" + folder + "/" + strings.TrimPrefix(rel, project.ThreadsDir+"/")
 	}
-	if rel == project.IndexPage {
-		return project.MirrorDir + "/" + folder + "/" + folder + ".md"
-	}
-	return project.MirrorDir + "/" + folder + "/" + strings.TrimPrefix(rel, project.WikiDir+"/")
+	return ""
 }
 
-// mirrorMember reads one member's wiki and adds its transformed files to desired.
-func mirrorMember(m *Member, desired map[string][]byte) error {
+// mirrorMember reads one member's folder and adds its transformed wiki files to wiki and
+// its thread pages to thr. Threads are mirrored only when the hub and the member both
+// track them. One link resolver covers both halves, so a wiki page that cites a thread
+// document, or a thread document that cites a wiki page, resolves in the hub.
+func mirrorMember(m *Member, hubThreads bool, wiki, thr map[string][]byte) error {
 	mp, err := project.Open(m.Path)
 	if err != nil {
 		return err
@@ -357,15 +433,25 @@ func mirrorMember(m *Member, desired map[string][]byte) error {
 	if err != nil {
 		return err
 	}
-	replace := func(resolved string) string { return destination(m.Folder, resolved) }
+	withThreads := hubThreads && mp.Config.Threads
+	replace := func(resolved string) string { return destination(m.Folder, withThreads, resolved) }
 	for _, rel := range vault.Files() {
-		dest := destination(m.Folder, rel)
+		dest := destination(m.Folder, withThreads, rel)
 		if dest == "" {
 			continue
 		}
 		data, err := os.ReadFile(mp.Path(rel))
 		if err != nil {
 			return err
+		}
+		if threads.Mirrored(dest) {
+			if strings.EqualFold(path.Ext(rel), ".md") {
+				text := vault.Rewrite(rel, string(data), replace)
+				data = []byte(stamp(text, [][2]string{{ProjectKey, m.ID}, {MirrorOfKey, rel}}))
+				m.Threads++
+			}
+			thr[dest] = data
+			continue
 		}
 		switch strings.ToLower(path.Ext(rel)) {
 		case ".md":
@@ -378,10 +464,10 @@ func mirrorMember(m *Member, desired map[string][]byte) error {
 				if resolved == "" {
 					return ""
 				}
-				return destination(m.Folder, resolved)
+				return destination(m.Folder, withThreads, resolved)
 			})
 		}
-		desired[dest] = data
+		wiki[dest] = data
 	}
 	return nil
 }
@@ -453,10 +539,11 @@ func rewriteCanvas(data []byte, replace func(string) string) []byte {
 	return append(out, '\n')
 }
 
-// mirrors is what the hub's wiki/projects/ holds now.
+// mirrors is what the hub's mirror folders hold now.
 type mirrors struct {
-	files map[string][]byte
-	roots map[string]string // folder -> the project id its root page names
+	wiki    map[string][]byte
+	threads map[string][]byte
+	roots   map[string]string // folder -> the project id its wiki root page names
 }
 
 func (m mirrors) folderOf(id string) string {
@@ -468,18 +555,38 @@ func (m mirrors) folderOf(id string) string {
 	return ""
 }
 
-func mirrorFolder(rel string) string {
-	rest := strings.TrimPrefix(rel, project.MirrorDir+"/")
+// mirrorFolder is the member folder a path under dir lies in.
+func mirrorFolder(dir, rel string) string {
+	rest := strings.TrimPrefix(rel, dir+"/")
 	folder, _, _ := strings.Cut(rest, "/")
 	return folder
 }
 
-// existingMirrors reads every file under wiki/projects/ and the id each mirror's root
-// page names.
+// existingMirrors reads every file under wiki/projects/ and threads/projects/, and the id
+// each wiki mirror's root page names.
 func existingMirrors(p *project.Project) (mirrors, error) {
-	out := mirrors{files: map[string][]byte{}, roots: map[string]string{}}
-	root := p.Path(project.MirrorDir)
-	err := filepath.WalkDir(root, func(fp string, d fs.DirEntry, err error) error {
+	out := mirrors{wiki: map[string][]byte{}, threads: map[string][]byte{}, roots: map[string]string{}}
+	if err := readTree(p, project.MirrorDir, out.wiki); err != nil {
+		return out, err
+	}
+	if err := readTree(p, project.ThreadMirrorDir, out.threads); err != nil {
+		return out, err
+	}
+	for rel, data := range out.wiki {
+		folder := mirrorFolder(project.MirrorDir, rel)
+		if rel == project.MirrorDir+"/"+folder+"/"+folder+".md" {
+			if fields, _, err := project.Frontmatter(string(data)); err == nil && fields != nil {
+				out.roots[folder] = project.StringField(fields, ProjectKey)
+			}
+		}
+	}
+	return out, nil
+}
+
+// readTree reads every regular file under dir, relative to the project folder, into files.
+func readTree(p *project.Project, dir string, files map[string][]byte) error {
+	root := p.Path(dir)
+	return filepath.WalkDir(root, func(fp string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if fp == root && errors.Is(err, fs.ErrNotExist) {
 				return fs.SkipAll
@@ -499,21 +606,13 @@ func existingMirrors(p *project.Project) (mirrors, error) {
 		if err != nil {
 			return err
 		}
-		rel = filepath.ToSlash(rel)
 		data, err := os.ReadFile(fp)
 		if err != nil {
 			return err
 		}
-		out.files[rel] = data
-		folder := mirrorFolder(rel)
-		if rel == project.MirrorDir+"/"+folder+"/"+folder+".md" {
-			if fields, _, err := project.Frontmatter(string(data)); err == nil && fields != nil {
-				out.roots[folder] = project.StringField(fields, ProjectKey)
-			}
-		}
+		files[filepath.ToSlash(rel)] = data
 		return nil
 	})
-	return out, err
 }
 
 // indexPage renders wiki/projects/projects.md: one row per project in the closure. A

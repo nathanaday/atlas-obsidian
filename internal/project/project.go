@@ -65,6 +65,9 @@ const (
 	PlansDir     = "threads/plans"
 	ReceiptsDir  = "threads/receipts"
 	PhasesDir    = "threads/phases"
+	// ThreadMirrorDir holds a copy of each member's threads, derived by sync and owned by
+	// code, as MirrorDir holds their wikis.
+	ThreadMirrorDir = "threads/projects"
 
 	// What the user drops in, and what nothing reads.
 	InboxDir = "inbox"

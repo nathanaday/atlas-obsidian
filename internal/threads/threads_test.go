@@ -331,7 +331,7 @@ func TestBoardOrderCountsAndResolve(t *testing.T) {
 	if _, err := board.Resolve("nothing"); err == nil {
 		t.Fatal("resolved nothing")
 	}
-	if index := RenderIndex(board, now); !strings.Contains(index, "stale") || strings.Index(index, "[!plan]") > strings.Index(index, "[!stub]") {
+	if index := RenderIndex(board, nil, now); !strings.Contains(index, "stale") || strings.Index(index, "[!plan]") > strings.Index(index, "[!stub]") {
 		t.Fatal(index)
 	}
 }
@@ -363,7 +363,7 @@ func TestPhases(t *testing.T) {
 	}
 	File(p, th.ID, Filing{Stage: Receipt, Outcome: Completed, Text: "Done."}, now)
 	board, _ = Load(p)
-	if !board.Finished("Beta") || !strings.Contains(RenderIndex(board, now), "finished") {
+	if !board.Finished("Beta") || !strings.Contains(RenderIndex(board, nil, now), "finished") {
 		t.Fatal("not finished")
 	}
 	if ph, err := ReorderPhase(p, "Beta", 5, now); err != nil || ph.Order != 5 {

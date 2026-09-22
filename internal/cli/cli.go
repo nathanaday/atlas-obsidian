@@ -60,7 +60,8 @@ Projects (PROJECT is a name, a path, or nothing for the project you are in):
   show NAME                 everything the atlas knows about one
   edit NAME                 change it: --name N, --description TEXT, --mode generic|lyt,
                             --threads on|off, --add-member P, --remove-member P (each repeatable)
-  sync [PROJECT]            mirror the wikis of its members under wiki/projects/, as one operation
+  sync [PROJECT]            mirror the wikis of its members under wiki/projects/, as one operation,
+                            and their threads under threads/projects/
   describe PROJECT          stage a snapshot of the work; the describe skill writes its page
   forget PROJECT            drop a project from the atlas; its atlas/<name>/ folder stays
   open-ide NAME            open the work folder in the preferred IDE
@@ -1695,13 +1696,21 @@ func (e *env) sync(args []string) (int, error) {
 			e.console.Step(console.Fail, label, m.Error)
 			continue
 		}
-		e.console.Step(console.OK, label, fmt.Sprintf("%d page%s under %s/%s/", m.Pages, plural(m.Pages), project.MirrorDir, m.Folder))
+		line := fmt.Sprintf("%d page%s under %s/%s/", m.Pages, plural(m.Pages), project.MirrorDir, m.Folder)
+		if m.Threads > 0 {
+			line += fmt.Sprintf(", %d thread page%s under %s/%s/", m.Threads, plural(m.Threads), project.ThreadMirrorDir, m.Folder)
+		}
+		e.console.Step(console.OK, label, line)
 	}
-	if res.Commit == "" {
+	if res.Creates+res.Updates+res.Removes == 0 {
 		e.console.Step(console.OK, "sync", "nothing changed")
 		return 0, nil
 	}
-	e.console.Step(console.OK, "sync", fmt.Sprintf("%d created, %d updated, %d removed; %s", res.Creates, res.Updates, res.Removes, res.OperationID))
+	line := fmt.Sprintf("%d created, %d updated, %d removed", res.Creates, res.Updates, res.Removes)
+	if res.OperationID != "" {
+		line += "; " + res.OperationID
+	}
+	e.console.Step(console.OK, "sync", line)
 	return 0, nil
 }
 
