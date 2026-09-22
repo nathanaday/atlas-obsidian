@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/nathanaday/atlas-obsidian/internal/project"
 )
 
 // Vault is one project's files indexed for link resolution, as Run sees them: every file
@@ -14,7 +16,32 @@ import (
 // rewrite a member's links, so a link means the same thing to the mirror and to lint.
 type Vault struct {
 	files    []string
+	pages    map[string]*page
 	resolver *resolver
+}
+
+// Link is one link a page holds: the target as written, without its alias, and the
+// one file it resolves to, or "" when it names none or more than one.
+type Link struct {
+	Target   string `json:"target"`
+	Resolved string `json:"resolved,omitempty"`
+}
+
+// PageInfo is what lint knows about one wiki page, for a caller that reads pages as
+// lint reads them: the overlap report compares pages by these fields and never parses
+// markdown itself.
+type PageInfo struct {
+	Path    string   `json:"path"`
+	Title   string   `json:"title"`
+	Type    string   `json:"type,omitempty"`
+	Aliases []string `json:"aliases,omitempty"`
+	Tags    []string `json:"tags,omitempty"`
+	// Headings are the page's headings, normalized, in path order.
+	Headings []string `json:"headings,omitempty"`
+	// Text is the body with the frontmatter, code, and comments blanked.
+	Text   string         `json:"-"`
+	Fields map[string]any `json:"-"`
+	Links  []Link         `json:"links,omitempty"`
 }
 
 // LoadVault indexes the project folder at root.
@@ -28,20 +55,75 @@ func LoadVault(root string) (*Vault, error) {
 		return nil, err
 	}
 	var targets []target
+	pages := map[string]*page{}
 	for _, rel := range files {
 		t := target{path: rel}
 		if strings.HasPrefix(rel, "wiki/") && strings.EqualFold(path.Ext(rel), ".md") {
 			if data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))); err == nil {
 				t.page = parsePage(rel, string(data))
+				pages[rel] = t.page
 			}
 		}
 		targets = append(targets, t)
 	}
-	return &Vault{files: files, resolver: newResolver(targets)}, nil
+	return &Vault{files: files, pages: pages, resolver: newResolver(targets)}, nil
 }
 
 // Files lists the vault's files relative to its root, with slashes.
 func (v *Vault) Files() []string { return append([]string(nil), v.files...) }
+
+// Pages lists every wiki page in path order, with each link resolved as lint resolves it.
+func (v *Vault) Pages() []PageInfo {
+	var out []PageInfo
+	for _, rel := range v.files {
+		pg, ok := v.pages[rel]
+		if !ok {
+			continue
+		}
+		info := PageInfo{Path: rel, Title: project.StringField(pg.fields, "title"), Type: project.StringField(pg.fields, "type"), Aliases: pg.aliases, Tags: project.StringList(pg.fields, "tags"), Text: pg.masked, Fields: pg.fields}
+		if info.Title == "" {
+			info.Title = strings.TrimSuffix(path.Base(rel), path.Ext(rel))
+		}
+		for h := range pg.headings {
+			info.Headings = append(info.Headings, h)
+		}
+		sort.Strings(info.Headings)
+		for _, l := range pg.links {
+			link := Link{Target: l.filePart}
+			if found := v.resolver.resolve(l); len(found) == 1 {
+				link.Resolved = found[0].path
+			}
+			info.Links = append(info.Links, link)
+		}
+		out = append(out, info)
+	}
+	return out
+}
+
+// NameKey is a name reduced to its lowercase letters and digits, so that two names that
+// differ only in case, spacing, or punctuation compare equal.
+func NameKey(name string) string { return string(nameKey(name)) }
+
+// Near reports whether two names are the same name with a small typing difference, by
+// the rule the wanted-page suggestions use: one edit for 5 to 8 letters and digits, two
+// for more, and the same digits.
+func Near(a, b string) bool {
+	ka, kb := nameKey(a), nameKey(b)
+	if len(ka) == 0 || len(kb) == 0 || digits(ka) != digits(kb) {
+		return false
+	}
+	limit := 0
+	switch {
+	case len(ka) > 8:
+		limit = 2
+	case len(ka) > 4:
+		limit = 1
+	}
+	if diff := len(ka) - len(kb); diff > limit || -diff > limit {
+		return false
+	}
+	return editDistance(ka, kb) <= limit
+}
 
 // Resolve returns the one file a link names from the page at source, or "" when the link
 // names none or more than one. target is the link as written, without alias.

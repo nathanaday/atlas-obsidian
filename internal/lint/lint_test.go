@@ -492,3 +492,53 @@ func TestVaultRewrite(t *testing.T) {
 		t.Fatalf("got\n%s\nwant\n%s", got, want)
 	}
 }
+
+func TestVaultPagesNameKeyAndNear(t *testing.T) {
+	root := fixture(t, map[string]string{
+		"wiki/index.md":          mkpage("Index", "# Index\n\n[[Alpha]]\n"),
+		"wiki/concepts/Alpha.md": "---\ntitle: Alpha\ntype: concept\nstatus: seed\ncreated: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - x\n  - y\naliases:\n  - First\n---\n# Alpha\n\nSee [[Beta]] and [[Gone]] and `[[Code]]`.\n\n## Part Two\n\ntext\n",
+		"wiki/concepts/Beta.md":  "# Beta\n\nno frontmatter\n",
+	})
+	v, err := LoadVault(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := v.Pages()
+	if len(pages) != 3 {
+		t.Fatalf("pages %d", len(pages))
+	}
+	alpha := pages[0]
+	if alpha.Path != "wiki/concepts/Alpha.md" || alpha.Title != "Alpha" || alpha.Type != "concept" {
+		t.Fatalf("alpha %+v", alpha)
+	}
+	if strings.Join(alpha.Aliases, ",") != "First" || strings.Join(alpha.Tags, ",") != "x,y" || strings.Join(alpha.Headings, ",") != "alpha,part two" {
+		t.Fatalf("alpha %+v", alpha)
+	}
+	if strings.Contains(alpha.Text, "title: Alpha") || strings.Contains(alpha.Text, "[[Code]]") || !strings.Contains(alpha.Text, "See [[Beta]]") {
+		t.Fatalf("text %q", alpha.Text)
+	}
+	if len(alpha.Links) != 2 || alpha.Links[0] != (Link{Target: "Beta", Resolved: "wiki/concepts/Beta.md"}) || alpha.Links[1] != (Link{Target: "Gone"}) {
+		t.Fatalf("links %+v", alpha.Links)
+	}
+	if beta := pages[1]; beta.Title != "Beta" || beta.Type != "" {
+		t.Fatalf("beta %+v", beta)
+	}
+	if NameKey("CS513 Course-Project!") != "cs513courseproject" {
+		t.Fatalf("key %q", NameKey("CS513 Course-Project!"))
+	}
+	for _, c := range []struct {
+		a, b string
+		want bool
+	}{
+		{"Backpropagation", "backpropagation", true},
+		{"Backpropagation", "Backpropogation", true},
+		{"Alpha", "Alpah", true},
+		{"Alpha", "Beta", false},
+		{"CS513", "CS566", false},
+		{"", "x", false},
+	} {
+		if got := Near(c.a, c.b); got != c.want {
+			t.Errorf("Near(%q, %q) = %v", c.a, c.b, got)
+		}
+	}
+}
