@@ -6,8 +6,8 @@ created: 2026-09-22
 ---
 
 > [!plan] Consolidate overlapping member pages into the parent wiki
-> [Stub](<../stubs/Consolidate overlapping member pages into the parent wiki.md>) → [Spec](<../specs/Consolidate overlapping member pages into the parent wiki.md>) → **Plan** → Receipt
-> `thr-20260922-5519` · [Thread](<../Consolidate overlapping member pages into the parent wiki.md>) · filed 2026-09-22
+> [Stub](<../stubs/Consolidate overlapping member pages into the parent wiki.md>) → [Spec](<../specs/Consolidate overlapping member pages into the parent wiki.md>) → **Plan** → [Receipt](<../receipts/Consolidate overlapping member pages into the parent wiki.md>)
+> `thr-20260922-5519` · [Thread](<../archive/Consolidate overlapping member pages into the parent wiki.md>) · filed 2026-09-22
 
 ## Approach
 
