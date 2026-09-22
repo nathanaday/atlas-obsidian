@@ -29,6 +29,7 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/mcpserver"
 	"github.com/nathanaday/atlas-obsidian/internal/mirror"
 	"github.com/nathanaday/atlas-obsidian/internal/obsidian"
+	"github.com/nathanaday/atlas-obsidian/internal/overlap"
 	"github.com/nathanaday/atlas-obsidian/internal/place"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/refresh"
@@ -87,6 +88,8 @@ Threads (ID is a thread's id or title):
 The wiki (PROJECT is a name, a path, or nothing for the project you are in):
   ingest PROJECT [PATH...]  stage new files into the inbox, then ingest them
   lint [PROJECT]            run the wiki health check
+  overlap [PROJECT]         what the wiki and the mirrors of its members hold in common:
+                            --member NAME for one origin, --json, -n N pairs
   stub PROJECT [TITLE...]   create seed pages for the pages your links name but nobody has written
   history [PROJECT]         list operations, newest first
   undo PROJECT OPERATION    take back one operation
@@ -204,6 +207,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.sync(rest[1:])
 	case "lint":
 		code, err = e.lint(rest[1:])
+	case "overlap":
+		code, err = e.overlap(rest[1:])
 	case "stub":
 		code, err = e.stub(rest[1:])
 	case "history":
@@ -1798,6 +1803,36 @@ func (e *env) lint(args []string) (int, error) {
 	}
 	if *strict && report.Summary.IssuesFound > 0 {
 		return 1, nil
+	}
+	return 0, nil
+}
+
+// overlap reports the pages a project's own wiki and the mirrors of its members hold in
+// common, for the wiki-merge skill.
+func (e *env) overlap(args []string) (int, error) {
+	fs := newFlags("overlap", e.stderr)
+	asJSON := fs.Bool("json", false, "print the report as JSON")
+	member := fs.String("member", "", "only the pairs, names, and tags that involve this origin")
+	limit := fs.Int("n", 0, "how many pairs, names, and tags at most, each (default 30)")
+	positional, err := parse(fs, args)
+	if err != nil {
+		return 2, nil
+	}
+	if len(positional) > 1 {
+		return 2, errors.New("usage: atlas-obsidian overlap [PROJECT] [--member NAME] [-n N] [--json]")
+	}
+	v, err := e.vaultArg(first(positional))
+	if err != nil {
+		return 1, err
+	}
+	report, err := overlap.Run(v.Atlas(), v.Name(), overlap.Options{Member: *member, Limit: *limit})
+	if err != nil {
+		return 1, err
+	}
+	if *asJSON {
+		e.stdout.Write(report.JSON())
+	} else {
+		io.WriteString(e.stdout, report.Markdown())
 	}
 	return 0, nil
 }

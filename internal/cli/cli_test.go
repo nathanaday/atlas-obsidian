@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -775,5 +776,41 @@ func TestThreadCommandRoutesToTheMember(t *testing.T) {
 	}
 	if code := h.run("thread", "hub", "show", "fix"); code != 0 || !strings.Contains(h.out.String(), "in svc") {
 		t.Fatalf("show: %d %s", code, h.out.String())
+	}
+}
+
+func TestOverlapCommand(t *testing.T) {
+	h := setup(t)
+	hub := work(t, "hub", true)
+	svc := work(t, "svc", true)
+	h.run("init", hub)
+	h.run("init", svc)
+	page := "---\ntitle: Widget\ntype: entity\nstatus: seed\ncreated: 2026-09-19\nupdated: 2026-09-19\ntags:\n  - entity\n---\n\n# Widget\n\nCounts beans.\n"
+	for _, dir := range []string{hub, svc} {
+		p, _ := project.Open(dir)
+		os.MkdirAll(p.Path("wiki/entities"), 0o755)
+		os.WriteFile(p.Path("wiki/entities/Widget.md"), []byte(page), 0o644)
+	}
+	if code := h.run("overlap", "hub"); code != 0 || !strings.Contains(h.out.String(), "no mirrors") {
+		t.Fatalf("overlap before sync: %d %s%s", code, h.out.String(), h.err.String())
+	}
+	h.run("edit", "hub", "--add-member", "svc")
+	h.run("sync", "hub")
+	if code := h.run("overlap", "hub"); code != 0 || !strings.Contains(h.out.String(), "## Pairs") || !strings.Contains(h.out.String(), "wiki/projects/svc/entities/Widget.md") {
+		t.Fatalf("overlap: %d %s%s", code, h.out.String(), h.err.String())
+	}
+	if code := h.run("overlap", "hub", "--json", "--member", "svc", "-n", "1"); code != 0 {
+		t.Fatalf("overlap json: %d %s", code, h.err.String())
+	}
+	var report struct {
+		Pairs []struct {
+			Kind string `json:"kind"`
+		} `json:"pairs"`
+	}
+	if err := json.Unmarshal(h.out.Bytes(), &report); err != nil || len(report.Pairs) != 1 || report.Pairs[0].Kind != "duplicate" {
+		t.Fatalf("json %v: %s", err, h.out.String())
+	}
+	if code := h.run("overlap", "hub", "--member", "nope"); code == 0 || !strings.Contains(h.err.String(), "no origin") {
+		t.Fatalf("member: %d %s", code, h.err.String())
 	}
 }

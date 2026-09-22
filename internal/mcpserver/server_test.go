@@ -126,7 +126,7 @@ func TestToolsListAndStatus(t *testing.T) {
 	if strings.Join(names, ",") != strings.Join(ToolNames(), ",") {
 		t.Fatalf("ToolNames %v, registered %v", ToolNames(), names)
 	}
-	if len(names) != 17 {
+	if len(names) != 18 {
 		t.Fatalf("%d tools: %v", len(names), names)
 	}
 	for _, gone := range []string{"vault", "mode"} {

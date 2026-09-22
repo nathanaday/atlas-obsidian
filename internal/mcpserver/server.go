@@ -24,6 +24,7 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/links"
 	"github.com/nathanaday/atlas-obsidian/internal/lint"
 	"github.com/nathanaday/atlas-obsidian/internal/mirror"
+	"github.com/nathanaday/atlas-obsidian/internal/overlap"
 	"github.com/nathanaday/atlas-obsidian/internal/place"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/registry"
@@ -707,7 +708,8 @@ type PlanSource struct {
 }
 
 type PlanArgs struct {
-	Kind    string       `json:"kind" jsonschema:"ingest, save, markdown, repair, fold, canvas, or base"`
+	ProjectArg
+	Kind    string       `json:"kind" jsonschema:"ingest, save, markdown, repair, fold, canvas, base, or merge"`
 	Summary string       `json:"summary" jsonschema:"one line saying what the operation does; it becomes the log entry and commit subject"`
 	Writes  []PlanWrite  `json:"writes,omitempty"`
 	Sources []PlanSource `json:"sources,omitempty" jsonschema:"ledger updates for sources this operation ingests"`
@@ -725,7 +727,11 @@ type PlanOut struct {
 }
 
 func (s *Server) plan(ctx context.Context, req *mcp.CallToolRequest, a PlanArgs) (*mcp.CallToolResult, PlanOut, error) {
-	_, v, err := s.place()
+	pl, err := s.where()
+	if err != nil {
+		return nil, PlanOut{}, err
+	}
+	v, _, err := s.projectOf(pl, a.Project)
 	if err != nil {
 		return nil, PlanOut{}, err
 	}
@@ -737,7 +743,7 @@ func (s *Server) plan(ctx context.Context, req *mcp.CallToolRequest, a PlanArgs)
 		}
 	}
 	if !allowedKind {
-		return nil, PlanOut{}, fmt.Errorf("kind must be one of ingest, save, markdown, repair, fold, canvas, base")
+		return nil, PlanOut{}, fmt.Errorf("kind must be one of ingest, save, markdown, repair, fold, canvas, base, merge")
 	}
 	r := txn.Request{Kind: kind, Summary: a.Summary}
 	for _, w := range a.Writes {
@@ -858,6 +864,32 @@ func (s *Server) lint(ctx context.Context, req *mcp.CallToolRequest, a LintArgs)
 	return nil, *report, nil
 }
 
+type OverlapArgs struct {
+	Member string `json:"member,omitempty" jsonschema:"only the pairs, names, and tags that involve this origin: a mirror's folder name under wiki/projects/, or this project's own name"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"how many pairs, names, and tags at most, each (default 30)"`
+}
+
+// OverlapOut is the overlap report with a next line for the model.
+type OverlapOut struct {
+	overlap.Report
+	Next string `json:"next"`
+}
+
+// overlapNext says what the report is for.
+const overlapNext = "Read only the pages the report names. A duplicate pair is a candidate to upgrade into this project's own wiki, leaving a pointer in each member; a related pair or a shared name is a candidate for a bridge page here that links both. A settled pair is already covered by a page here. The wiki-merge skill turns the candidates into one plan the user approves."
+
+func (s *Server) overlap(ctx context.Context, req *mcp.CallToolRequest, a OverlapArgs) (*mcp.CallToolResult, OverlapOut, error) {
+	_, p, err := s.place()
+	if err != nil {
+		return nil, OverlapOut{}, err
+	}
+	report, err := overlap.Run(p.Atlas(), p.Name(), overlap.Options{Member: a.Member, Limit: a.Limit})
+	if err != nil {
+		return nil, OverlapOut{}, err
+	}
+	return nil, OverlapOut{Report: *report, Next: overlapNext}, nil
+}
+
 func ro() *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{ReadOnlyHint: true}
 }
@@ -874,7 +906,7 @@ func (s *Server) MCP() *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{Name: "route", Annotations: ro(),
 		Description: "Say where a new wiki page of a type belongs under the project's mode, whether a page with that title or alias already exists, and give a skeleton with the frontmatter conventions."}, s.route)
 	mcp.AddTool(server, &mcp.Tool{Name: "plan", Annotations: ro(),
-		Description: "Validate a set of changes to the wiki and hold them as a plan. Returns a plan_id, a preview of creates, replaces, and deletes, and warnings such as links that do not resolve. Nothing is written. Show the preview to the user before apply."}, s.plan)
+		Description: "Validate a set of changes to the wiki and hold them as a plan. Returns a plan_id, a preview of creates, replaces, and deletes, and warnings such as links that do not resolve. Nothing is written. Show the preview to the user before apply. With project, plan in another project the atlas lists, as the wiki-merge skill does for the pointer an upgraded page leaves in a member; apply then commits there."}, s.plan)
 	mcp.AddTool(server, &mcp.Tool{Name: "apply",
 		Description: "Apply a held plan as one git commit and write its log entry. Edits made by hand in the wiki are committed first, so the operation can always be undone exactly; the work outside the wiki is never touched. The plan is consumed."}, s.apply)
 	mcp.AddTool(server, &mcp.Tool{Name: "undo",
@@ -883,6 +915,8 @@ func (s *Server) MCP() *mcp.Server {
 		Description: "List the wiki's recent operations, newest first, with their kind, summary, date, commit, and changed paths."}, s.history)
 	mcp.AddTool(server, &mcp.Tool{Name: "lint", Annotations: ro(),
 		Description: "Run the deterministic health check on the project's wiki: dead and ambiguous links, duplicate basenames, orphans, pages missing from every index, missing frontmatter, empty sections, stale index entries, and ledger problems. Read-only."}, s.lint)
+	mcp.AddTool(server, &mcp.Tool{Name: "overlap", Annotations: ro(),
+		Description: "Find what this project's wiki and the mirrors of its members hold in common, without reading them into the session: pairs of pages from two origins that look like the same thing (duplicate) or like neighbours (related), scored by name, content, and the names they link, with evidence and whether a page here already covers them; link names two or more origins share; tags they share. Read-only and deterministic. The wiki-merge skill reads it first."}, s.overlap)
 	mcp.AddTool(server, &mcp.Tool{Name: "stub",
 		Description: "Create seed pages in the wiki for the pages it links to but nobody has written (lint's wanted pages). One commit, no plan preview; undo takes it back. Omit titles to stub every one of them with the mode's default type. Pass a title with a type when the name is a person, product, project, or organization (entity)."}, s.stub)
 	mcp.AddTool(server, &mcp.Tool{Name: "threads", Annotations: ro(),
@@ -909,7 +943,7 @@ func Run(ctx context.Context, opts Options) error {
 
 // ToolNames lists every tool MCP registers, sorted, for docs and tests.
 func ToolNames() []string {
-	names := []string{"apply", "atlas", "capture", "history", "inbox", "lint", "phase", "plan", "project", "route", "settings", "stage", "status", "stub", "thread", "threads", "undo"}
+	names := []string{"apply", "atlas", "capture", "history", "inbox", "lint", "overlap", "phase", "plan", "project", "route", "settings", "stage", "status", "stub", "thread", "threads", "undo"}
 	sort.Strings(names)
 	return names
 }

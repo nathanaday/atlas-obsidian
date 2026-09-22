@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/home"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/registry"
+	"github.com/nathanaday/atlas-obsidian/internal/txn"
 )
 
 func TestAtlasReadsWithoutWritingAndRefreshWrites(t *testing.T) {
@@ -226,5 +228,100 @@ func TestProjectToolTurnsThreadsOff(t *testing.T) {
 	var made ProjectToolOut
 	if msg := c.call("project", map[string]any{"action": "init", "work": other, "threads": false}, &made); msg != "" || made.Project.Threads {
 		t.Fatalf("init %q %+v", msg, made.Project)
+	}
+}
+
+// TestOverlapAndAMergeIntoTheMember walks the merge: a hub and a member both hold a
+// Widget page; overlap finds the pair; a merge plan in the member leaves a pointer, one
+// in the hub rewrites its page; the next sync sends the member's links to the hub's page.
+func TestOverlapAndAMergeIntoTheMember(t *testing.T) {
+	a := newAtlas(t)
+	c := a.session(t)
+	svc := filepath.Join(filepath.Dir(a.work), "svc")
+	os.MkdirAll(svc, 0o755)
+	if msg := c.call("project", map[string]any{"action": "init", "work": svc, "name": "svc"}, nil); msg != "" {
+		t.Fatal(msg)
+	}
+	member, err := project.Open(svc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	widget := "---\ntitle: Widget\ntype: entity\nstatus: seed\ncreated: 2026-09-12\nupdated: 2026-09-12\ntags:\n  - entity\n---\n# Widget\n\n%s\n"
+	os.MkdirAll(member.Path("wiki/entities"), 0o755)
+	os.WriteFile(member.Path("wiki/entities/Widget.md"), []byte(fmt.Sprintf(widget, "The widget counts beans for svc. See [[Uses]].")), 0o644)
+	os.WriteFile(member.Path("wiki/entities/Uses.md"), []byte(strings.Replace(fmt.Sprintf(widget, "Uses the [[Widget]] to count beans."), "Widget\n", "Uses\n", 2)), 0o644)
+	os.MkdirAll(a.p.Path("wiki/entities"), 0o755)
+	os.WriteFile(a.p.Path("wiki/entities/Widget.md"), []byte(fmt.Sprintf(widget, "The widget counts beans for the webapp.")), 0o644)
+
+	// Before any mirror, overlap says so.
+	var before OverlapOut
+	if msg := c.call("overlap", nil, &before); msg != "" || !strings.Contains(before.Note, "no mirrors") {
+		t.Fatalf("before: %q %+v", msg, before)
+	}
+	if msg := c.call("project", map[string]any{"action": "edit", "add_members": []string{"svc"}}, nil); msg != "" {
+		t.Fatal(msg)
+	}
+	if msg := c.call("project", map[string]any{"action": "sync"}, nil); msg != "" {
+		t.Fatal(msg)
+	}
+	var out OverlapOut
+	if msg := c.call("overlap", nil, &out); msg != "" {
+		t.Fatal(msg)
+	}
+	if len(out.Origins) != 2 || out.Origins[0].Name != "webapp" || !out.Origins[0].Own || out.Origins[1].Name != "svc" || out.Origins[1].Project != member.Config.ID {
+		t.Fatalf("origins %+v", out.Origins)
+	}
+	if len(out.Pairs) == 0 || out.Pairs[0].Kind != "duplicate" || out.Pairs[0].A.Path != "wiki/entities/Widget.md" || out.Pairs[0].B.Path != "wiki/projects/svc/entities/Widget.md" || out.Next == "" {
+		t.Fatalf("pairs %+v", out.Pairs)
+	}
+	if msg := c.call("overlap", map[string]any{"member": "nope"}, nil); !strings.Contains(msg, "webapp, svc") {
+		t.Fatalf("member: %q", msg)
+	}
+
+	// The merge: a pointer in the member, as the member's own operation.
+	pointer := "---\ntitle: Widget\ntype: entity\nstatus: seed\ncreated: 2026-09-12\nupdated: 2026-09-12\ntags:\n  - entity\nmoved_to: \"wiki/entities/Widget.md\"\nmoved_to_project: \"" + a.p.Config.ID + "\"\n---\n# Widget\n\nMoved to the webapp project as wiki/entities/Widget.md.\n"
+	var plan PlanOut
+	if msg := c.call("plan", map[string]any{"project": "svc", "kind": "merge", "summary": "merge Widget into webapp",
+		"writes": []map[string]any{{"path": "wiki/entities/Widget.md", "mode": "replace", "content": pointer}}}, &plan); msg != "" {
+		t.Fatal(msg)
+	}
+	if plan.Project != member.Atlas() || plan.Kind != "merge" {
+		t.Fatalf("plan %+v", plan)
+	}
+	if msg := c.call("apply", map[string]any{"plan_id": plan.PlanID}, nil); msg != "" {
+		t.Fatal(msg)
+	}
+	data, _ := os.ReadFile(member.Path("wiki/entities/Widget.md"))
+	if string(data) != pointer {
+		t.Fatalf("member page:\n%s", data)
+	}
+	ops, _ := txn.History(member, 1, false)
+	if len(ops) != 1 || ops[0].Kind != "merge" {
+		t.Fatalf("member history %+v", ops)
+	}
+	// A merge never targets a mirror.
+	if msg := c.call("plan", map[string]any{"kind": "merge", "summary": "x", "writes": []map[string]any{{"path": "wiki/projects/svc/entities/Widget.md", "mode": "delete"}}}, nil); !strings.Contains(msg, "rewritten by sync") {
+		t.Fatalf("merge into the mirror: %q", msg)
+	}
+	// After the sync, the hub holds one Widget and the member's link lands on it.
+	var synced ProjectToolOut
+	if msg := c.call("project", map[string]any{"action": "sync"}, &synced); msg != "" || synced.Sync.Removes != 1 {
+		t.Fatalf("sync: %q %+v", msg, synced.Sync)
+	}
+	if _, err := os.Stat(a.p.Path("wiki/projects/svc/entities/Widget.md")); err == nil {
+		t.Fatal("the moved page was mirrored")
+	}
+	uses, _ := os.ReadFile(a.p.Path("wiki/projects/svc/entities/Uses.md"))
+	if !strings.Contains(string(uses), "[[wiki/entities/Widget|Widget]]") {
+		t.Fatalf("uses:\n%s", uses)
+	}
+	var after OverlapOut
+	if msg := c.call("overlap", nil, &after); msg != "" {
+		t.Fatal(msg)
+	}
+	for _, p := range after.Pairs {
+		if p.B.Path == "wiki/projects/svc/entities/Widget.md" {
+			t.Fatalf("the moved page is still compared: %+v", p)
+		}
 	}
 }
