@@ -119,6 +119,7 @@ type Report struct {
 	StaleIndexEntries  []LinkFinding        `json:"stale_index_entries"`
 	ReadErrors         []PathFinding        `json:"read_errors"`
 	LedgerErrors       []PathFinding        `json:"ledger_errors"`
+	MirrorErrors       []PathFinding        `json:"mirror_errors"`
 	WantedPages        []WantedPage         `json:"wanted_pages"`
 	Stubs              []Stub               `json:"stubs"`
 }
@@ -136,8 +137,15 @@ type page struct {
 	aliases  []string
 	isIndex  bool // index.md, _index.md, or a folder index
 	isMOC    bool // type: moc
+	// mirrored marks a page under wiki/projects/: a copy of another project's page that
+	// sync derives. Its links are checked, because a dead link there is a fact about the
+	// member; every finding about the page itself belongs to the member and is not made.
+	mirrored bool
 	links    []link
 }
+
+// Mirrored reports whether a project-relative path lies in the mirrors sync derives.
+func Mirrored(rel string) bool { return strings.HasPrefix(rel, project.MirrorDir+"/") }
 
 type target struct {
 	path string
@@ -181,7 +189,7 @@ var orphanExcluded = map[string]bool{
 
 // folderIndexes are the index pages the layout names after their folder, so that no two
 // pages share the basename index.
-var folderIndexes = map[string]bool{project.CanvasIndex: true}
+var folderIndexes = map[string]bool{project.CanvasIndex: true, project.MirrorIndex: true}
 
 // duplicateExempt reports whether a basename repeats by design: _index pages do.
 func duplicateExempt(rel string) bool {
@@ -275,7 +283,7 @@ func Run(root string, opts Options) (*Report, error) {
 			}
 			if len(candidates) == 0 {
 				entry := LinkFinding{Source: l.source, Line: l.line, Target: l.target, Syntax: l.syntax, Reason: "target-not-found"}
-				if title, ok := wantedTitle(l, pg); ok {
+				if title, ok := wantedTitle(l, pg); ok && !pg.mirrored {
 					if entry.Suggestion = near.match(title); entry.Suggestion == "" {
 						key := strings.ToLower(title)
 						if wanted[key] == nil {
@@ -311,7 +319,7 @@ func Run(root string, opts Options) (*Report, error) {
 
 	byStem := map[string][]string{}
 	addStem := func(rel string) {
-		if duplicateExempt(rel) {
+		if duplicateExempt(rel) || Mirrored(rel) {
 			return
 		}
 		stem := strings.ToLower(strings.TrimSuffix(path.Base(rel), path.Ext(rel)))
@@ -363,6 +371,9 @@ func Run(root string, opts Options) (*Report, error) {
 	}
 
 	for _, pg := range pages {
+		if pg.mirrored {
+			continue
+		}
 		emptyStub := stubs[pg.path] && strings.TrimSpace(pg.text) == ""
 		if pg.frontErr == nil && !emptyStub {
 			if missing := project.MissingFrontmatter(pg.fields); len(missing) > 0 {
@@ -375,6 +386,7 @@ func Run(root string, opts Options) (*Report, error) {
 	}
 
 	report.LedgerErrors = ledgerErrors(root, opts.Overlay, present, asOf)
+	report.MirrorErrors = mirrorErrors(root, opts.Overlay, present)
 
 	sortFindings(report)
 	report.Summary = Summary{PagesScanned: len(pages), LinksScanned: links, WantedPages: len(report.WantedPages), Stubs: len(report.Stubs), CategoryCounts: map[string]int{
@@ -388,6 +400,7 @@ func Run(root string, opts Options) (*Report, error) {
 		"stale_index_entries": len(report.StaleIndexEntries),
 		"read_errors":         len(report.ReadErrors),
 		"ledger_errors":       len(report.LedgerErrors),
+		"mirror_errors":       len(report.MirrorErrors),
 	}}
 	for _, n := range report.Summary.CategoryCounts {
 		report.Summary.IssuesFound += n
@@ -461,6 +474,7 @@ func parsePage(rel, text string) *page {
 	}
 	base := strings.ToLower(path.Base(rel))
 	pg.isIndex = base == "index.md" || base == "_index.md" || folderIndexes[rel]
+	pg.mirrored = Mirrored(rel)
 	pg.masked = maskCode(text)
 	for _, m := range atxHeading.FindAllStringSubmatch(pg.masked, -1) {
 		if h := normalizeHeading(m[2]); h != "" {
@@ -702,7 +716,37 @@ func (r *resolver) resolve(l link) []target {
 	if !strings.HasPrefix(strings.ToLower(raw), "wiki/") {
 		queries = append(queries, path.Clean(path.Join("wiki", raw)))
 	}
-	return r.own.find(queries, raw)
+	return preferNear(l.source, r.own.find(queries, raw))
+}
+
+// preferNear keeps the candidates of a name that sit where the link was written: the
+// hub's own pages for a link from one of them, and the same mirror for a link from a
+// mirrored page. A mirror repeats the hub's names by design, and a name in a page means
+// the page its wiki knows.
+func preferNear(source string, cands []target) []target {
+	if len(cands) < 2 {
+		return cands
+	}
+	folder := mirrorFolder(source)
+	var near []target
+	for _, c := range cands {
+		if mirrorFolder(c.path) == folder {
+			near = append(near, c)
+		}
+	}
+	if len(near) > 0 {
+		return near
+	}
+	return cands
+}
+
+// mirrorFolder is the mirror a path lies in, or "" for the hub's own pages.
+func mirrorFolder(rel string) string {
+	if !Mirrored(rel) {
+		return ""
+	}
+	folder, _, _ := strings.Cut(strings.TrimPrefix(rel, project.MirrorDir+"/"), "/")
+	return folder
 }
 
 // find returns the targets a link names: an exact path, then a bare name against
@@ -893,7 +937,7 @@ func editDistance(a, b []rune) int {
 }
 
 func orphanCandidate(rel string) bool {
-	if orphanExcluded[strings.ToLower(path.Base(rel))] || folderIndexes[rel] {
+	if orphanExcluded[strings.ToLower(path.Base(rel))] || folderIndexes[rel] || Mirrored(rel) {
 		return false
 	}
 	inner := strings.ToLower(strings.TrimPrefix(rel, "wiki/"))
@@ -1035,6 +1079,7 @@ func sortFindings(r *Report) {
 		return a.Line < b.Line
 	})
 	sort.SliceStable(r.ReadErrors, func(i, j int) bool { return pathLess(r.ReadErrors[i].Path, r.ReadErrors[j].Path) })
+	sort.SliceStable(r.MirrorErrors, func(i, j int) bool { return pathLess(r.MirrorErrors[i].Path, r.MirrorErrors[j].Path) })
 	// A wanted title and a stub path are each unique, and pathLess breaks a case-insensitive
 	// tie on the exact string, so the map order these come from never reaches the report.
 	sort.SliceStable(r.WantedPages, func(i, j int) bool { return pathLess(r.WantedPages[i].Title, r.WantedPages[j].Title) })
@@ -1082,6 +1127,9 @@ func (r *Report) fillEmpty() {
 	}
 	if r.LedgerErrors == nil {
 		r.LedgerErrors = []PathFinding{}
+	}
+	if r.MirrorErrors == nil {
+		r.MirrorErrors = []PathFinding{}
 	}
 	if r.WantedPages == nil {
 		r.WantedPages = []WantedPage{}
@@ -1146,6 +1194,10 @@ func (r *Report) Markdown() string {
 	section("Ledger", len(r.LedgerErrors))
 	for _, f := range r.LedgerErrors {
 		fmt.Fprintf(&b, "- %s\n", f.Message)
+	}
+	section("Mirrors", len(r.MirrorErrors))
+	for _, f := range r.MirrorErrors {
+		fmt.Fprintf(&b, "- `%s`: %s\n", f.Path, f.Message)
 	}
 	section("Wanted pages", len(r.WantedPages))
 	if len(r.WantedPages) > 0 {
@@ -1215,6 +1267,59 @@ func (r *Report) Problems(paths []string) []string {
 	for _, f := range r.UnindexedPages {
 		if set[f.Path] {
 			out = append(out, fmt.Sprintf("%s is not linked from any index or MOC", f.Path))
+		}
+	}
+	return out
+}
+
+// mirrorErrors checks what the folder shows of the project's mirrors: every member the
+// identity file lists has a mirror whose root page names it, and every mirror folder has
+// its root page. Whether a member is in the atlas config is sync's to say.
+func mirrorErrors(root string, overlay map[string][]byte, present map[string]bool) []PathFinding {
+	cfg, ok := project.ReadMarker(root)
+	if !ok {
+		return nil
+	}
+	roots := map[string]string{} // mirror folder -> the project id its root page names
+	folders := map[string]bool{}
+	for rel := range present {
+		if !Mirrored(rel) {
+			continue
+		}
+		rest := strings.TrimPrefix(rel, project.MirrorDir+"/")
+		folder, inner, ok := strings.Cut(rest, "/")
+		if !ok {
+			continue
+		}
+		folders[folder] = true
+		if inner != folder+".md" {
+			continue
+		}
+		data, ok := overlay[rel]
+		if !ok {
+			data, _ = os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		}
+		fields, _, err := project.Frontmatter(string(data))
+		if err == nil && fields != nil {
+			roots[folder] = project.StringField(fields, "project")
+		}
+	}
+	var out []PathFinding
+	for folder := range folders {
+		if _, ok := roots[folder]; !ok {
+			out = append(out, PathFinding{Path: project.MirrorDir + "/" + folder, Message: "mirror has no root page; run sync"})
+		}
+	}
+	for _, id := range cfg.Members {
+		found := false
+		for _, named := range roots {
+			if named == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			out = append(out, PathFinding{Path: project.Marker, Message: "member " + id + " has no mirror under " + project.MirrorDir + "/; run sync"})
 		}
 	}
 	return out

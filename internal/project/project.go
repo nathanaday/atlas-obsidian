@@ -49,6 +49,12 @@ const (
 	// A folder's index page takes the folder's name, so no page shares the basename of
 	// wiki/index.md.
 	CanvasIndex = "wiki/canvases/canvases.md"
+	// The mirrors: a copy of each member's wiki, derived by sync and owned by code. The
+	// index page takes the folder's name, like every folder index.
+	MirrorDir   = "wiki/projects"
+	MirrorIndex = "wiki/projects/projects.md"
+	// MaxMembers bounds a project's member list and the closure a sync mirrors.
+	MaxMembers = 128
 
 	// The threads: the cards and the board at the top, one folder per stage under it.
 	ThreadsDir   = "threads"
@@ -108,6 +114,9 @@ type Config struct {
 	Description string `json:"description,omitempty"`
 	Mode        Mode   `json:"mode"`
 	Created     string `json:"created"`
+	// Members are the projects, by id, whose wikis this project mirrors under
+	// wiki/projects/. A member never knows it is listed.
+	Members []string `json:"members,omitempty"`
 }
 
 // Encode renders the identity file.

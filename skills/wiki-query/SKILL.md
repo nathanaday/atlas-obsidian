@@ -15,7 +15,11 @@ widen the question or change the wiki.
 ## Where the evidence is
 
 Evidence is `wiki/` in the project's folder; `status` gives that folder under
-`atlas`. The thread pages under `threads/` are not evidence about the subject;
+`atlas`. When `status` lists members, `wiki/projects/<name>/` holds a mirror
+of each member's wiki and `wiki/projects/projects.md` lists them: evidence
+about that member, as the member wrote it, with `project` and `mirror_of` in
+each page's frontmatter saying where it came from. Cite a mirrored page by its
+full path. The thread pages under `threads/` are not evidence about the subject;
 they are the state of the work, and the `threads` tool reads them. A question
 the code answers is the code's to answer, not the wiki's; say which you used.
 

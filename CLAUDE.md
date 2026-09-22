@@ -14,6 +14,7 @@ Read `README.md` first. This file holds what the code and README do not say.
 | The current design: one entity. A project holds its wiki and its threads in one folder | `docs/v4-design.md` |
 | Threads: a project's state as stub, spec, plan, receipt documents | `docs/threads-design.md` |
 | Core design and the reasons behind it: the engine, one operation one commit | `docs/core-design.md` |
+| Members: a project mirrors other projects' wikis under `wiki/projects/` | `docs/members-design.md` |
 | History, not contracts: the designs this one replaced | `docs/v3-design.md`, `docs/v2-design.md`, `docs/atlas-design.md`, `docs/tasks-design.md`, `docs/stubs-design.md`, `docs/spec.md`, `docs/superpowers/` |
 | The skills' contracts | `skills/<name>/SKILL.md` and `skills/wiki/references/` |
 
@@ -50,10 +51,11 @@ over projects that each hold a wiki; see "Left for later" in
    see. A receipt closes the thread and its card moves to `threads/archive/`. A
    thread names its phase; a phase never lists its threads and has no status.
 4. **Code owns what code can derive.** `wiki/log.md`, the source ledger, the
-   thread cards, the first callout of every document, and the board. The model
-   writes prose; it never targets a derived page. The guard refuses the cards
-   and the board (the pages directly under `threads/`), `project.json`, and a
-   new file written straight into a stage folder.
+   thread cards, the first callout of every document, the board, and the
+   mirrors under `wiki/projects/`. The model writes prose; it never targets a
+   derived page. The guard refuses the cards and the board (the pages directly
+   under `threads/`), `project.json`, the mirrors, and a new file written
+   straight into a stage folder.
 5. **Ids travel; paths stay.** `project.json` holds no path; the atlas config
    holds every project's work folder and nothing else. A project heals its own
    entry when a session starts in it (`manage.RegisterProject`).
@@ -130,7 +132,8 @@ internal/threads/       threads over plain files: cards, stage documents, phases
 internal/describe/      the page in the wiki that describes the work, how far the work moved since, and the snapshot a page cites; reads only, capture writes the snapshot
 internal/capture/       inbox listing with a hint per file, staging into inbox/ (files, and the work's snapshot), capture into .raw/captured/
 internal/ledger/        the source ledger
-internal/lint/          the health check
+internal/lint/          the health check, and the link resolver the mirror shares
+internal/mirror/        members: the closure of a project's members, the transform, and sync, one operation
 internal/mcpserver/     the tools, thin over the packages above
 internal/hooks/         session-start (the project, its wiki, the page that describes the work, the open threads, the inbox, and hot.md), guard, touched, stop
 internal/claudecode/    Claude Code's plugin registry, `claude plugin`, launching claude in the work
@@ -223,10 +226,26 @@ claude-atlas or claude-obsidian name any more, and the schemas restarted at
 - In the atlas, "thread" means a project's thread only. The bullets under
   `## Active Threads` in `wiki/hot.md` are shown as "Hot topics"
   (`refresh.HotTopics`).
+- A project may list `members` in `project.json`, other projects by id, and
+  `mirror.Sync` copies the transitive closure of their wikis, flat and each
+  once, into `wiki/projects/<folder>/` as one `sync` operation
+  (`docs/members-design.md`). The closure excludes the project itself,
+  `mirror.Validate` refuses a cycle or an unknown id when the list is edited,
+  and `project.MaxMembers` bounds both the list and the closure. A member
+  never knows; nothing writes into one. Sync reads the member's working tree
+  and records its newest engine commit as a fact. The transform stamps
+  `project`, `mirror_of`, and `commit` into each page's frontmatter and
+  rewrites every resolvable link to a full vault path through `lint.Vault`,
+  so the mirror and lint agree on what a link means. Lint checks a mirrored
+  page's links and makes no other finding about it; a bare name resolves to
+  the pages nearest the link (`preferNear`). The session-start hook syncs a
+  project with members; `refresh` does not, because refresh writes nothing
+  git tracks.
 - A kind bounds a plan's writes (`txn.allowed`), and every model kind writes
-  only under `wiki/`. Reserved: `wiki/log.md`, the source ledger,
-  `project.json`, `ideas/`, `threads/`, `.git`, `.vault-meta`, `.obsidian`,
-  `.raw` except through capture, `inbox` except deletes in an ingest.
+  only under `wiki/`, and never under `wiki/projects/`, which only `sync`
+  writes. Reserved: `wiki/log.md`, the source ledger, `project.json`,
+  `ideas/`, `threads/`, `.git`, `.vault-meta`, `.obsidian`, `.raw` except
+  through capture, `inbox` except deletes in an ingest.
 - A new project lints clean, and `lint.TestNewProjectHasNoFindings` holds the
   template to that. Lint runs over the project's folder but reads only `wiki/`
   as pages; every other file is a link target, and a bare name resolves to a
@@ -364,8 +383,5 @@ under "Sources of truth".
   the Config tab and `config preferred-ide vscode` persist the preference.
 
 - A `search` tool with BM25 ranking, once Grep proves insufficient.
-- Knowledge that crosses projects, the mission v4 tabled: a reader over the
-  wikis the config lists, or a hub project other projects cite. See
-  `docs/v4-design.md`, "Left for later".
 - Distribution: a Homebrew tap and release binaries; then the wrapper can
   download a checksummed binary into `${CLAUDE_PLUGIN_DATA}`.

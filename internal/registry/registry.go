@@ -36,6 +36,8 @@ type Entry struct {
 	Created     string       `json:"created,omitempty"`
 	Mode        project.Mode `json:"mode,omitempty"`
 	Description string       `json:"description,omitempty"`
+	// Members are the ids of the projects whose wikis this one mirrors.
+	Members []string `json:"members,omitempty"`
 	// Error is set for an entry the atlas knows but could not read. Such an entry has
 	// Path, Error, and Reason, and nothing else.
 	Error string `json:"error,omitempty"`
@@ -257,7 +259,7 @@ func scanProject(ix *Index, work string) {
 	if mode == "" {
 		mode = project.Generic
 	}
-	ix.Entries = append(ix.Entries, Entry{ID: cfg.ID, Name: name, Path: work, Created: cfg.Created, Mode: mode, Description: cfg.Description})
+	ix.Entries = append(ix.Entries, Entry{ID: cfg.ID, Name: name, Path: work, Created: cfg.Created, Mode: mode, Description: cfg.Description, Members: cfg.Members})
 }
 
 // fail records an entry the atlas knows but could not read: the same reason in both a

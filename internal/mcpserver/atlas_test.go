@@ -99,7 +99,7 @@ func TestProjectEditAndForget(t *testing.T) {
 	if err != nil || p.Folder != "Web App" {
 		t.Fatalf("the folder follows: %+v %v", p, err)
 	}
-	if msg := c.call("project", map[string]any{"action": "edit"}, nil); !strings.Contains(msg, "needs name, description, or mode") {
+	if msg := c.call("project", map[string]any{"action": "edit"}, nil); !strings.Contains(msg, "needs name, description, mode") {
 		t.Fatalf("empty edit: %q", msg)
 	}
 	if msg := c.call("project", map[string]any{"action": "grow"}, nil); !strings.Contains(msg, "action must be") {
@@ -142,5 +142,65 @@ func TestSettings(t *testing.T) {
 	}
 	if _, err := os.Stat(registry.File(a.h.StateDir())); err != nil {
 		t.Fatal("a write rewrites the registry")
+	}
+}
+
+func TestProjectMembersAndSync(t *testing.T) {
+	a := newAtlas(t)
+	c := a.session(t)
+	svc := filepath.Join(filepath.Dir(a.work), "svc")
+	os.MkdirAll(svc, 0o755)
+	var made ProjectToolOut
+	if msg := c.call("project", map[string]any{"action": "init", "work": svc, "name": "svc"}, &made); msg != "" {
+		t.Fatal(msg)
+	}
+	var out ProjectToolOut
+	if msg := c.call("project", map[string]any{"action": "edit", "add_members": []string{"webapp"}}, nil); !strings.Contains(msg, "own member") {
+		t.Fatalf("self: %q", msg)
+	}
+	if msg := c.call("project", map[string]any{"action": "edit", "add_members": []string{"nope"}}, nil); !strings.Contains(msg, "no project named") {
+		t.Fatalf("unknown: %q", msg)
+	}
+	if msg := c.call("project", map[string]any{"action": "edit", "add_members": []string{"svc"}}, &out); msg != "" || len(out.Project.Members) != 1 || out.Project.Members[0] != made.Project.ID {
+		t.Fatalf("add: %q %+v", msg, out.Project)
+	}
+	// svc listing webapp would close a cycle.
+	if msg := c.call("project", map[string]any{"action": "edit", "work": "svc", "add_members": []string{"webapp"}}, nil); !strings.Contains(msg, "cycle") {
+		t.Fatalf("cycle: %q", msg)
+	}
+	var st Status
+	if msg := c.call("status", nil, &st); msg != "" || len(st.Members) != 1 || st.Members[0].Mirrored {
+		t.Fatalf("status before sync: %q %+v", msg, st.Members)
+	}
+	if !strings.Contains(strings.Join(st.Warnings, "|"), "not mirrored yet") {
+		t.Fatalf("warnings %v", st.Warnings)
+	}
+	if msg := c.call("project", map[string]any{"action": "sync"}, &out); msg != "" || out.Sync == nil || out.Sync.Commit == "" || len(out.Sync.Members) != 1 || out.Sync.Members[0].Pages == 0 {
+		t.Fatalf("sync: %q %+v", msg, out.Sync)
+	}
+	if _, err := os.Stat(a.p.Path("wiki/projects/svc/svc.md")); err != nil {
+		t.Fatal("the mirror is not there")
+	}
+	if msg := c.call("status", nil, &st); msg != "" || !st.Members[0].Mirrored {
+		t.Fatalf("status after sync: %q %+v", msg, st.Members)
+	}
+	var again ProjectToolOut
+	if msg := c.call("project", map[string]any{"action": "sync"}, &again); msg != "" || again.Sync.Commit != "" {
+		t.Fatalf("second sync: %q %+v", msg, again.Sync)
+	}
+	// The mirror is the sync's; a plan may not write it.
+	if msg := c.call("plan", map[string]any{"kind": "save", "summary": "x", "writes": []map[string]any{{"path": "wiki/projects/svc/svc.md", "mode": "replace", "content": "x"}}}, nil); !strings.Contains(msg, "rewritten by sync") {
+		t.Fatalf("plan into the mirror: %q", msg)
+	}
+	var dropped ProjectToolOut
+	if msg := c.call("project", map[string]any{"action": "edit", "remove_members": []string{"svc"}}, &dropped); msg != "" || len(dropped.Project.Members) != 0 {
+		t.Fatalf("remove: %q %+v", msg, dropped.Project)
+	}
+	var removed ProjectToolOut
+	if msg := c.call("project", map[string]any{"action": "sync"}, &removed); msg != "" || removed.Sync.Removes == 0 {
+		t.Fatalf("sync after remove: %q %+v", msg, removed.Sync)
+	}
+	if _, err := os.Stat(a.p.Path("wiki/projects/svc")); err == nil {
+		t.Fatal("the mirror stayed")
 	}
 }

@@ -85,7 +85,7 @@ a stage folder; the `thread`, `phase`, and `project` tools make those changes.
 | Obsidian syntax questions | `obsidian-markdown` |
 | Reason carefully before a consequential change | `think` |
 | See every project on the machine, refresh, or change a setting | `atlas` |
-| Make this folder a project; rename it, change its description or mode, or forget it | `atlas-project` |
+| Make this folder a project; rename it, change its description or mode, add or remove members, sync, or forget it | `atlas-project` |
 
 Query is read-only. Keeping an answer is a separate `save` operation the user
 asks for. Never update the hot cache merely because a session ended.

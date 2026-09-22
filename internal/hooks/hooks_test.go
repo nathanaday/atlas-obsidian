@@ -297,6 +297,7 @@ func TestGuard(t *testing.T) {
 	cases := map[string]bool{
 		p.Path("wiki/concepts/A.md"):                 true,
 		p.Path("wiki/hot.md"):                        true,
+		p.Path("wiki/projects/svc/entities/A.md"):    true,
 		p.Path(".raw/captured/x.pdf"):                true,
 		p.Path(project.Marker):                       true,
 		p.Path(project.MetaDir + "/lock"):            true,
@@ -376,5 +377,39 @@ func TestTouchedMarksTheThread(t *testing.T) {
 	// Any other file is none of its business.
 	if err := Touched(strings.NewReader(`{"tool_input":{"file_path":"`+filepath.Join(work, "main.go")+`"}}`), day); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSessionStartSyncsTheMembers(t *testing.T) {
+	now := time.Now()
+	h, work := atlas(t, now)
+	cfg, err := h.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := filepath.Join(filepath.Dir(work), "svc")
+	os.MkdirAll(member, 0o755)
+	if _, err := manage.Init(h, cfg, member, project.Options{Name: "svc"}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := manage.EditProject(cfg, work, manage.Edit{AddMembers: []string{"svc"}}, now); err != nil {
+		t.Fatal(err)
+	}
+	e := env(t, map[string]string{home.EnvHome: h.Root})
+	text := run(t, filepath.Join(work, "src"), e, false, now)
+	if !strings.Contains(text, "Members: svc mirrored under atlas/code/wiki/projects/ (") || !strings.Contains(text, "synced now") {
+		t.Fatalf("members line:\n%s", text)
+	}
+	p, _ := project.Open(work)
+	if _, err := os.Stat(p.Path("wiki/projects/svc/svc.md")); err != nil {
+		t.Fatal("the session start did not sync")
+	}
+	if text := run(t, filepath.Join(work, "src"), e, false, now); strings.Contains(text, "synced now") {
+		t.Fatalf("a second start has nothing to sync:\n%s", text)
+	}
+	var out bytes.Buffer
+	Guard(strings.NewReader(`{"tool_name":"Edit","tool_input":{"file_path":"`+p.Path("wiki/projects/svc/svc.md")+`"}}`), &out)
+	if !strings.Contains(out.String(), "rewritten by sync") {
+		t.Fatalf("the guard names the mirror: %s", out.String())
 	}
 }

@@ -1,6 +1,6 @@
 ---
 name: atlas-project
-description: "Make the current folder a project, with its wiki and its threads, or change one: name, description, filing mode, describe, forget. Use for new project, init here, make this a project, project for this repo, set up a wiki here, rename the project, change the mode, forget this project, adopt this vault."
+description: "Make the current folder a project, with its wiki and its threads, or change one: name, description, filing mode, members, describe, forget, sync. Use for new project, init here, make this a project, project for this repo, set up a wiki here, rename the project, change the mode, add a member, link projects, mirror another project, sync the members, forget this project, adopt this vault."
 ---
 
 # Make or change a project
@@ -54,6 +54,18 @@ answer; do not retry with a guess.
   `name`, `description`, or `mode`. A new name moves `atlas/<name>/` to match;
   say so in the one-line statement. The work folder does not move; it is the
   user's. A new mode routes future pages only and moves nothing.
+- Add or remove members: `project` with `action: edit`, and `add_members` or
+  `remove_members`, each a list of projects by name, id, or path. A member is
+  a project whose wiki this one mirrors under `wiki/projects/<name>/`; the
+  member never knows. The tool refuses this project itself, a project the
+  atlas does not list, and a cycle; say the refusal in its words. State the
+  change as "Make svc-a a member of platform; the next sync mirrors its wiki",
+  and after a yes and the edit, offer sync.
+- Sync: `project` with `action: sync`. It mirrors the transitive closure of
+  the members, flat, as one operation, and reports each project with its page
+  count, and the counts and the commit when something changed. Nothing new
+  means no commit. Run it after adding or removing a member; the session-start
+  hook runs it too. A mirrored page is changed in its own project, never here.
 - Forget: `project` with `action: forget`. The work folder and its
   `atlas/<name>/` stay. Deleting `atlas/<name>/` is how a project ends, and
   that is the user's to do by hand.

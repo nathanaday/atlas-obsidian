@@ -24,7 +24,7 @@ session: inside a project, or in a folder the atlas does not know.
 
 | The user wants | Skill |
 |---|---|
-| Make this folder a project; rename it, change its description or mode, forget it | `atlas-project` |
+| Make this folder a project; rename it, change its description or mode, add or remove members, sync, forget it | `atlas-project` |
 | Work inside a project: its wiki or its threads | `wiki` |
 | See or change threads | `thread` |
 

@@ -81,7 +81,7 @@ func TestEditProjectRenamesTheFolderAndKeepsTheConfigEntry(t *testing.T) {
 	if _, err := Init(h, cfg, dir, project.Options{}, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := EditProject(dir, Edit{Name: "Web App", Mode: project.LYT}, now); err != nil {
+	if err := EditProject(cfg, dir, Edit{Name: "Web App", Mode: project.LYT}, now); err != nil {
 		t.Fatal(err)
 	}
 	p, err := project.Open(dir)
@@ -97,13 +97,13 @@ func TestEditProjectRenamesTheFolderAndKeepsTheConfigEntry(t *testing.T) {
 		t.Fatalf("the config still points at the work: %v", saved.Projects)
 	}
 	desc := "Notes."
-	if err := EditProject(dir, Edit{Description: &desc}, now); err != nil {
+	if err := EditProject(cfg, dir, Edit{Description: &desc}, now); err != nil {
 		t.Fatal(err)
 	}
 	if p, _ := project.Open(dir); p.Config.Description != desc {
 		t.Fatalf("description %q", p.Config.Description)
 	}
-	if err := EditProject(dir, Edit{}, now); err != nil {
+	if err := EditProject(cfg, dir, Edit{}, now); err != nil {
 		t.Fatalf("nothing to change: %v", err)
 	}
 }

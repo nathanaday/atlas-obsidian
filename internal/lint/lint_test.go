@@ -420,3 +420,75 @@ func TestTaskPagesAreOrdinaryPages(t *testing.T) {
 		t.Fatalf("orphans %v unindexed %v dead %v", r.Orphans, r.UnindexedPages, r.DeadLinks)
 	}
 }
+
+func TestMirroredPagesAreTargetsNotFindings(t *testing.T) {
+	root := fixture(t, map[string]string{
+		"wiki/index.md":                         mkpage("Index", "# Index\n\n- [[Alpha]]\n"),
+		"wiki/concepts/Alpha.md":                mkpage("Alpha", "# Alpha\n\nSee [[wiki/projects/svc/entities/Config|Config]].\n"),
+		"wiki/projects/projects.md":             mkpage("Projects", "# Projects\n\n| [[wiki/projects/svc/svc\\|svc]] |\n"),
+		"wiki/projects/svc/svc.md":              "---\nproject: \"id-svc\"\n---\n# svc\n\n[[wiki/projects/svc/entities/Config|Config]]\n",
+		"wiki/projects/svc/entities/Config.md":  "---\ntitle: Config\nproject: \"id-svc\"\n---\n# Config\n\n## Empty\n\n[[Nowhere]] and [[Alpha]] and [[wiki/projects/svc/overview|Overview]].\n",
+		"wiki/projects/svc/overview.md":         "# Overview\n\ntext\n",
+		"wiki/projects/other/entities/Alpha.md": "# Alpha\n\ntext\n",
+	})
+	os.WriteFile(filepath.Join(root, project.Marker), []byte(`{"schema":"`+project.Schema+`","id":"hub","name":"hub","mode":"generic","members":["id-svc","id-gone"]}`), 0o644)
+	r, err := Run(root, Options{AsOf: time.Date(2026, 9, 21, 0, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dead []string
+	for _, f := range r.DeadLinks {
+		dead = append(dead, f.Source+"→"+f.Target)
+	}
+	if strings.Join(dead, "|") != "wiki/projects/svc/entities/Config.md→Nowhere" {
+		t.Fatalf("dead links %v", dead)
+	}
+	if len(r.WantedPages) != 0 {
+		t.Fatalf("a mirrored page's dead link wants nothing: %+v", r.WantedPages)
+	}
+	// Two Alphas, two overviews: not duplicates, because the mirrors are another wiki's.
+	if len(r.DuplicateBasenames) != 0 || len(r.Orphans) != 0 || len(r.UnindexedPages) != 0 || len(r.MissingFrontmatter) != 0 || len(r.EmptySections) != 0 {
+		t.Fatalf("findings about mirrored pages: %s", r.Markdown())
+	}
+	// A bare [[Alpha]] from a mirrored page is ambiguous, and the report says so.
+	if len(r.AmbiguousTargets) != 1 || r.AmbiguousTargets[0].Source != "wiki/projects/svc/entities/Config.md" {
+		t.Fatalf("ambiguous %+v", r.AmbiguousTargets)
+	}
+	var mirror []string
+	for _, f := range r.MirrorErrors {
+		mirror = append(mirror, f.Path+": "+f.Message)
+	}
+	want := []string{
+		project.Marker + ": member id-gone has no mirror under wiki/projects/; run sync",
+		"wiki/projects/other: mirror has no root page; run sync",
+	}
+	if strings.Join(mirror, "|") != strings.Join(want, "|") {
+		t.Fatalf("mirror errors %v", mirror)
+	}
+}
+
+func TestVaultRewrite(t *testing.T) {
+	root := fixture(t, map[string]string{
+		"wiki/index.md":          mkpage("Index", "# Index\n"),
+		"wiki/concepts/Alpha.md": mkpage("Alpha", "# Alpha\n"),
+		"wiki/concepts/Beta.md":  mkpage("Beta", "# Beta\n"),
+		"wiki/canvases/m.canvas": "{}",
+		"wiki/img/a b.png":       "x",
+	})
+	v, err := LoadVault(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := func(resolved string) string {
+		if resolved == "wiki/concepts/Beta.md" {
+			return ""
+		}
+		return "wiki/projects/x/" + strings.TrimPrefix(resolved, "wiki/")
+	}
+	in := "[[Alpha]] [[Alpha#H|see]] ![[Alpha]] [[Beta]] [[Gone]] [[m.canvas]] ![[a b.png]] [md](Alpha.md) [rel](./Beta.md) [img](../img/a%20b.png) [ext](https://x.y) `[[Alpha]]`\n\n```\n[[Alpha]]\n```\n<!-- [[Alpha]] -->\n"
+	got := v.Rewrite("wiki/concepts/Alpha.md", in, prefix)
+	want := "[[wiki/projects/x/concepts/Alpha|Alpha]] [[wiki/projects/x/concepts/Alpha#H|see]] ![[wiki/projects/x/concepts/Alpha|Alpha]] [[Beta]] [[Gone]] [[wiki/projects/x/canvases/m.canvas|m.canvas]] ![[wiki/projects/x/img/a b.png|a b.png]] [md](wiki/projects/x/concepts/Alpha.md) [rel](./Beta.md) [img](wiki/projects/x/img/a%20b.png) [ext](https://x.y) `[[Alpha]]`\n\n```\n[[Alpha]]\n```\n<!-- [[Alpha]] -->\n"
+	if got != want {
+		t.Fatalf("got\n%s\nwant\n%s", got, want)
+	}
+}

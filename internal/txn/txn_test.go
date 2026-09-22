@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,6 +89,9 @@ func TestPrepareValidates(t *testing.T) {
 		{"missing", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: "wiki/nope.md", Mode: Replace, Content: mkpage("N", "")}}}, "does not exist"},
 		{"stale base", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: project.IndexPage, Mode: Replace, Content: mkpage("I", ""), BaseSHA256: hashOf("old")}}}, "conflict"},
 		{"frontmatter", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: "wiki/a.md", Mode: Create, Content: []byte("# no front\n")}}}, "no frontmatter"},
+		{"mirror is derived", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: "wiki/projects/svc/a.md", Mode: Create, Content: mkpage("A", "")}}}, "rewritten by sync"},
+		{"mirror by ingest", Request{Kind: Ingest, Summary: "x", Writes: []Write{{Path: "wiki/projects/svc/a.md", Mode: Create, Content: mkpage("A", "")}}}, "rewritten by sync"},
+		{"sync scope", Request{Kind: Sync, Summary: "x", Writes: []Write{{Path: "wiki/a.md", Mode: Create, Content: mkpage("A", "")}}}, "only under wiki/projects/"},
 		{"required keys", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: "wiki/a.md", Mode: Create, Content: []byte("---\ntitle: A\n---\n")}}}, "lacks type"},
 		{"json", Request{Kind: Canvas, Summary: "x", Writes: []Write{{Path: "wiki/canvases/a.canvas", Mode: Create, Content: []byte("{")}}}, "not valid JSON"},
 		{"dup", Request{Kind: Save, Summary: "x", Writes: []Write{{Path: "wiki/a.md", Mode: Create, Content: mkpage("A", "")}, {Path: "wiki/A.md", Mode: Create, Content: mkpage("A", "")}}}, "twice"},
@@ -509,5 +513,33 @@ func TestUndoRefusesWhenAPageChangedSince(t *testing.T) {
 	}
 	if have, _ := os.ReadFile(v.Path("wiki/concepts/E.md")); !strings.Contains(string(have), "the user typed here") {
 		t.Fatal("the refused undo left the page alone")
+	}
+}
+
+func TestSyncKindCopiesPagesAsTheMemberWroteThem(t *testing.T) {
+	v := newProject(t)
+	// No frontmatter, and more writes than a model plan may hold: both are the member's
+	// business, and the sync takes the pages as they are.
+	var writes []Write
+	for i := 0; i <= MaxWrites; i++ {
+		writes = append(writes, Write{Path: fmt.Sprintf("wiki/projects/svc/p%d.md", i), Mode: Create, Content: []byte("# bare\n")})
+	}
+	plan, err := Prepare(v, Request{Kind: Sync, Summary: "sync 1 project: svc", Writes: writes}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Warnings) != 0 {
+		t.Fatalf("warnings %v", plan.Warnings)
+	}
+	res, err := Apply(v, plan, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := read(t, v, project.LogPage)
+	if !strings.Contains(log, "- Mirrored: "+fmt.Sprint(len(writes))+" created, 0 updated, 0 removed") || strings.Contains(log, "[[p1]]") {
+		t.Fatalf("log:\n%s", log)
+	}
+	if ops, _ := History(v, 1, false); len(ops) != 1 || ops[0].Kind != "sync" || ops[0].ID != res.OperationID {
+		t.Fatalf("history %+v", ops)
 	}
 }

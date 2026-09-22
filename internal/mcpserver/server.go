@@ -22,6 +22,7 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/ledger"
 	"github.com/nathanaday/atlas-obsidian/internal/links"
 	"github.com/nathanaday/atlas-obsidian/internal/lint"
+	"github.com/nathanaday/atlas-obsidian/internal/mirror"
 	"github.com/nathanaday/atlas-obsidian/internal/place"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/registry"
@@ -145,6 +146,16 @@ type Versions struct {
 	Plugin string `json:"plugin,omitempty"`
 }
 
+// MemberStatus is one project in the closure of the session's members, and whether its
+// mirror is in the wiki.
+type MemberStatus struct {
+	ID       string `json:"id"`
+	Name     string `json:"name,omitempty"`
+	Folder   string `json:"folder,omitempty"`
+	Mirrored bool   `json:"mirrored"`
+	Error    string `json:"error,omitempty"`
+}
+
 // Status is the status tool's output: the project, its wiki, and its threads.
 type Status struct {
 	ID          string `json:"id"`
@@ -158,6 +169,8 @@ type Status struct {
 	Described *DescribedInfo `json:"described,omitempty"`
 	// The threads.
 	Threads *ProjectThreads `json:"threads,omitempty"`
+	// The members, when the project lists any: every project its mirrors cover.
+	Members []MemberStatus `json:"members,omitempty"`
 	// The wiki.
 	Pages         int            `json:"pages"`
 	Stubs         int            `json:"stubs"`
@@ -198,6 +211,9 @@ func (s *Server) status(ctx context.Context, req *mcp.CallToolRequest, a Empty) 
 		} else {
 			out.Warnings = append(out.Warnings, registry.NotDescribed+"; the describe skill writes the page")
 		}
+	}
+	if len(p.Config.Members) > 0 {
+		out.Members, out.Warnings = memberStatus(pl, p, out.Warnings)
 	}
 	if st, err := txn.Inspect(p); err == nil {
 		out.WikiGit = st
@@ -255,6 +271,36 @@ func (s *Server) status(ctx context.Context, req *mcp.CallToolRequest, a Empty) 
 		out.Warnings = append(out.Warnings, fmt.Sprintf("plugin %s and binary %s differ; update one of them", out.Versions.Plugin, out.Versions.Binary))
 	}
 	return nil, out, nil
+}
+
+// memberStatus lists the closure of the project's members and whether each is mirrored,
+// and adds a warning when a sync is due or the members cannot be resolved.
+func memberStatus(pl *place.Place, p *project.Project, warnings []string) ([]MemberStatus, []string) {
+	if pl.Index == nil {
+		return nil, append(warnings, fmt.Sprintf("%d members listed, but the atlas config could not be read, so nothing is mirrored", len(p.Config.Members)))
+	}
+	root := registry.Entry{ID: p.Config.ID, Name: p.Name(), Path: p.Root, Members: p.Config.Members}
+	members, err := mirror.Closure(pl.Index, root)
+	if err != nil {
+		return nil, append(warnings, "members: "+err.Error())
+	}
+	var out []MemberStatus
+	due := 0
+	for _, m := range members {
+		ms := MemberStatus{ID: m.ID, Name: m.Name, Folder: m.Folder, Error: m.Error}
+		if m.Folder != "" {
+			_, err := os.Stat(p.Path(project.MirrorDir + "/" + m.Folder + "/" + m.Folder + ".md"))
+			ms.Mirrored = err == nil
+		}
+		if m.Error == "" && !ms.Mirrored {
+			due++
+		}
+		out = append(out, ms)
+	}
+	if due > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d member%s not mirrored yet; the project tool's sync action mirrors them", due, plural(due)))
+	}
+	return out, warnings
 }
 
 // InboxOut is what waits in the project's one inbox. Each file carries a hint, source or
@@ -801,7 +847,7 @@ func (s *Server) MCP() *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{Name: "atlas",
 		Description: "Read the whole atlas: every project on this machine with its path, description, wiki, and open threads; the folders the atlas cannot read; and the settings. Pass refresh to also rewrite the registry."}, s.atlasTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "project",
-		Description: "Make a folder a project, with its wiki and its threads (init); change its name, description, or filing mode (edit); or drop it from the atlas, leaving the folder (forget). State the change and get a yes before calling."}, s.projectTool)
+		Description: "Make a folder a project, with its wiki and its threads (init); change its name, description, filing mode, or members (edit); mirror its members' wikis under wiki/projects/ as one operation (sync); or drop it from the atlas, leaving the folder (forget). State the change and get a yes before calling."}, s.projectTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "settings",
 		Description: "Set an atlas setting and return them all: new_days, how long a project counts as new. With no arguments it only reads."}, s.settingsTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "stage",

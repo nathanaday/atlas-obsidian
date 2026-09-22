@@ -149,6 +149,22 @@ In Codex the same workflows are `$wiki-ingest`, `$wiki-query`, and `$thread-stub
 
 Every command and its options: [docs/usage.md](docs/usage.md).
 
+## One wiki over several projects
+
+A project may list other projects as members. Its wiki then mirrors each
+member's wiki under `wiki/projects/<name>/`, and its own pages link into those
+mirrors with ordinary wikilinks, so Obsidian shows one graph over the whole
+ecosystem and a session there reads one wiki.
+
+```bash
+atlas-obsidian edit platform --add-member svc-a --add-member svc-b
+atlas-obsidian sync platform
+```
+
+The mirrors are derived: sync rewrites them as one operation, the guard refuses
+edits there, and a member never knows it is listed. The design and its reasons:
+[docs/members-design.md](docs/members-design.md).
+
 ## Seeing every project
 
 ```bash

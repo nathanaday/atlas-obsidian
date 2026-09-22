@@ -12,7 +12,9 @@ import (
 
 	"github.com/nathanaday/atlas-obsidian/internal/console"
 	"github.com/nathanaday/atlas-obsidian/internal/home"
+	"github.com/nathanaday/atlas-obsidian/internal/mirror"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
+	"github.com/nathanaday/atlas-obsidian/internal/registry"
 )
 
 var ErrCancelled = errors.New("cancelled")
@@ -91,11 +93,15 @@ func repoNote(work string, opts project.Options) string {
 	return "and a git repository at " + home.Display(work)
 }
 
-// Edit changes a project's own facts. A zero field means unchanged.
+// Edit changes a project's own facts. A zero field means unchanged. AddMembers and
+// RemoveMembers name projects the atlas lists, by name, id, or path; a member that the
+// atlas no longer lists may be removed by its id.
 type Edit struct {
-	Name        string
-	Description *string
-	Mode        project.Mode
+	Name          string
+	Description   *string
+	Mode          project.Mode
+	AddMembers    []string
+	RemoveMembers []string
 }
 
 // Fields names what the edit touches, for the commit message.
@@ -110,15 +116,28 @@ func (e Edit) Fields() []string {
 	if e.Mode != "" {
 		out = append(out, "mode")
 	}
+	if len(e.AddMembers)+len(e.RemoveMembers) > 0 {
+		out = append(out, "members")
+	}
 	return out
 }
 
 // EditProject rewrites a project's identity file as one setup commit. A new name moves
-// atlas/<name>/ to match; the work folder, which the config holds, never moves.
-func EditProject(work string, edit Edit, now time.Time) error {
+// atlas/<name>/ to match; the work folder, which the config holds, never moves. A change
+// to the members scans the atlas the config lists, so the new list is checked against
+// every other project's: no self, no unknown project, no cycle, and the limits hold.
+func EditProject(cfg *home.Config, work string, edit Edit, now time.Time) error {
 	fields := edit.Fields()
 	if len(fields) == 0 {
 		return nil
+	}
+	var members func(*project.Config) ([]string, error)
+	if len(edit.AddMembers)+len(edit.RemoveMembers) > 0 {
+		ix, err := registry.Scan(cfg)
+		if err != nil {
+			return err
+		}
+		members = func(c *project.Config) ([]string, error) { return editMembers(ix, work, c, edit) }
 	}
 	return project.UpdateConfig(work, "edit "+strings.Join(fields, ", "), now, func(c *project.Config) error {
 		if edit.Name != "" {
@@ -130,8 +149,61 @@ func EditProject(work string, edit Edit, now time.Time) error {
 		if edit.Mode != "" {
 			c.Mode = edit.Mode
 		}
+		if members != nil {
+			list, err := members(c)
+			if err != nil {
+				return err
+			}
+			c.Members = list
+		}
 		return nil
 	})
+}
+
+// editMembers applies an edit's adds and removes to a member list and validates the result.
+func editMembers(ix *registry.Index, work string, c *project.Config, edit Edit) ([]string, error) {
+	listed := map[string]bool{}
+	for _, id := range c.Members {
+		listed[id] = true
+	}
+	drop := map[string]bool{}
+	for _, arg := range edit.RemoveMembers {
+		id := arg
+		if en, err := ix.Find(arg); err == nil {
+			id = en.ID
+		} else if !listed[arg] {
+			return nil, fmt.Errorf("%s is not a member", arg)
+		}
+		if !listed[id] {
+			return nil, fmt.Errorf("%s is not a member", arg)
+		}
+		drop[id] = true
+	}
+	var list []string
+	for _, id := range c.Members {
+		if !drop[id] {
+			list = append(list, id)
+		}
+	}
+	for _, arg := range edit.AddMembers {
+		en, err := ix.Find(arg)
+		if err != nil {
+			return nil, err
+		}
+		if listed[en.ID] && !drop[en.ID] {
+			return nil, fmt.Errorf("%s is a member already", en.Name)
+		}
+		list = append(list, en.ID)
+		listed[en.ID] = true
+	}
+	root := registry.Entry{ID: c.ID, Name: strings.TrimSpace(c.Name), Path: work}
+	if en := ix.ByPath(work); en != nil && en.Error == "" {
+		root = *en
+	}
+	if err := mirror.Validate(ix, root, list); err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 // Forget drops a project's work folder from the config. The folder itself stays.

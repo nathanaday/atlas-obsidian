@@ -41,6 +41,9 @@ const (
 	Capture  Kind = "capture"
 	Undo     Kind = "undo"
 	Stub     Kind = "stub"
+	// Sync rewrites the mirrors under wiki/projects/ from the project's members. The
+	// mirror package builds it; nothing else writes there.
+	Sync Kind = "sync"
 )
 
 // ModelKinds are the kinds a plan from the model may use. Capture, undo, and stub are the
@@ -49,7 +52,7 @@ var ModelKinds = []Kind{Ingest, Save, Markdown, Repair, Fold, Canvas, Base}
 
 func validKind(k Kind) bool {
 	switch k {
-	case Ingest, Save, Markdown, Repair, Fold, Canvas, Base, Capture, Stub:
+	case Ingest, Save, Markdown, Repair, Fold, Canvas, Base, Capture, Stub, Sync:
 		return true
 	}
 	return false
@@ -189,6 +192,15 @@ func allowed(kind Kind, p string, mode WriteMode) error {
 	if p == project.Marker {
 		return fmt.Errorf("%s changes only through the project tool and `atlas-obsidian edit`; do not write it", p)
 	}
+	if kind == Sync {
+		if !under(project.MirrorDir) {
+			return fmt.Errorf("a sync operation writes only under %s/: %s", project.MirrorDir, p)
+		}
+		return nil
+	}
+	if under(project.MirrorDir) {
+		return fmt.Errorf("%s/ mirrors other projects' wikis and is rewritten by sync; change the page in its own project: %s", project.MirrorDir, p)
+	}
 	switch kind {
 	case Capture:
 		if !under(project.CapturedDir) || mode != Create || strings.Count(p, "/") != 2 {
@@ -226,12 +238,17 @@ func allowed(kind Kind, p string, mode WriteMode) error {
 	return nil
 }
 
-func validateContent(p string, content []byte) error {
+// validateContent checks a write's bytes. A mirrored page is a member's page as the
+// member wrote it, so a sync asks only that it be text; its frontmatter is the member's.
+func validateContent(kind Kind, p string, content []byte) error {
 	ext := strings.ToLower(path.Ext(p))
 	switch {
 	case strings.HasPrefix(p, "wiki/") && ext == ".md":
 		if !utf8Valid(content) {
 			return fmt.Errorf("%s is not UTF-8", p)
+		}
+		if kind == Sync {
+			return nil
 		}
 		fields, _, err := project.Frontmatter(string(content))
 		if err != nil {
@@ -292,7 +309,7 @@ func Prepare(v *project.Project, req Request, now time.Time) (*Plan, error) {
 	if len(req.Writes) == 0 && len(req.Sources) == 0 {
 		return nil, errors.New("a plan needs at least one write or source update")
 	}
-	if len(req.Writes) > MaxWrites {
+	if len(req.Writes) > MaxWrites && req.Kind != Sync {
 		return nil, fmt.Errorf("a plan may hold at most %d writes", MaxWrites)
 	}
 	plan := &Plan{ID: newPlanID(), OperationID: project.NewOperationID(string(req.Kind), now), Folder: v.Atlas(), Kind: req.Kind, Summary: summary, CreatedAt: now, Warnings: []string{}}
@@ -338,7 +355,7 @@ func Prepare(v *project.Project, req Request, now time.Time) (*Plan, error) {
 			if len(w.Content) > MaxWriteSize {
 				return nil, fmt.Errorf("%s exceeds %d bytes", p, MaxWriteSize)
 			}
-			if err := validateContent(p, w.Content); err != nil {
+			if err := validateContent(req.Kind, p, w.Content); err != nil {
 				return nil, err
 			}
 		}
@@ -386,7 +403,7 @@ func Prepare(v *project.Project, req Request, now time.Time) (*Plan, error) {
 			written = append(written, p)
 		}
 	}
-	if len(written) > 0 {
+	if len(written) > 0 && req.Kind != Sync {
 		report, err := lint.Run(v.Atlas(), lint.Options{Overlay: overlay, AsOf: now})
 		if err == nil {
 			plan.Warnings = append(plan.Warnings, report.Problems(written)...)
@@ -696,6 +713,11 @@ func logEntry(plan *Plan, now time.Time) string {
 	}
 	if len(plan.Preview.Creates)+len(plan.Preview.Replaces)+len(plan.Preview.Deletes)+len(plan.Preview.Sources) > 0 {
 		b.WriteString("\n")
+	}
+	if plan.Kind == Sync {
+		// A sync touches whole wikis; the pages are in the commit, and the log says how many.
+		fmt.Fprintf(&b, "- Mirrored: %d created, %d updated, %d removed\n", len(plan.Preview.Creates), len(plan.Preview.Replaces), len(plan.Preview.Deletes))
+		return b.String()
 	}
 	line("Created", plan.Preview.Creates, false)
 	line("Updated", plan.Preview.Replaces, false)

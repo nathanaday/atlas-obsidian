@@ -23,6 +23,7 @@ one tool from a Claude Code session, so scripts, muscle memory, and the
 | `R` refresh | `refresh` | `atlas` with `refresh` |
 | `←` `→` switch tabs; `h` shows every key; `q` quits | — | — |
 | — | `init [PATH]`, `edit NAME`, `forget NAME` | `project` |
+| — | `edit NAME --add-member P`, `sync [PROJECT]` | `project` with `add_members`, then `sync` |
 | — | `describe PROJECT` | `stage` with `snapshot`, then the `describe` skill |
 | — | `ingest PROJECT [PATH...]` | `stage`, then the `wiki-ingest` skill |
 | — | `threads [PROJECT]`, `thread PROJECT new\|show\|file\|close\|set\|reopen …`, `phase PROJECT …` | `threads`, `thread`, `phase` |
@@ -94,6 +95,42 @@ folder refuses the whole edit. The work folder never moves; it is yours.
 `forget` drops the project from the config; the folder stays, and a session
 started in it lists the project again. Deleting `atlas/<name>/` is how a
 project ends.
+
+## Members: one wiki over several projects
+
+A project may list other projects as **members**. Its wiki then carries a
+**mirror** of every member's wiki under `wiki/projects/<name>/`, and its own
+pages may link into the mirrors with ordinary wikilinks. Opened in Obsidian,
+that wiki shows the whole graph: its own pages, every member's pages, and the
+links between them. The design: [members-design.md](members-design.md).
+
+```bash
+atlas-obsidian edit platform --add-member svc-a --add-member svc-b
+atlas-obsidian sync platform                          # mirror them, as one operation
+atlas-obsidian edit platform --remove-member svc-b    # the next sync removes its mirror
+```
+
+`--add-member` takes a name, an id, or a path, and refuses the project itself,
+a project the atlas does not list, a cycle through other projects' member
+lists, and more than 128 members. A member never knows it is listed, so one
+project may be a member of any number of others.
+
+`sync` mirrors the transitive closure of the members, flat: a member's own
+members land beside it, each project once, and nothing is nested. Each
+member's `wiki/` is copied minus its log, its hot cache, its `meta/`, and its
+own mirrors; its `index.md` becomes `<name>.md`. Every mirrored page gains
+`project` (the member's id), `mirror_of`, and `commit`, and every link that
+resolves in the member is rewritten to a full vault path under
+`wiki/projects/<name>/`, so two members that both have a `Config` page never
+collide. `wiki/projects/projects.md` lists the mirrors. The whole change is one
+`sync` operation: `history` shows it and `undo` takes it back. A second sync
+with nothing new commits nothing.
+
+The mirrors are derived. The guard refuses Write and Edit there, and a plan may
+not target them: change the page in its own project, and sync again. A member
+the atlas cannot read keeps its old mirror, and the index page says so. The
+session-start hook runs sync in a project that lists members, so a session
+opens over a current mirror.
 
 **A moved project heals itself.** The config holds the work folder's path.
 Move the folder, then start a session in it: the hook finds the project's id

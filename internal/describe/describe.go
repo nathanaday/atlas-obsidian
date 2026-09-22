@@ -105,7 +105,8 @@ func matches(wiki string, e registry.Entry) []registry.Description {
 			return nil
 		}
 		if d.IsDir() {
-			if p != wiki && strings.HasPrefix(d.Name(), ".") {
+			// The mirrors under wiki/projects/ describe other projects' work.
+			if p != wiki && (strings.HasPrefix(d.Name(), ".") || filepath.Join(wiki, "projects") == p) {
 				return filepath.SkipDir
 			}
 			return nil

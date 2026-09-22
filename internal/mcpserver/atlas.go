@@ -13,6 +13,7 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/capture"
 	"github.com/nathanaday/atlas-obsidian/internal/home"
 	"github.com/nathanaday/atlas-obsidian/internal/manage"
+	"github.com/nathanaday/atlas-obsidian/internal/mirror"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/registry"
 )
@@ -117,12 +118,14 @@ func (s *Server) atlasTool(ctx context.Context, req *mcp.CallToolRequest, a Atla
 }
 
 type ProjectToolArgs struct {
-	Action      string  `json:"action" jsonschema:"init, edit, or forget"`
-	Work        string  `json:"work,omitempty" jsonschema:"the project's folder: on init the folder that becomes one, default the session's folder; otherwise the project by name, id, or path, default the session's project"`
-	Name        string  `json:"name,omitempty" jsonschema:"init: the project's name, default the folder's; edit: the new name, which renames atlas/<name>/ too"`
-	Description *string `json:"description,omitempty" jsonschema:"init, edit: one to three sentences saying what the work is and what its wiki should remember; the ingest and query skills read it. On edit an empty string clears it"`
-	Mode        string  `json:"mode,omitempty" jsonschema:"init, edit: the filing mode for new wiki pages, generic (default, a folder per type) or lyt (atomic notes and Maps of Content)"`
-	NoGit       bool    `json:"no_git,omitempty" jsonschema:"init: leave a folder that is in no git repository without one. The wiki then has no history and no operation can run"`
+	Action        string   `json:"action" jsonschema:"init, edit, sync, or forget"`
+	Work          string   `json:"work,omitempty" jsonschema:"the project's folder: on init the folder that becomes one, default the session's folder; otherwise the project by name, id, or path, default the session's project"`
+	Name          string   `json:"name,omitempty" jsonschema:"init: the project's name, default the folder's; edit: the new name, which renames atlas/<name>/ too"`
+	Description   *string  `json:"description,omitempty" jsonschema:"init, edit: one to three sentences saying what the work is and what its wiki should remember; the ingest and query skills read it. On edit an empty string clears it"`
+	Mode          string   `json:"mode,omitempty" jsonschema:"init, edit: the filing mode for new wiki pages, generic (default, a folder per type) or lyt (atomic notes and Maps of Content)"`
+	NoGit         bool     `json:"no_git,omitempty" jsonschema:"init: leave a folder that is in no git repository without one. The wiki then has no history and no operation can run"`
+	AddMembers    []string `json:"add_members,omitempty" jsonschema:"edit: projects whose wikis this one mirrors under wiki/projects/, each by name, id, or path. Refused when one is this project, is unknown, or would close a cycle"`
+	RemoveMembers []string `json:"remove_members,omitempty" jsonschema:"edit: members to drop, each by name, id, or path; the next sync removes their mirrors"`
 }
 
 // ProjectToolOut is the project as the atlas sees it after the change, the files init
@@ -133,6 +136,7 @@ type ProjectToolOut struct {
 	Git       string          `json:"git,omitempty" jsonschema:"init: created (the work is now a repository), existing, enclosed (the work sits inside another repository), or skipped"`
 	Commit    string          `json:"commit,omitempty" jsonschema:"init: the setup commit"`
 	Forgotten string          `json:"forgotten,omitempty" jsonschema:"the path the atlas no longer lists; the folder and its atlas/<name>/ stay"`
+	Sync      *mirror.Result  `json:"sync,omitempty" jsonschema:"sync: each project mirrored, with its pages and any error, and the counts and the commit when something changed"`
 }
 
 func (s *Server) projectTool(ctx context.Context, req *mcp.CallToolRequest, a ProjectToolArgs) (*mcp.CallToolResult, ProjectToolOut, error) {
@@ -186,8 +190,16 @@ func (s *Server) projectTool(ctx context.Context, req *mcp.CallToolRequest, a Pr
 		en = *found
 	}
 	switch a.Action {
+	case "sync":
+		res, err := acts.Sync(en)
+		if err != nil {
+			return nil, ProjectToolOut{}, err
+		}
+		_, out, err := s.projectOut(acts, en.Path)
+		out.Sync = res
+		return nil, out, err
 	case "edit":
-		edit := manage.Edit{Name: a.Name, Description: a.Description}
+		edit := manage.Edit{Name: a.Name, Description: a.Description, AddMembers: a.AddMembers, RemoveMembers: a.RemoveMembers}
 		if a.Mode != "" {
 			mode, err := project.ParseMode(a.Mode)
 			if err != nil {
@@ -196,7 +208,7 @@ func (s *Server) projectTool(ctx context.Context, req *mcp.CallToolRequest, a Pr
 			edit.Mode = mode
 		}
 		if len(edit.Fields()) == 0 {
-			return nil, ProjectToolOut{}, errors.New("edit needs name, description, or mode")
+			return nil, ProjectToolOut{}, errors.New("edit needs name, description, mode, add_members, or remove_members")
 		}
 		if err := acts.EditProject(en, edit); err != nil {
 			return nil, ProjectToolOut{}, err
@@ -210,7 +222,7 @@ func (s *Server) projectTool(ctx context.Context, req *mcp.CallToolRequest, a Pr
 		}
 		return nil, ProjectToolOut{Forgotten: en.Path}, nil
 	default:
-		return nil, ProjectToolOut{}, fmt.Errorf("action must be init, edit, or forget, not %q", a.Action)
+		return nil, ProjectToolOut{}, fmt.Errorf("action must be init, edit, sync, or forget, not %q", a.Action)
 	}
 	return s.projectOut(acts, en.Path)
 }

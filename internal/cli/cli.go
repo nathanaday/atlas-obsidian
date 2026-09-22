@@ -57,7 +57,9 @@ Getting started:
 Projects (PROJECT is a name, a path, or nothing for the project you are in):
   list                      every project
   show NAME                 everything the atlas knows about one
-  edit NAME                 change it: --name N, --description TEXT, --mode generic|lyt
+  edit NAME                 change it: --name N, --description TEXT, --mode generic|lyt,
+                            --add-member P, --remove-member P (each repeatable)
+  sync [PROJECT]            mirror the wikis of its members under wiki/projects/, as one operation
   describe PROJECT          stage a snapshot of the work; the describe skill writes its page
   forget PROJECT            drop a project from the atlas; its atlas/<name>/ folder stays
   open-ide NAME            open the work folder in the preferred IDE
@@ -192,6 +194,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, c *console.Co
 		code, err = e.edit(rest[1:])
 	case "refresh":
 		code, err = e.refresh(rest[1:])
+	case "sync":
+		code, err = e.sync(rest[1:])
 	case "lint":
 		code, err = e.lint(rest[1:])
 	case "stub":
@@ -1459,6 +1463,17 @@ func (e *env) show(args []string) (int, error) {
 	row("Created", entry.Created)
 	row("Mode", string(entry.Mode))
 	row("Description", entry.Description)
+	if len(entry.Members) > 0 {
+		var names []string
+		for _, id := range entry.Members {
+			if m := ix.ByID(id); m != nil && m.Error == "" {
+				names = append(names, m.Name)
+			} else {
+				names = append(names, id+" (not in the atlas)")
+			}
+		}
+		row("Members", strings.Join(names, ", ")+"; mirrored under "+project.MirrorDir+"/ by sync")
+	}
 	if d := describe.Page(entry); d != nil {
 		row("Page", d.Summary())
 	} else {
@@ -1548,13 +1563,16 @@ func (e *env) edit(args []string) (int, error) {
 	name := fs.String("name", "", "the project's name; it renames atlas/<name>/ too")
 	description := fs.String("description", "", "what the work is and what its wiki should remember; \"\" clears it")
 	mode := fs.String("mode", "", "the filing mode for new wiki pages: generic or lyt")
+	var add, remove repeated
+	fs.Var(&add, "add-member", "a project whose wiki this one mirrors, by name, id, or path; repeatable")
+	fs.Var(&remove, "remove-member", "a member to drop, by name, id, or path; repeatable")
 	positional, err := parse(fs, args)
 	if err != nil {
 		return 2, nil
 	}
 	set := setFlags(fs)
 	if len(positional) != 1 || len(set) == 0 {
-		return 2, errors.New("usage: atlas-obsidian edit NAME [--name N] [--description TEXT] [--mode generic|lyt]")
+		return 2, errors.New("usage: atlas-obsidian edit NAME [--name N] [--description TEXT] [--mode generic|lyt] [--add-member P]... [--remove-member P]...")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -1564,7 +1582,7 @@ func (e *env) edit(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	change := manage.Edit{Name: *name}
+	change := manage.Edit{Name: *name, AddMembers: add, RemoveMembers: remove}
 	if set["description"] {
 		change.Description = description
 	}
@@ -1591,6 +1609,51 @@ func (e *env) edit(args []string) (int, error) {
 		e.console.Step(console.OK, "folder", p.Rel()+"/")
 	}
 	e.console.Step(console.OK, "refreshed", refreshed(entries))
+	return 0, nil
+}
+
+// repeated is a flag given any number of times.
+type repeated []string
+
+func (r *repeated) String() string     { return strings.Join(*r, ",") }
+func (r *repeated) Set(v string) error { *r = append(*r, v); return nil }
+
+// sync mirrors the wikis of a project's members under its wiki/projects/.
+func (e *env) sync(args []string) (int, error) {
+	if len(args) > 1 {
+		return 2, errors.New("usage: atlas-obsidian sync [PROJECT]")
+	}
+	cfg, err := e.home.Load()
+	if err != nil {
+		return 1, err
+	}
+	_, entry, err := e.projectArg(first(args))
+	if err != nil {
+		return 1, err
+	}
+	if entry == nil {
+		return 1, errors.New("the atlas does not list this project; work in it once to register it")
+	}
+	res, err := actions.Bind(e.home, cfg, e.console).Sync(*entry)
+	if err != nil {
+		return 1, err
+	}
+	for _, m := range res.Members {
+		label := m.Name
+		if label == "" {
+			label = m.ID
+		}
+		if m.Error != "" {
+			e.console.Step(console.Fail, label, m.Error)
+			continue
+		}
+		e.console.Step(console.OK, label, fmt.Sprintf("%d page%s under %s/%s/", m.Pages, plural(m.Pages), project.MirrorDir, m.Folder))
+	}
+	if res.Commit == "" {
+		e.console.Step(console.OK, "sync", "nothing changed")
+		return 0, nil
+	}
+	e.console.Step(console.OK, "sync", fmt.Sprintf("%d created, %d updated, %d removed; %s", res.Creates, res.Updates, res.Removes, res.OperationID))
 	return 0, nil
 }
 

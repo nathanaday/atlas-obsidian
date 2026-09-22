@@ -634,3 +634,36 @@ func TestOpenIDEAndConfig(t *testing.T) {
 		t.Fatalf("args=%q err=%v", data, err)
 	}
 }
+
+func TestEditMembersAndSync(t *testing.T) {
+	h := setup(t)
+	hub := work(t, "hub", true)
+	svc := work(t, "svc", true)
+	h.run("init", hub)
+	h.run("init", svc)
+	if code := h.run("edit", "hub", "--add-member", "hub"); code == 0 || !strings.Contains(h.err.String(), "own member") {
+		t.Fatalf("self: %d %s", code, h.err.String())
+	}
+	if code := h.run("edit", "hub", "--add-member", "svc"); code != 0 || !strings.Contains(h.out.String(), "members") {
+		t.Fatalf("add: %d %s%s", code, h.out.String(), h.err.String())
+	}
+	if code := h.run("sync", "hub"); code != 0 || !strings.Contains(h.out.String(), "created") {
+		t.Fatalf("sync: %d %s%s", code, h.out.String(), h.err.String())
+	}
+	p, err := project.Open(hub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p.Path("wiki/projects/svc/svc.md")); err != nil {
+		t.Fatal("no mirror")
+	}
+	if code := h.run("sync", "hub"); code != 0 || !strings.Contains(h.out.String(), "nothing changed") {
+		t.Fatalf("second sync: %d %s%s", code, h.out.String(), h.err.String())
+	}
+	if code := h.run("edit", "hub", "--remove-member", "svc"); code != 0 {
+		t.Fatalf("remove: %d %s", code, h.err.String())
+	}
+	if p, _ := project.Open(hub); len(p.Config.Members) != 0 {
+		t.Fatalf("members %v", p.Config.Members)
+	}
+}

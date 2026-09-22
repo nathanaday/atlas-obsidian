@@ -18,6 +18,7 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/links"
 	"github.com/nathanaday/atlas-obsidian/internal/lint"
 	"github.com/nathanaday/atlas-obsidian/internal/manage"
+	"github.com/nathanaday/atlas-obsidian/internal/mirror"
 	"github.com/nathanaday/atlas-obsidian/internal/place"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/threads"
@@ -128,11 +129,47 @@ func projectLines(b *strings.Builder, pl *place.Place, now time.Time) {
 			b.WriteString("The wiki has no page describing this work; the describe skill writes it.\n")
 		}
 	}
+	b.WriteString(membersLine(pl, now))
 	b.WriteString(SearchSentence + " " + WriteSentence + "\n")
 	b.WriteString("Skills: " + Skills + "\n")
 	b.WriteString(threadLines(p, now))
 	b.WriteString(inboxLine(p, now))
 	b.WriteString(countsLine(p, now))
+}
+
+// membersLine syncs the mirrors of a project that lists members and says what the wiki
+// now holds of them. A project with no members prints nothing.
+func membersLine(pl *place.Place, now time.Time) string {
+	p := pl.Project
+	if len(p.Config.Members) == 0 {
+		return ""
+	}
+	if pl.Index == nil {
+		return fmt.Sprintf("Members: %d listed, not synced: the atlas config could not be read.\n", len(p.Config.Members))
+	}
+	res, err := mirror.Sync(p, pl.Index, now)
+	if err != nil {
+		return fmt.Sprintf("Members: %d listed, not synced: %v\n", len(p.Config.Members), err)
+	}
+	var names, failed []string
+	pages := 0
+	for _, m := range res.Members {
+		if m.Error != "" {
+			failed = append(failed, m.Name+": "+m.Error)
+			continue
+		}
+		names = append(names, m.Name)
+		pages += m.Pages
+	}
+	line := fmt.Sprintf("Members: %s mirrored under %s/%s/ (%d pages, %s)", namesList(names), p.Rel(), project.MirrorDir, pages, project.MirrorIndex)
+	if n := res.Creates + res.Updates + res.Removes; n > 0 {
+		line += fmt.Sprintf("; synced now, %d file%s changed", n, plural(n))
+	}
+	line += ". A mirrored page changes in its own project."
+	if len(failed) > 0 {
+		line += " Not read: " + strings.Join(failed, "; ") + "."
+	}
+	return line + "\n"
 }
 
 // inboxLine says what waits in the one inbox: sources to ingest and notes to open as
@@ -365,6 +402,8 @@ func guardPath(target string, w io.Writer) error {
 		reason = fmt.Sprintf("a new %s comes from the thread tool (id, stage: %s, text), which names its thread and moves the thread to that stage; revise it with Edit afterwards", stage, stage)
 	case rel == project.Marker:
 		reason = "the project's identity file changes only through the project tool and `atlas-obsidian edit`"
+	case lint.Mirrored(rel):
+		reason = "pages under " + project.MirrorDir + "/ mirror other projects' wikis and are rewritten by sync; change the page in its own project, or write a page of this wiki that links to it"
 	case strings.HasPrefix(rel, project.WikiDir+"/"):
 		reason = "wiki pages change only through the atlas MCP tools: build a plan, show the preview, then apply. Read the page with Read, then include the full new content in the plan."
 	case strings.HasPrefix(rel, project.RawDir+"/"):

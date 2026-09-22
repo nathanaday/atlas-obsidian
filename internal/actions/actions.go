@@ -11,6 +11,7 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/home"
 	"github.com/nathanaday/atlas-obsidian/internal/ide"
 	"github.com/nathanaday/atlas-obsidian/internal/manage"
+	"github.com/nathanaday/atlas-obsidian/internal/mirror"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/refresh"
 	"github.com/nathanaday/atlas-obsidian/internal/registry"
@@ -40,11 +41,13 @@ type Atlas struct {
 	Load    func() ([]registry.Entry, error)
 	Scan    func() (*registry.Index, error)
 	Refresh func() (*registry.Index, error)
-	// The project calls: make a folder a project, change its name, description, or mode,
-	// and drop it from the atlas. The folder stays.
+	// The project calls: make a folder a project, change its name, description, mode,
+	// or members, and drop it from the atlas. The folder stays. Sync rewrites the
+	// mirrors of a project's members under its wiki/projects/.
 	InitProject   func(InitProject) (*project.InitResult, error)
 	EditProject   func(registry.Entry, manage.Edit) error
 	ForgetProject func(registry.Entry) error
+	Sync          func(registry.Entry) (*mirror.Result, error)
 	// StagePlan says which files under the sources are new to a project's inbox; no
 	// sources means the folders it staged from before. Stage copies a plan's files into
 	// the inbox and reports the folders the project now remembers. Sources lists them.
@@ -127,7 +130,18 @@ func Bind(h home.Home, cfg *home.Config, c *console.Console) Atlas {
 			return manage.Init(h, cfg, choice.Work, opts, c, c != nil)
 		},
 		EditProject: func(en registry.Entry, edit manage.Edit) error {
-			return manage.EditProject(en.Path, edit, time.Now())
+			return manage.EditProject(cfg, en.Path, edit, time.Now())
+		},
+		Sync: func(en registry.Entry) (*mirror.Result, error) {
+			p, err := openProject(en)
+			if err != nil {
+				return nil, err
+			}
+			ix, err := registry.Scan(cfg)
+			if err != nil {
+				return nil, err
+			}
+			return mirror.Sync(p, ix, time.Now())
 		},
 		ForgetProject: func(en registry.Entry) error { return manage.Forget(h, cfg, en.Path) },
 		StagePlan: func(en registry.Entry, given []string) (*capture.StagePlan, error) {
