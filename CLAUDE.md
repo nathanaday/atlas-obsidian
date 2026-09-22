@@ -363,8 +363,10 @@ claude plugin update atlas-obsidian@nathanaday-atlas-obsidian
 make install
 ```
 
-`make install` stamps the binary with the same version, so `doctor` and
-`status` can tell when the two drift. Uncommitted skill edits can be tried
+The marketplace clone under `~/.claude/plugins/marketplaces/` fetches from
+GitHub, not from the checkout the config names, so the update sees a new
+version only after `main` is pushed. `make install` stamps the binary with the
+same version, so `doctor` and `status` can tell when the two drift. Uncommitted skill edits can be tried
 with `claude --plugin-dir .` from inside a project. End-to-end by hand:
 `claude -p "..."` inside a project with
 `--allowedTools "mcp__plugin_atlas-obsidian_atlas__*,Read,Grep,Glob,Skill"`.
