@@ -134,6 +134,7 @@ func projectLines(b *strings.Builder, pl *place.Place, now time.Time) {
 	b.WriteString(SearchSentence + " " + WriteSentence + "\n")
 	b.WriteString("Skills: " + Skills + "\n")
 	b.WriteString(threadLines(p, now))
+	b.WriteString(memberThreadLines(pl, now))
 	b.WriteString(inboxLine(p, now))
 	b.WriteString(countsLine(p, now))
 }
@@ -306,6 +307,29 @@ func threadLines(p *project.Project, now time.Time) string {
 		fmt.Fprintf(&b, "Not readable: %s (%s).\n", pr.Path, pr.Reason)
 	}
 	return b.String()
+}
+
+// memberThreadLines counts the open threads of the projects a hub mirrors, so a session
+// there knows the board carries more than the hub's own.
+func memberThreadLines(pl *place.Place, now time.Time) string {
+	owners, err := mirror.ThreadMembers(pl.Project, pl.Index)
+	if err != nil || len(owners) == 0 {
+		return ""
+	}
+	var parts []string
+	total := 0
+	for _, o := range owners {
+		c := o.Board.Counts(now)
+		if c.Open == 0 {
+			continue
+		}
+		total += c.Open
+		parts = append(parts, fmt.Sprintf("%s %d (plan %d, spec %d, stub %d)", o.Project.Name(), c.Open, c.Plan, c.Spec, c.Stub))
+	}
+	if total == 0 {
+		return ""
+	}
+	return fmt.Sprintf("Members' open threads: %s. The threads tool lists them; the thread tool changes one in the project that owns it.\n", strings.Join(parts, "; "))
 }
 
 func plural(n int) string {

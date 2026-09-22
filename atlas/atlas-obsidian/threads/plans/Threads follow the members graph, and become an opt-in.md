@@ -75,3 +75,23 @@ Four slices, each a commit that builds and tests green. The thread mirror reuses
 - `lint.Vault.Rewrite` on a markdown link writes a vault-absolute path; a thread document's `<../stubs/X.md>` link would become `threads/projects/f/stubs/X.md`. Obsidian resolves that; other viewers do not. If it reads badly in practice, leave relative markdown links inside `threads/` untouched, since the folder layout under a mirror is the member's own.
 - Existing projects on this machine have `threads` absent, so they read as off until `edit --threads on` runs once each.
 - The thread half writes after the wiki half commits; a failure between leaves the mirror behind by one sync, which the next sync repairs.
+
+## Progress
+
+Done 2026-09-22, four commits, one per slice, then the hook line for the
+members' open threads. Every test passes. By hand: a temporary hub with this
+project as its member synced 50 thread pages, its board embedded this
+project's board, `thread hub-test show navigate` and `set` routed to this
+project and re-synced the hub, the hub's session hook reported the member's
+threads, and lint ran clean. The hub was forgotten and removed afterwards.
+
+Deviations from the plan:
+
+- A stray file in a mirror is removed at the next sync, not reported beside
+  the board; the spec's item 7 was corrected to say so.
+- The session hook gained a line counting the members' open threads, because
+  a hub with no threads of its own said "Open threads: none" while its board
+  carried three.
+- This project had `threads` absent, so `edit atlas-obsidian --threads on`
+  ran once (commit `setup: edit threads`). The other 16 projects on this
+  machine read as off until the same runs in each.

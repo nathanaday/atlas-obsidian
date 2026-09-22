@@ -427,3 +427,34 @@ func TestSessionStartSaysWhenThreadsAreOff(t *testing.T) {
 		t.Fatalf("got:\n%s", text)
 	}
 }
+
+func TestSessionStartCountsTheMembersThreads(t *testing.T) {
+	now := time.Now()
+	h, work := atlas(t, now)
+	member := filepath.Join(filepath.Dir(work), "svc")
+	os.MkdirAll(member, 0o755)
+	res, err := project.Init(member, project.Options{Name: "svc"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := threads.Start(res.Project, threads.New{Title: "Fix it"}, now); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := h.Load()
+	cfg.AddProject(member)
+	h.Save(cfg)
+	if err := project.UpdateConfig(work, "members", now, func(c *project.Config) error { c.Members = []string{res.Project.Config.ID}; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	e := env(t, map[string]string{home.EnvHome: h.Root})
+	text := run(t, work, e, false, now)
+	for _, want := range []string{"and their threads under atlas/code/threads/projects/", "Members' open threads: svc 1 (plan 0, spec 0, stub 1)."} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in:\n%s", want, text)
+		}
+	}
+	p, _ := project.Open(work)
+	if _, err := os.Stat(p.Path("threads/projects/svc/stubs/Fix it.md")); err != nil {
+		t.Fatal("the hook did not mirror the member's threads")
+	}
+}

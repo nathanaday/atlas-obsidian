@@ -23,7 +23,7 @@ created: 2026-09-22
 
 6. **A thread's writes go to its owner.** The `thread` tool, given an id or a title it cannot resolve in the session's project, looks in the boards of the projects the session's project mirrors. It resolves the thread there, runs the operation in that project, and re-syncs the session's thread mirror. A title that matches in more than one project is refused with the ids. The `project` argument keeps working, and it too re-syncs after the write. A thread the hub owns is an ecosystem-wide thread; nothing new is needed for it.
 
-7. **A hand-made file in a mirror is a problem, not a move.** A new page under `threads/projects/` that sync did not write is reported beside the board ("belongs to X; open it there with the thread tool") and deleted at the next sync, the same way a stray file under `wiki/projects/` is. There is no reverse sync.
+7. **A hand-made file in a mirror is removed, not moved.** A new page under `threads/projects/` that sync did not write is deleted at the next sync, the same way a stray file under `wiki/projects/` is; the guard refuses the write in a session, so it is rare. There is no reverse sync.
 
 ## Why
 
