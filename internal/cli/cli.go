@@ -27,6 +27,7 @@ import (
 	"github.com/nathanaday/atlas-obsidian/internal/lint"
 	"github.com/nathanaday/atlas-obsidian/internal/manage"
 	"github.com/nathanaday/atlas-obsidian/internal/mcpserver"
+	"github.com/nathanaday/atlas-obsidian/internal/mirror"
 	"github.com/nathanaday/atlas-obsidian/internal/obsidian"
 	"github.com/nathanaday/atlas-obsidian/internal/place"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
@@ -926,6 +927,21 @@ func (e *env) thread(args []string) (int, error) {
 	now := time.Now()
 	var t *threads.Thread
 	verb := ""
+	// A thread named on a hub may belong to a project it mirrors; the change is made
+	// there, and the hub's mirror follows.
+	hub, ix := p, (*registry.Index)(nil)
+	if action != "new" {
+		if len(p.Config.Members) > 0 {
+			if cfg, err := e.home.Load(); err == nil {
+				ix, _ = registry.Scan(cfg)
+			}
+		}
+		owner, found, err := mirror.FindThread(p, ix, rest[0])
+		if err != nil {
+			return 1, err
+		}
+		p, rest[0] = owner, found.ID
+	}
 	switch action {
 	case "new":
 		body, err := e.threadText(*text, *file, rest)
@@ -942,9 +958,7 @@ func (e *env) thread(args []string) (int, error) {
 		if err != nil {
 			return 1, err
 		}
-		if t, err = board.Resolve(rest[0]); err != nil {
-			return 1, err
-		}
+		t = board.Find(rest[0])
 		if *asJSON {
 			return 0, e.printJSON(t)
 		}
@@ -1002,6 +1016,11 @@ func (e *env) thread(args []string) (int, error) {
 		verb = "reopened"
 	default:
 		return 2, fmt.Errorf("unknown action %q; new, show, file, close, set, or reopen", action)
+	}
+	if action != "show" && p.Root != hub.Root && ix != nil {
+		if _, err := mirror.SyncThreads(hub, ix, now); err != nil {
+			return 1, err
+		}
 	}
 	e.printThread(p, t, verb)
 	return 0, nil

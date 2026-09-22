@@ -487,3 +487,56 @@ func TestAProjectWithoutAHistory(t *testing.T) {
 		t.Fatalf("a plan is only a plan: %q", msg)
 	}
 }
+
+func TestThreadToolRoutesToTheMemberThatOwnsTheThread(t *testing.T) {
+	a := newAtlas(t)
+	member := filepath.Join(filepath.Dir(a.work), "svc")
+	os.MkdirAll(member, 0o755)
+	res, err := project.Init(member, project.Options{Name: "svc"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned, err := threads.Start(res.Project, threads.New{Title: "Fix it", Text: "Do it."}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.cfg.AddProject(member)
+	a.h.Save(a.cfg)
+	c := a.session(t)
+	var out ProjectToolOut
+	if msg := c.call("project", map[string]any{"action": "edit", "add_members": []string{"svc"}}, &out); msg != "" {
+		t.Fatal(msg)
+	}
+	if msg := c.call("project", map[string]any{"action": "sync"}, &out); msg != "" || out.Sync == nil || out.Sync.Members[0].Threads == 0 {
+		t.Fatalf("sync %q %+v", msg, out.Sync)
+	}
+	// The hub's board lists its own, then the member's.
+	var board ThreadsOut
+	if msg := c.call("threads", nil, &board); msg != "" || len(board.Projects) != 2 || board.Projects[1].Name != "svc" || len(board.Projects[1].Open) != 1 {
+		t.Fatalf("boards %q %+v", msg, board)
+	}
+	if msg := c.call("threads", map[string]any{"id": "fix"}, &board); msg != "" || len(board.Projects) != 1 || board.Projects[0].Name != "svc" {
+		t.Fatalf("one thread %q %+v", msg, board)
+	}
+	if msg := c.call("threads", map[string]any{"id": "nope"}, nil); !strings.Contains(msg, "it mirrors") {
+		t.Fatalf("no thread: %q", msg)
+	}
+	// Filing a spec by the member's id lands in the member, and the mirror follows.
+	var filed ThreadOut
+	if msg := c.call("thread", map[string]any{"id": owned.ID, "stage": "spec", "text": "Done when it works."}, &filed); msg != "" || filed.Project != "svc" || filed.Stage != threads.Spec {
+		t.Fatalf("filed %q %+v", msg, filed)
+	}
+	if _, err := os.Stat(filepath.Join(res.Project.Path(project.SpecsDir), "Fix it.md")); err != nil {
+		t.Fatal("the spec is not in the member")
+	}
+	if _, err := os.Stat(a.p.Path("threads/projects/svc/specs/Fix it.md")); err != nil {
+		t.Fatal("the hub's mirror is behind")
+	}
+	if _, err := os.Stat(a.p.Path(project.SpecsDir + "/Fix it.md")); err == nil {
+		t.Fatal("the spec landed in the hub")
+	}
+	// A title that matches nothing anywhere.
+	if msg := c.call("thread", map[string]any{"id": "nothing", "priority": "high"}, nil); !strings.Contains(msg, "no thread") {
+		t.Fatalf("unknown: %q", msg)
+	}
+}

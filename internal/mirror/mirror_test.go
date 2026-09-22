@@ -449,3 +449,37 @@ func TestAHubWithThreadsOffMirrorsNoThreads(t *testing.T) {
 		t.Fatal("threads were mirrored into a hub with threads off")
 	}
 }
+
+func TestFindThreadReachesIntoTheMembers(t *testing.T) {
+	needGit(t)
+	hub := initProject(t, "hub", "hub")
+	a := initProject(t, "svc-a", "svc-a")
+	b := initProject(t, "svc-b", "svc-b")
+	own, _ := threads.Start(hub, threads.New{Title: "Ecosystem"}, now)
+	inA, _ := threads.Start(a, threads.New{Title: "Fix it"}, now)
+	inB, _ := threads.Start(b, threads.New{Title: "Fix it"}, now)
+	setMembers(t, hub, a.Config.ID, b.Config.ID)
+	ix := index(entryOf(hub), entryOf(a), entryOf(b))
+
+	if p, th, err := FindThread(hub, ix, "eco"); err != nil || p.Root != hub.Root || th.ID != own.ID {
+		t.Fatalf("own thread: %v %v %v", p, th, err)
+	}
+	if p, th, err := FindThread(hub, ix, inA.ID); err != nil || p.Root != a.Root || th.ID != inA.ID {
+		t.Fatalf("by id: %v %v %v", p, th, err)
+	}
+	if _, _, err := FindThread(hub, ix, "fix"); err == nil || !strings.Contains(err.Error(), "2 projects") || !strings.Contains(err.Error(), inB.ID) {
+		t.Fatalf("a title in two members: %v", err)
+	}
+	if _, _, err := FindThread(hub, ix, "nope"); err == nil || !strings.Contains(err.Error(), "or the 2 projects it mirrors") {
+		t.Fatalf("no thread: %v", err)
+	}
+	// A member is not a hub: it sees its own threads only, and says so plainly.
+	if _, _, err := FindThread(a, ix, own.ID); err == nil || !errors.Is(err, threads.ErrNoThread) {
+		t.Fatalf("from a member: %v", err)
+	}
+	// A hub with threads off reaches nothing.
+	hub.Config.Threads = false
+	if _, _, err := FindThread(hub, ix, inA.ID); !errors.Is(err, threads.ErrOff) {
+		t.Fatalf("threads off: %v", err)
+	}
+}

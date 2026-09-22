@@ -282,6 +282,9 @@ func NewID(now time.Time) string {
 	return fmt.Sprintf("thr-%s-%s", now.Format("20060102"), hex.EncodeToString(b[:]))
 }
 
+// ErrNoThread says a key names no thread in a board.
+var ErrNoThread = errors.New("no thread")
+
 // ErrOff says the project does not track threads.
 var ErrOff = errors.New("threads are off in this project; turn them on with the project tool (threads: true) or `atlas-obsidian edit NAME --threads on`")
 
@@ -539,7 +542,7 @@ func (b *Board) Resolve(key string) (*Thread, error) {
 			return nil, fmt.Errorf("%q matches %d threads; use the id", key, len(matches))
 		}
 	}
-	return nil, fmt.Errorf("no thread %q", key)
+	return nil, fmt.Errorf("%w %q", ErrNoThread, key)
 }
 
 // ByDoc returns the thread that owns a document path, or nil.

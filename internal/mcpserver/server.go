@@ -460,7 +460,7 @@ type ThreadsOut struct {
 
 type ThreadsArgs struct {
 	ProjectArg
-	ID string `json:"id,omitempty" jsonschema:"only this thread, by its id, its title, or the start of its title"`
+	ID string `json:"id,omitempty" jsonschema:"only this thread, by its id, its title, or the start of its title. Without project, a hub's answer lists its own board and then the board of each project it mirrors"`
 }
 
 func (s *Server) threads(ctx context.Context, req *mcp.CallToolRequest, a ThreadsArgs) (*mcp.CallToolResult, ThreadsOut, error) {
@@ -474,6 +474,17 @@ func (s *Server) threads(ctx context.Context, req *mcp.CallToolRequest, a Thread
 		return nil, ThreadsOut{}, err
 	}
 	projects := []*project.Project{p}
+	if a.Project == "" {
+		// A hub lists the boards of the projects it mirrors after its own, as they are
+		// now, so the session sees every thread it can reach.
+		owners, err := mirror.ThreadMembers(p, pl.Index)
+		if err != nil {
+			return nil, ThreadsOut{}, err
+		}
+		for _, o := range owners {
+			projects = append(projects, o.Project)
+		}
+	}
 	now := s.opts.Now()
 	for _, p := range projects {
 		board, err := threads.Load(p)
@@ -506,12 +517,15 @@ func (s *Server) threads(ctx context.Context, req *mcp.CallToolRequest, a Thread
 		}
 		out.Projects = append(out.Projects, pb)
 	}
+	if a.ID != "" && len(out.Projects) == 0 {
+		return nil, ThreadsOut{}, fmt.Errorf("no thread %q in %s or the %d project%s it mirrors", a.ID, p.Name(), len(projects)-1, plural(len(projects)-1))
+	}
 	return nil, out, nil
 }
 
 type ThreadArgs struct {
 	ProjectArg
-	ID       string  `json:"id,omitempty" jsonschema:"the thread, by its id, its title, or the start of its title; omit to open a new thread"`
+	ID       string  `json:"id,omitempty" jsonschema:"the thread, by its id, its title, or the start of its title, in this project or in one it mirrors; the change is made in the project that owns the thread. Omit to open a new thread"`
 	Title    *string `json:"title,omitempty" jsonschema:"a new thread's title, taken from the text when omitted; on an existing thread, a new title, which renames its card and documents"`
 	Stage    string  `json:"stage,omitempty" jsonschema:"on an existing thread, the document to file: spec, plan, or receipt (stub, when the thread lost its own). Filing it moves the thread to that stage. A stage may be skipped"`
 	Text     string  `json:"text,omitempty" jsonschema:"the document's text in markdown, without frontmatter: on a new thread the stub, in the user's words; with stage, that document. Revise a document that exists with Edit"`
@@ -560,6 +574,14 @@ func (s *Server) thread(ctx context.Context, req *mcp.CallToolRequest, a ThreadA
 	case a.From != "":
 		return nil, ThreadOut{}, errors.New("from opens a new thread; omit id")
 	default:
+		// The thread's owner may be a project this one mirrors; the change is made there.
+		if a.Project == "" {
+			owner, found, err := mirror.FindThread(p, pl.Index, id)
+			if err != nil {
+				return nil, ThreadOut{}, err
+			}
+			p, id = owner, found.ID
+		}
 		ch := threads.Changes{Title: a.Title, Priority: a.Priority, Phase: a.Phase, Blocked: a.Blocked}
 		if a.Stage == "" && a.Text != "" {
 			return nil, ThreadOut{}, errors.New("text needs stage: name the document to file; revise one that exists with Edit")
@@ -586,7 +608,21 @@ func (s *Server) thread(ctx context.Context, req *mcp.CallToolRequest, a ThreadA
 	if err != nil {
 		return nil, ThreadOut{}, err
 	}
+	if err := s.resyncThreads(pl, p, now); err != nil {
+		return nil, ThreadOut{}, err
+	}
 	return nil, ThreadOut{ThreadInfo: threadInfo(p, *t, now), Project: p.Name()}, nil
+}
+
+// resyncThreads brings the session's thread mirror up to date after a change in another
+// project, so the board the session reads shows it.
+func (s *Server) resyncThreads(pl *place.Place, changed *project.Project, now time.Time) error {
+	hub := pl.Project
+	if changed.Root == hub.Root || !hub.Config.Threads || len(hub.Config.Members) == 0 || pl.Index == nil {
+		return nil
+	}
+	_, err := mirror.SyncThreads(hub, pl.Index, now)
+	return err
 }
 
 type PhaseArgs struct {
@@ -631,11 +667,17 @@ func (s *Server) phase(ctx context.Context, req *mcp.CallToolRequest, a PhaseArg
 		if err := threads.RemovePhase(p, a.Title, now); err != nil {
 			return nil, PhaseOut{}, err
 		}
+		if err := s.resyncThreads(pl, p, now); err != nil {
+			return nil, PhaseOut{}, err
+		}
 		return nil, PhaseOut{Project: p.Name(), Removed: a.Title}, nil
 	default:
 		return nil, PhaseOut{}, fmt.Errorf("action must be create, rename, reorder, or remove, not %q", a.Action)
 	}
 	if err != nil {
+		return nil, PhaseOut{}, err
+	}
+	if err := s.resyncThreads(pl, p, now); err != nil {
 		return nil, PhaseOut{}, err
 	}
 	return nil, PhaseOut{Project: p.Name(), Phase: ph, File: p.Path(ph.Path)}, nil

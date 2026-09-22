@@ -746,3 +746,34 @@ func TestInitNoThreadsAndEditThreads(t *testing.T) {
 		t.Fatalf("threads exit %d:\n%s", code, h.out.String())
 	}
 }
+
+func TestThreadCommandRoutesToTheMember(t *testing.T) {
+	h := setup(t)
+	hub := work(t, "hub", true)
+	svc := work(t, "svc", true)
+	for _, dir := range []string{hub, svc} {
+		if code := h.run("init", dir); code != 0 {
+			t.Fatalf("init %s: %d %s", dir, code, h.err.String())
+		}
+	}
+	if code := h.run("thread", "svc", "new", "Fix it"); code != 0 {
+		t.Fatalf("new: %d %s", code, h.err.String())
+	}
+	if code := h.run("edit", "hub", "--add-member", "svc"); code != 0 {
+		t.Fatalf("edit: %d %s", code, h.err.String())
+	}
+	if code := h.run("thread", "hub", "file", "fix", "spec", "--text", "Done when it works."); code != 0 || !strings.Contains(h.out.String(), "in svc") {
+		t.Fatalf("file: %d %s%s", code, h.out.String(), h.err.String())
+	}
+	p, _ := project.Open(svc)
+	if _, err := os.Stat(p.Path(project.SpecsDir + "/Fix it.md")); err != nil {
+		t.Fatal("the spec is not in the member")
+	}
+	hp, _ := project.Open(hub)
+	if _, err := os.Stat(hp.Path("threads/projects/svc/specs/Fix it.md")); err != nil {
+		t.Fatal("the hub's mirror is behind")
+	}
+	if code := h.run("thread", "hub", "show", "fix"); code != 0 || !strings.Contains(h.out.String(), "in svc") {
+		t.Fatalf("show: %d %s", code, h.out.String())
+	}
+}
