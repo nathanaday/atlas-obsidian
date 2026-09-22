@@ -5,11 +5,12 @@ description: "Do the work of a thread and keep its plan document current: work t
 
 # Run a thread
 
-Read [threads.md](../wiki/references/threads.md). Tools: `threads`, `thread`.
-
 The work happens in the work folder, the parent of `atlas/`, with the
 ordinary tools. The plan document is the memory between sessions: keep it
 true.
+
+Tools: `threads`, `thread`. Reads
+[threads.md](../thread/references/threads.md).
 
 ## Start or resume
 
@@ -38,8 +39,11 @@ plan of a few lines and go on.
   its slice, and let it own the slice end to end, tests included. A
   subagent that sees one small step decides for that step alone. Review
   what comes back before you build on it.
-- **The wiki** changes only through `plan` and `apply`. A decision
-  the user should find later is a `save`.
+- **Small commits.** A commit holds one slice that works, with its tests,
+  and says what it does. Never commit a failing test.
+- **The wiki** changes only through its skills. A decision the user should
+  find later, beyond this thread, is a `wiki-save`; one that belongs to this
+  thread alone goes in the plan.
 
 ## Write progress
 
@@ -53,5 +57,10 @@ Always write where you stopped before the session ends.
 
 - Blocked: write what it waits on under Progress, then `thread` with `id`
   and `blocked`.
-- The work is done and the tests pass: hand to `thread-receipt`. Do not
-  close the thread here.
+- The work is done and the tests pass: hand to `thread-receipt`, which
+  verifies before it closes. Do not close the thread here.
+
+## Hand off
+
+`thread-receipt` when the work is done; `thread-work` to continue in a later
+session.

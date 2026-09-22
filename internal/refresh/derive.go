@@ -185,10 +185,10 @@ func Signals(e registry.Entry, today time.Time) []string {
 		notes = append(notes, "an operation was interrupted; run `atlas-obsidian recover "+e.Path+"`")
 	}
 	if state.Described == nil {
-		notes = append(notes, registry.NotDescribed+"; the describe skill writes the page")
+		notes = append(notes, registry.NotDescribed+"; the wiki-describe skill writes the page")
 	}
 	if d := state.Described; d != nil && d.Behind > describe.BehindThreshold {
-		notes = append(notes, fmt.Sprintf("the page that describes the work is %d commits behind; the describe skill brings it up to date", d.Behind))
+		notes = append(notes, fmt.Sprintf("the page that describes the work is %d commits behind; the wiki-describe skill brings it up to date", d.Behind))
 	}
 	if state.Threads != nil {
 		var blocked, stale []string

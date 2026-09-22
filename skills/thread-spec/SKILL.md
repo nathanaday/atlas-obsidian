@@ -1,16 +1,16 @@
 ---
 name: thread-spec
-description: "Turn a thread's stub into a spec: read the stub, research the code and the wiki, decide what can be decided, ask only what cannot, and file the spec document. Use for spec this, define this thread, brainstorm, think this through, what should this be, flesh out the stub, requirements, design this."
+description: "Turn a thread's stub into a spec: read the stub, research the code and the wiki, decide what can be decided, ask only what cannot, and file the spec document. Use for spec this, define this thread, brainstorm, think this through, weigh the options, tradeoffs, what should this be, flesh out the stub, requirements, design this."
 ---
 
 # Write a thread's spec
 
-Read [threads.md](../wiki/references/threads.md). Tools: `threads`, `thread`,
-`status`.
-
 The spec says what will be true when the thread is done, and why. It is the
 agreement between the user and whoever does the work. It is quick to write:
 most of the work is reading, and the user answers only what reading cannot.
+
+Tools: `status`, `threads`, `thread`. Reads
+[threads.md](../thread/references/threads.md).
 
 ## Understand before you ask
 
@@ -21,6 +21,11 @@ most of the work is reading, and the user answers only what reading cannot.
    code answers is not a question for the user.
 3. Decide what you can decide. Where one option is right, take it and give
    the reason in the spec. The user reads the spec and can disagree there.
+4. Keep the evidence straight while you decide. Separate what you **observed**
+   (read in the code, the wiki, a test, a measurement), what you **inferred**
+   from it (say the step), what is **unknown** (and could change the
+   decision), and what is the user's **preference**. For a decision that is
+   hard to reverse, write the strongest case against it before you take it.
 
 ## Ask only what changes the spec
 
@@ -61,4 +66,7 @@ is now at its spec. Tell the user the path, give the spec in a few lines,
 and name the decisions you made for them. Revise with Edit when they answer.
 A better title found on the way: `thread` with `title`.
 
-Do not start the plan or the work here. Hand to `thread-plan`.
+## Hand off
+
+The spec is a gate: the user agrees before the plan starts. Then
+`thread-plan`, or `thread-work` to go on through the stages.

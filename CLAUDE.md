@@ -16,7 +16,8 @@ Read `README.md` first. This file holds what the code and README do not say.
 | Core design and the reasons behind it: the engine, one operation one commit | `docs/core-design.md` |
 | Members: a project mirrors other projects' wikis under `wiki/projects/` | `docs/members-design.md` |
 | History, not contracts: the designs this one replaced | `docs/v3-design.md`, `docs/v2-design.md`, `docs/atlas-design.md`, `docs/tasks-design.md`, `docs/stubs-design.md`, `docs/spec.md`, `docs/superpowers/` |
-| The skills' contracts | `skills/<name>/SKILL.md` and `skills/wiki/references/` |
+| The skill system: three categories, the map, the workflow, who owns what, the shape of a skill | `docs/skills.md` |
+| Each skill's contract | `skills/<name>/SKILL.md`, `skills/wiki/references/`, `skills/thread/references/` |
 
 ## Why the project exists
 
@@ -91,7 +92,8 @@ Three carriers, and a new capability splits across them rather than picking one.
    `wiki/` and no skill asks nicely.
 3. Tools and skills do not pair one to one, and naming them alike is the
    trap. `plan` and `apply` serve every writing skill, and `thread` serves
-   every stage skill; `think` calls no tool of its own. Tools are nouns and
+   every stage skill; `thread-work` calls the stage skills, not a tool of its
+   own. Tools are nouns and
    stay few, because every description sits in every session's context;
    skills are verbs and load when they trigger. v4 folded `vault` and `mode`
    into `project` for that reason: one entity to create and edit, and a mode is
@@ -99,6 +101,11 @@ Three carriers, and a new capability splits across them rather than picking one.
    split has not happened yet: the code part of querying is candidate
    selection (`search`) and a source's standing in the ledger, and the skill
    keeps the rest.
+4. Skills are named `<noun>-<verb>` on three nouns: `atlas`, `wiki`,
+   `thread`, each with a home skill named for the noun. A new capability
+   finds its noun first. `internal/plugin` tests the skills against
+   `hooks.SkillMap`, their links, and every name the code and the docs use;
+   a rename that misses one fails `make test`.
 
 ## Three layers, one backend
 
@@ -120,8 +127,8 @@ them.
 .mcp.json               the atlas MCP server: scripts/atlas mcp
 scripts/atlas           sh wrapper that finds the installed binary
 hooks/hooks.json        SessionStart context, PreToolUse guard, PostToolUse touch, Stop warning
-skills/                 one directory per skill; skills/wiki/references/ is shared
-agents/                 wiki-ingest worker, wiki-lint interpreter
+skills/                 one directory per skill, named <noun>-<verb>; references live under the home of their half
+agents/                 read-only workers: wiki-ingest (a source or a range of one), wiki-review (a section), thread-review (a diff against a spec)
 cmd/atlas-obsidian/       main
 internal/cli/           argument parsing and one method per subcommand
 internal/actions/       every atlas action as one struct of functions, and Bind, the one place it is built
@@ -131,13 +138,14 @@ internal/place/         where a session is: the project, from anywhere inside th
 internal/gitx/          the git commands the core needs
 internal/txn/           plans, preview, apply, recovery, undo, history
 internal/threads/       threads over plain files: cards, stage documents, phases, Sync (the generated cards, callouts, and board)
-internal/describe/      the page in the wiki that describes the work, how far the work moved since, and the snapshot a page cites; reads only, capture writes the snapshot
-internal/capture/       inbox listing with a hint per file, staging into inbox/ (files, and the work's snapshot), capture into .raw/captured/
+internal/describe/      the page in the wiki that describes the work, how far the work moved since, and the snapshot a page cites (with the work's TODO and FIXME lines); reads only, capture writes the snapshot
+internal/capture/       inbox listing with a hint per file, staging into inbox/ (files, and the work's snapshot), capture into .raw/captured/, and a source's measure (PDF pages, lines, outline)
 internal/ledger/        the source ledger
-internal/lint/          the health check, and the link resolver the mirror shares
+internal/lint/          the health check (and its signals: stubs, wanted pages, uncited pages), and the link resolver the mirror shares
 internal/mirror/        members: the closure of a project's members, the transform of both halves, sync (the wiki as one operation, the threads as files), FindThread, and the redirect of a page that moved into the hub
-internal/overlap/       what a hub's origins hold in common: the pages scored by name, content, and links; the shared names and tags; the report the wiki-merge skill reads
+internal/overlap/       what a hub's origins hold in common: the pages scored by name, content, and links; the shared names and tags; the report atlas-merge and wiki-review read
 internal/mcpserver/     the tools, thin over the packages above
+internal/plugin/        tests only: the plugin's skills, agents, links, and every skill name the code and docs use
 internal/hooks/         session-start (the project, its wiki, the page that describes the work, the open threads, the inbox, and hot.md), guard, touched, stop
 internal/claudecode/    Claude Code's plugin registry, `claude plugin`, launching claude in the work
 internal/registry/      the scan of the projects the config lists, the entries, the registry state file

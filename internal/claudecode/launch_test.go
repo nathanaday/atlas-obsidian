@@ -53,11 +53,11 @@ func TestLaunchCodex(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
-	cmd, err := LaunchCommand(LaunchConfig{Command: "codex", SessionContext: true}, "/work", "$thread-run thr-123")
+	cmd, err := LaunchCommand(LaunchConfig{Command: "codex", SessionContext: true}, "/work", "$thread-work thr-123")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cmd.Dir != "/work" || len(cmd.Args) != 2 || cmd.Args[1] != "$thread-run thr-123" {
+	if cmd.Dir != "/work" || len(cmd.Args) != 2 || cmd.Args[1] != "$thread-work thr-123" {
 		t.Fatalf("command=%+v", cmd)
 	}
 	if !strings.Contains(strings.Join(cmd.Env, "\n"), "ATLAS_OBSIDIAN_PROJECT=/work") {

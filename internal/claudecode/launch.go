@@ -29,13 +29,13 @@ const (
 const IngestPrompt = "/atlas-obsidian:wiki-ingest"
 
 // DescribePrompt is the first message that writes the page describing a project.
-const DescribePrompt = "/atlas-obsidian:describe"
+const DescribePrompt = "/atlas-obsidian:wiki-describe"
 
-// ThreadPrompt is the first message that continues a thread: the skill that files the
-// document after the thread's stage, or runs its plan.
+// ThreadPrompt is the first message that continues a thread: thread-work, which runs the
+// stage after the thread's own; a closed thread opens on the board instead.
 func ThreadPrompt(stage, threadID string) string {
-	skill := map[string]string{"stub": "thread-spec", "spec": "thread-plan", "plan": "thread-run"}[stage]
-	if skill == "" {
+	skill := "thread-work"
+	if stage == "receipt" {
 		skill = "thread"
 	}
 	return "/atlas-obsidian:" + skill + " " + threadID

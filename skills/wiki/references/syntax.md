@@ -1,19 +1,10 @@
----
-name: obsidian-markdown
-description: "Explain, draft, or validate Obsidian Flavored Markdown: properties, wikilinks, embeds, callouts, tags, comments, highlights, block references, math, and Mermaid. Use when the user asks for Obsidian note formatting or syntax help, not for general Markdown or broad vault operations."
----
+# Obsidian syntax
 
-# Obsidian Flavored Markdown
-
-A compact fallback for Obsidian-specific syntax. Prefer a separately installed
-`kepano/obsidian-skills` `obsidian-markdown` skill when available, then
-[Obsidian Help](https://help.obsidian.md/), for detailed or version-sensitive
-questions.
-
-Answer syntax questions read-only. If the user asks for a vault edit, draft the
-complete page, then build one plan of kind `markdown` with only `wiki/` targets
-as [operations.md](../wiki/references/operations.md) describes. A new canonical
-page also joins the index or a MOC in that plan. Never write a page directly.
+Read this before you write a wiki page. It covers what Obsidian adds to
+Markdown and the callouts this vault defines. For a detail it does not cover,
+or one that changes between Obsidian versions, see
+[Obsidian Help](https://help.obsidian.md/). Page properties are in
+[frontmatter.md](frontmatter.md).
 
 ## Properties
 
@@ -77,7 +68,26 @@ this vault's pages.
 
 `-` starts collapsed and `+` starts expanded. Built-in types include `note`,
 `abstract`, `info`, `todo`, `tip`, `success`, `question`, `warning`, `failure`,
-`danger`, `bug`, `example`, and `quote`. Preserve custom callout types.
+`danger`, `bug`, `example`, and `quote`. Keep a callout type you find on a page.
+
+The vault's snippet defines four callouts for the states of knowledge. Use
+them on wiki pages, sparingly; `wiki-review` looks for them.
+
+| Callout | Marks |
+|---|---|
+| `contradiction` | two pages or two sources that disagree; name both |
+| `gap` | a subject the wiki has no source for yet |
+| `key-insight` | the one takeaway of a section |
+| `stale` | a claim that may be out of date; say why |
+
+```markdown
+> [!contradiction] Two release dates
+> [[Release notes]] gives 2026-03-01; [[Roadmap]] gives 2026-04-01.
+```
+
+The thread stages have callouts of their own (`stub`, `spec`, `plan`,
+`receipt`, `killed`, `phase`). Code writes those; do not use them on a wiki
+page.
 
 ## Other syntax
 
@@ -110,5 +120,5 @@ footnotes remain valid. Avoid HTML when native Markdown is enough.
   preview warns about those that do not. Never fabricate a target.
 - Evidence wording stays distinct from inference; source locators survive.
 - Code fences and callout quoting are balanced.
-- After an applied edit, run `wiki-lint` and report remaining findings without
-  repairing them unasked.
+- The `plan` preview's warnings are the check after drafting; `wiki-review`
+  is the check across the whole wiki.

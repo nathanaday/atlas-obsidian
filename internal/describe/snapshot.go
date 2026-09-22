@@ -18,7 +18,7 @@ import (
 )
 
 // SnapshotType is the type property of a snapshot file, which tells the ingest skills it
-// belongs to the describe skill.
+// belongs to the wiki-describe skill.
 const SnapshotType = "project-snapshot"
 
 // MaxListedFiles is how many paths a snapshot lists one by one; past it, the snapshot

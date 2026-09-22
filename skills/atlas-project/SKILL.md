@@ -1,76 +1,74 @@
 ---
 name: atlas-project
-description: "Make the current folder a project, with its wiki and its threads, or change one: name, description, filing mode, members, describe, forget, sync. Use for new project, init here, make this a project, project for this repo, set up a wiki here, rename the project, change the mode, add a member, link projects, mirror another project, sync the members, forget this project, adopt this vault."
+description: "Change a project that exists: its name, description, filing mode (generic or lyt), threads on or off, and members, which make it a hub that mirrors other projects' wikis; sync the members; or forget the project. Use for rename the project, change the description, what is my mode, switch to lyt, use generic, turn threads off, add a member, link projects, make a hub, mirror another project, sync the members, forget this project. To make a new project, atlas-onboard."
 ---
 
-# Make or change a project
+# Change a project
 
-Tools: `atlas`, `project` on the atlas MCP server. A project is a folder
-`atlas/<name>/` inside the user's work, a repository or a folder of documents.
-The folder takes the project's name, and it holds both halves of what the
-project knows: the wiki under `wiki/`, with its inbox and its raw store, and
-the threads under `threads/`. The work's repository tracks it like any other
-folder; the wiki's operations commit into that repository, scoped to the
-wiki's own paths.
+A project's identity is `atlas/<name>/project.json`: its id, name,
+description, mode, whether it tracks threads, and its members. This skill
+changes it, one field at a time, and syncs the members' mirrors. Making a
+project is `atlas-onboard`'s.
 
-Call `atlas` first, to see the projects that exist.
+Tools: `atlas`, `status`, `route`, `project`. Reads
+[modes.md](../wiki/references/modes.md) for the mode.
 
-## Make one
-
-Ask one question at a time. Offer the default; accept a yes.
-
-1. **Where.** The current folder, when the session is in the work. Otherwise
-   the path the user names. Never a folder inside another project.
-2. **Name.** Default: the folder's name.
-3. **Description.** One to three sentences saying what the work is and what
-   its wiki should remember. `wiki-ingest` and `wiki-query` read it to judge
-   what belongs. Draft it from the folder's README, AGENTS.md, or CLAUDE.md when there is
-   one, and read it back.
-4. **Mode.** `generic` files a new page by type, which suits most work;
-   `lyt` keeps atomic notes in `wiki/notes/` and navigates them through Maps
-   of Content. Offer generic unless the user asks otherwise.
-
-State the whole change in one line. When the folder is in no git repository,
-init makes it one; say so in the line:
-
-> Make `~/code/webapp` the project `webapp` (generic mode), "The customer-facing web application for the fire-detection product; its wiki holds the alarm pipeline and the field tests"?
-
-On yes: `project` with `action: init`, `work`, `name`, `description`, and
-`mode`; add `no_git` only when the user refuses a repository, and say that the
-wiki then has no history and no operation can run. It writes `atlas/<name>/`
-with both halves, commits them, and lists the folder in the atlas config.
-
-Report the result, then offer `describe`, which writes the page in the wiki
-that says what the work is, and say how to work: a session anywhere inside the
-work is the project's session, and `atlas-obsidian open-vault NAME` opens
-`atlas/<name>/` in Obsidian.
-
-If the tool refuses, say why in the tool's words and ask again for that one
+Every change is one line to the user and a yes before the call. `work`
+names another project by name, id, or path; this session's project is
+implied. Never edit `project.json` or the atlas config with Write or Edit.
+When the tool refuses, say why in its words and ask again for that one
 answer; do not retry with a guess.
 
-## Change one
+## Name and description
 
-- Rename, describe, or set the mode: `project` with `action: edit`, and
-  `name`, `description`, or `mode`. A new name moves `atlas/<name>/` to match;
-  say so in the one-line statement. The work folder does not move; it is the
-  user's. A new mode routes future pages only and moves nothing.
-- Add or remove members: `project` with `action: edit`, and `add_members` or
-  `remove_members`, each a list of projects by name, id, or path. A member is
-  a project whose wiki this one mirrors under `wiki/projects/<name>/`; the
-  member never knows. The tool refuses this project itself, a project the
-  atlas does not list, and a cycle; say the refusal in its words. State the
-  change as "Make svc-a a member of platform; the next sync mirrors its wiki",
-  and after a yes and the edit, offer sync.
-- Sync: `project` with `action: sync`. It mirrors the transitive closure of
-  the members, flat, as one operation, and reports each project with its page
-  count, and the counts and the commit when something changed. Nothing new
-  means no commit. Run it after adding or removing a member; the session-start
-  hook runs it too. A mirrored page is changed in its own project, never here.
-  After the first sync of a new member, offer `wiki-merge`: it finds what the
-  members' wikis hold in common and proposes what to upgrade into this wiki.
-- Forget: `project` with `action: forget`. The work folder and its
-  `atlas/<name>/` stay. Deleting `atlas/<name>/` is how a project ends, and
-  that is the user's to do by hand.
-`work` names another project by name; this session's project is implied. Every
-question comes before the tool call, and the tool call comes after a yes. Never
-make the folder or its files yourself.
+`project` with `action: edit` and `name` or `description`. A new name moves
+`atlas/<name>/` to match: say so in the line. The work folder does not move;
+it is the user's. The description is what `wiki-ingest` and `wiki-query`
+read to judge what belongs; one to three sentences.
+
+## Mode
+
+`status` gives the mode; `route` with a type and title shows where a new page
+would go. `project` with `action: edit` and `mode` (`generic` or `lyt`)
+changes it as one commit. Say the old mode and the new one, and that only
+future pages follow: nothing moves, no link changes. When the user wants the
+pages that exist reorganized too, that is a separate `wiki-edit` operation
+with a complete move map.
+
+## Threads on or off
+
+`project` with `action: edit` and `threads`. Off, the thread tools refuse
+and the session hook lists no threads; the `threads/` folder stays as it is.
+On again, everything in it comes back.
+
+## Members: one wiki over several projects
+
+A member is a project whose wiki (and threads, when both track them) this one
+mirrors under `wiki/projects/<name>/`. The member never knows, and a project
+may be a member of any number of hubs.
+
+- **Add or remove**: `project` with `action: edit` and `add_members` or
+  `remove_members`, each a list of projects by name, id, or path. The tool
+  refuses this project itself, a project the atlas does not list, and a
+  cycle. State the change as "Make svc-a a member of platform; the next sync
+  mirrors its wiki".
+- **Sync**: `project` with `action: sync`. It mirrors the transitive closure
+  of the members, flat, as one operation, and reports each project with its
+  page count, and the counts and the commit when something changed. Nothing
+  new means no commit. Run it after adding or removing a member; the
+  session-start hook runs it too. A mirrored page changes in its own project,
+  never here.
+
+After the first sync of a new member, offer `atlas-merge`: it finds what the
+members' wikis hold in common and proposes what to upgrade into this wiki.
+
+## Forget
+
+`project` with `action: forget` drops the project from the atlas. The work
+folder and its `atlas/<name>/` stay. Deleting `atlas/<name>/` is how a
+project ends, and that is the user's to do by hand.
+
+## Hand off
+
+`atlas-merge` after a member's first sync; `wiki-edit` to move pages after a
+mode change; `atlas` to see every project.

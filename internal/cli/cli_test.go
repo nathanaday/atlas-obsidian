@@ -80,7 +80,7 @@ func TestCodexDoctorAndLaunch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), work+"\n"+work+"\n$thread-spec thr-") {
+	if !strings.Contains(string(data), work+"\n"+work+"\n$thread-work thr-") {
 		t.Fatalf("wrong launch folder, selection or prompt: %s", data)
 	}
 }
@@ -452,7 +452,7 @@ func TestDescribeStagesASnapshot(t *testing.T) {
 	if code := h.run("init", dir); code != 0 {
 		t.Fatalf("init exit %d %s", code, h.err.String())
 	}
-	if code := h.run("describe", "webapp", "--no-claude"); code != 0 || !strings.Contains(h.out.String(), "staged") || !strings.Contains(h.out.String(), "/atlas-obsidian:describe") {
+	if code := h.run("describe", "webapp", "--no-claude"); code != 0 || !strings.Contains(h.out.String(), "staged") || !strings.Contains(h.out.String(), "/atlas-obsidian:wiki-describe") {
 		t.Fatalf("describe exit %d\n%s%s", code, h.out.String(), h.err.String())
 	}
 	p, _ := project.Open(dir)

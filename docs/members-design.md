@@ -220,7 +220,7 @@ skills, is left for later.
 
 ## Merge: what two members wrote about one thing
 
-Added 2026-09-22, with 5.5.0. Each member wrote its pages alone, so two of
+Added 2026-09-22, with 5.5.0; 5.6.0 moved the skill into the atlas category as `atlas-merge`. Each member wrote its pages alone, so two of
 them hold pages about one thing without knowing it: cs513-course's "CS513
 Course Project" and cs513-project's "cs513-project" describe one group
 project, and neither links the other. The overlap is visible only from the
@@ -246,7 +246,7 @@ alphabet, ties break by path), and needs no config: the mirror is what the
 hub sees. `member` narrows it to one origin, for a member adopted into a hub
 that merged before.
 
-**`wiki-merge` is the deciding.** The skill reads the report, then only the
+**`atlas-merge` is the deciding.** The skill reads the report, then only the
 pages the candidates name, and proposes one merge in one message: pages to
 upgrade, bridges to build, candidates to leave, each with a reason. Two
 moves:

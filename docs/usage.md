@@ -26,13 +26,15 @@ one tool from a Claude Code session, so scripts, muscle memory, and the
 | — | `init [PATH]`, `edit NAME`, `forget NAME` | `project` |
 | — | `edit NAME --add-member P`, `sync [PROJECT]` | `project` with `add_members`, then `sync` |
 | — | `init --no-threads`, `edit NAME --threads on\|off` | `project` with `threads` |
-| — | `describe PROJECT` | `stage` with `snapshot`, then the `describe` skill |
+| — | `init [PATH]`, then describe and gather the work in flight | the `atlas-onboard` skill |
+| — | `describe PROJECT` | `stage` with `snapshot`, then the `wiki-describe` skill |
 | — | `ingest PROJECT [PATH...]` | `stage`, then the `wiki-ingest` skill |
 | — | `threads [PROJECT]`, `thread PROJECT new\|show\|file\|close\|set\|reopen …`, `phase PROJECT …` | `threads`, `thread`, `phase` |
 | — | `config new-days N` | `settings` |
 | — | `stub PROJECT [TITLE...]` | `stub` |
 | — | `lint`, `history`, `undo`, `recover`, `apply` | `lint`, `history`, `undo` |
-| — | `overlap [PROJECT]` | `overlap`, then the `wiki-merge` skill |
+| — | `overlap [PROJECT]` | `overlap`, then the `atlas-merge` skill |
+| — | `overlap --within`, `lint` | `overlap` with `within`, `lint`, then the `wiki-review` skill |
 | — | `setup`, `doctor`, `info`, `version` | — |
 
 ## One thing
@@ -90,7 +92,7 @@ atlas-obsidian edit webapp --name "Web App" --description "…" --mode lyt
 atlas-obsidian edit webapp --threads off              # the folder stays; the tools refuse until on
 atlas-obsidian show webapp
 atlas-obsidian forget webapp                          # drop it from the config; atlas/webapp/ stays
-atlas-obsidian describe webapp                        # stage a snapshot for the describe skill
+atlas-obsidian describe webapp                        # stage a snapshot for the wiki-describe skill
 ```
 
 Each edit writes the identity file and commits it as a `setup` operation. **A
@@ -164,7 +166,7 @@ the link names two origins share, and the tags they share, each with its
 evidence and whether a page in the hub already covers it. The report is
 deterministic and bounded.
 
-The `wiki-merge` skill reads it, reads only the pages it names, and proposes
+The `atlas-merge` skill reads it, reads only the pages it names, and proposes
 one merge: pages to **upgrade** into the hub, one page each written from the
 member versions, and **bridge** pages that join neighbouring pages across
 members. Each upgraded member page becomes a pointer, `moved_to` and
@@ -179,7 +181,7 @@ added the same way. Until then the view shows the project as missing.
 
 **Describe the work.** The wiki knows nothing about the code until a page says
 what it is. `describe` writes a snapshot of the work into `inbox/`, then offers
-to start Claude Code with `/atlas-obsidian:describe`, which reads the snapshot
+to start Claude Code with `/atlas-obsidian:wiki-describe`, which reads the snapshot
 and the work and writes `wiki/entities/<name>.md`: what the project is, how it
 is built and laid out, what it has delivered, the concepts it introduces. The
 snapshot holds the work's CLAUDE.md and README, its files (folders only past
@@ -309,39 +311,41 @@ describes the work, what threads are open, and what waits in the inbox:
 atlas-obsidian: project webapp at ~/code/webapp (git, main)
 Description: The customer-facing web application for the fire-detection product.
 Wiki: atlas/webapp/wiki · 140 pages · generic mode
-The work is described in wiki/entities/webapp.md at fc70d93, 12 commits behind. The describe skill brings the page up to date.
+The work is described in wiki/entities/webapp.md at fc70d93, 12 commits behind. The wiki-describe skill brings the page up to date.
 Search the wiki (the wiki-query skill) before answering from the code alone. Change wiki pages only through the atlas MCP tools (plan, then apply).
 Open threads: 4 (plan 1, spec 1, stub 2) in 2 phases. A thread moves stub, spec, plan, receipt, and each stage is a document the thread tool files; the thread skills say how. Work that belongs to a thread goes on its documents.
 - [plan] Filter vehicle false alarms (thr-20260917-3f2a) · Alarm quality · high · updated 2026-09-17
 Inbox: 2 sources for the wiki-ingest skill, 1 note for the thread-stub skill.
 ```
 
-In the session, the skills are on the slash menu:
+In the session, the skills are on the slash menu, by category. Each is a
+verb on one of three nouns: the atlas (every project), the wiki (what a
+project knows), and the threads (what it does). The design:
+[skills.md](skills.md).
 
 | Skill | What it does |
 |---|---|
-| `/atlas-obsidian:wiki` | orient and route to the right skill |
-| `/atlas-obsidian:work` | take a change from a sentence to a thread with a plan, then work it |
-| `/atlas-obsidian:thread` | show the board by stage, change a card, create or change a phase, review the board |
+| `/atlas-obsidian:atlas` | the front door: every project, what is wrong, the settings, the full map of skills |
+| `/atlas-obsidian:atlas-onboard` | make a folder a project: init, describe the work, propose the structure, gather the work in flight |
+| `/atlas-obsidian:atlas-project` | change a project: name, description, mode, threads, members, sync, forget |
+| `/atlas-obsidian:atlas-merge` | find what a hub's members hold in common; upgrade pages and build bridges |
+| `/atlas-obsidian:wiki` | orient in the project and its wiki; the rules for changing it |
+| `/atlas-obsidian:wiki-ingest` | turn sources into cited pages, of any size; a long one is split across workers |
+| `/atlas-obsidian:wiki-query` | answer from the wiki, with citations |
+| `/atlas-obsidian:wiki-save` | keep an answer, a decision, or an insight as a page |
+| `/atlas-obsidian:wiki-edit` | change pages that exist: rewrite, rename, move, split, combine, repair; seed wanted pages |
+| `/atlas-obsidian:wiki-describe` | describe the work in the wiki from a snapshot, or bring its page up to date |
+| `/atlas-obsidian:wiki-review` | check the wiki: quick from the tools alone, or deep with reviewers |
+| `/atlas-obsidian:wiki-fold` | roll up log entries |
+| `/atlas-obsidian:wiki-canvas` | create and change canvas boards |
+| `/atlas-obsidian:wiki-base` | draft and change Bases views |
+| `/atlas-obsidian:thread` | the board, a card, the phases, a review of the board |
+| `/atlas-obsidian:thread-work` | move a thread, or a sentence, to its next stage and on, with a gate at the spec and the plan |
 | `/atlas-obsidian:thread-stub` | open a thread from a sentence, from a note in `inbox/`, or in another project |
 | `/atlas-obsidian:thread-spec` | research, ask only what reading cannot answer, file the spec |
 | `/atlas-obsidian:thread-plan` | explore the code with the spec in hand, file the plan |
-| `/atlas-obsidian:thread-run` | do the work, commit and test along the way, write progress in the plan |
-| `/atlas-obsidian:thread-receipt` | close as completed or killed, file the receipt, offer the wiki what was learned |
-| `/atlas-obsidian:describe` | describe the work in the wiki from a snapshot, or bring its page up to date |
-| `/atlas-obsidian:wiki-ingest` | read the sources in the inbox and write cited pages |
-| `/atlas-obsidian:wiki-query` | answer from the wiki, with citations |
-| `/atlas-obsidian:save` | keep an answer or decision as a page |
-| `/atlas-obsidian:wiki-lint` | check the wiki's health |
-| `/atlas-obsidian:wiki-merge` | find what the members' wikis hold in common; upgrade pages into this wiki and build bridges |
-| `/atlas-obsidian:wiki-mode` | read or change the filing mode |
-| `/atlas-obsidian:wiki-fold` | roll up log entries |
-| `/atlas-obsidian:canvas` | create and update Obsidian Canvas boards |
-| `/atlas-obsidian:obsidian-bases` | draft Bases `.base` views |
-| `/atlas-obsidian:obsidian-markdown` | Obsidian syntax help |
-| `/atlas-obsidian:think` | a structured review before a consequential change |
-| `/atlas-obsidian:atlas` | every project, refresh, settings |
-| `/atlas-obsidian:atlas-project` | make this folder a project; rename it, change its description or mode, forget it |
+| `/atlas-obsidian:thread-run` | do the work in small commits, test, write progress in the plan |
+| `/atlas-obsidian:thread-receipt` | verify, with a fresh review of the diff, and close as completed or killed |
 
 Claude shows a preview of every change to the wiki before it applies it. Each
 applied change is one git commit. Every tool acts on this session's project;
@@ -414,7 +418,17 @@ atlas-obsidian lint webapp --strict     # exit 1 when there are findings
 ```
 
 Lint reads `wiki/` only. The thread documents are pages of another kind, and
-the `threads` tool reports what it cannot read among them.
+the `threads` tool reports what it cannot read among them. Besides its
+findings, lint lists stubs, wanted pages, and pages that cite no source; those
+are signals, not findings, and `--strict` ignores them.
+
+```bash
+atlas-obsidian overlap webapp --within    # pages of one wiki that look alike
+```
+
+The `wiki-review` skill reads both reports for a quick review, and sends
+reviewers over the pages for a deep one; `wiki-edit` fixes what the user
+picks.
 
 ## Stubs and wanted pages
 
@@ -423,7 +437,7 @@ yet. Lint reports it, and a session's start line names a few and counts the
 rest:
 
 ```text
-Stubs: 2 pages to fill (Backpropagation, Loss Landscape). Wanted: 1 linked page does not exist yet (Contrastive Learning). Fill or stub them with the wiki-lint skill.
+Stubs: 2 pages to fill (Backpropagation, Loss Landscape). Wanted: 1 linked page does not exist yet (Contrastive Learning). Fill or seed them with the wiki-edit skill.
 ```
 
 `stub` creates a seed page for each: frontmatter and the section headings its

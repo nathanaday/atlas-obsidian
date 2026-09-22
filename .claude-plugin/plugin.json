@@ -1,7 +1,7 @@
 {
   "name": "atlas-obsidian",
-  "version": "5.5.0",
-  "description": "A project in Claude Code is one folder in your work that holds both halves of what it knows: a source-cited Obsidian wiki, with an inbox to ingest from and one reviewed operation per change, and its threads, where each line of work moves from stub to spec to plan to receipt, one visible document per stage. Skills for ingesting, querying, linting, describing the work, threads, canvases, and Bases. Pairs with the atlas-obsidian binary, which serves the tools.",
+  "version": "5.6.0",
+  "description": "A project in Claude Code is one folder in your work that holds both halves of what it knows: a source-cited Obsidian wiki, with an inbox to ingest from and one reviewed operation per change, and its threads, where each line of work moves from stub to spec to plan to receipt, one visible document per stage. Twenty-one skills in three categories: atlas (onboard, change, and merge projects), wiki (ingest, query, save, edit, describe, review), and thread (work a thread from stub to receipt). Pairs with the atlas-obsidian binary, which serves the tools.",
   "author": {
     "name": "nathanaday",
     "url": "https://github.com/nathanaday"

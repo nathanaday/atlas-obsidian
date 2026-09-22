@@ -9,9 +9,15 @@ one `apply`, one git commit. Parallel workers read and draft; only the
 orchestrator plans and applies.
 
 The tools are on the atlas MCP server, named
-`mcp__plugin_atlas-obsidian_atlas__<tool>` in Claude Code. In Codex, discover
-the atlas MCP tools by their short names; the host chooses the prefix. Every tool acts on this session's
-project and its one wiki. None takes a vault argument.
+`mcp__plugin_atlas-obsidian_atlas__<tool>` in Claude Code; in Codex the host
+chooses the prefix, so find the tools by their short names. Every tool acts
+on this session's project; `plan` and the thread tools take `project` to
+reach another one.
+
+The skills work in Claude Code and Codex. Read, Grep, Glob, and Edit mean the
+host's own tools for reading, searching, and editing (in Codex, shell reads
+and `apply_patch`). The agents under `agents/` are Claude Code workers; in
+another host, do their work inline.
 
 | Tool | Use |
 |---|---|
@@ -23,12 +29,12 @@ project and its one wiki. None takes a vault argument.
 | `apply` | commit a held plan |
 | `undo` | take back an applied operation |
 | `history` | recent operations |
-| `lint` | the health check |
-| `overlap` | what this wiki and the mirrors of its members hold in common: duplicate and related pairs, shared link names, shared tags; read-only |
+| `lint` | the health check: structure, wanted pages, stubs, pages that cite no source |
+| `overlap` | pages that look alike: across the mirrors of a hub's members, or with `within` inside one wiki |
 | `stub` | seed a page for every wanted link, or for `titles[]` (each `title` and `type`); `type` sets the default for titles that name none |
 | `stage` | copy files from outside into `inbox/`, or with `snapshot` write a snapshot of the work there |
-| `project` | the project's own facts: name, description, filing mode |
-| `threads`, `thread`, `phase` | the threads and the phases; see [threads.md](threads.md) |
+| `project` | the project's identity: name, description, mode, threads, members; sync |
+| `threads`, `thread`, `phase` | the threads and the phases; see [threads.md](../../thread/references/threads.md) |
 
 ## Workflow
 
@@ -55,7 +61,7 @@ project and its one wiki. None takes a vault argument.
    file as it is now. Either way, apply refuses if the file changes afterwards.
 
    `project` names another project the atlas lists; the plan is then made and
-   applied there, as that project's own operation. Only `wiki-merge` uses it.
+   applied there, as that project's own operation. Only `atlas-merge` uses it.
 
 4. Show the user the preview and warnings. Warnings name links that do not
    resolve, empty sections, and new pages that no index or MOC links to. Fix
@@ -65,18 +71,23 @@ project and its one wiki. None takes a vault argument.
 A plan is single-use, and the newest plan replaces older
 ones. If `apply` says the plan is gone, plan again.
 
-## Kinds and their scope
+## Kinds and their owners
 
-The kind bounds what a plan may write. The core rejects anything outside it.
+The kind bounds what a plan may write, and the core rejects anything outside
+it. Each kind has one skill that writes it.
 
-| Kind | May write |
-|---|---|
-| `ingest` | `wiki/**`; may also `delete` a file under `inbox/` once it is captured |
-| `save`, `markdown`, `repair`, `fold` | `wiki/**` |
-| `merge` | `wiki/**`, in this project or, with `project` on `plan`, in a member: the pointer an upgraded page leaves behind |
-| `stub` | `wiki/**`, only through the `stub` tool; `plan` refuses this kind |
-| `canvas` | `wiki/canvases/**/*.canvas` and `wiki/canvases/canvases.md` |
-| `base` | `wiki/**/*.base` |
+| Kind | Owner | May write |
+|---|---|---|
+| `ingest` | `wiki-ingest`, and `wiki-describe` for the snapshot | `wiki/**`; may also `delete` a file under `inbox/` once it is captured |
+| `save` | `wiki-save` | `wiki/**` |
+| `markdown`, `repair` | `wiki-edit` | `wiki/**` |
+| `fold` | `wiki-fold` | `wiki/**` |
+| `canvas` | `wiki-canvas` | `wiki/canvases/**/*.canvas` and `wiki/canvases/canvases.md` |
+| `base` | `wiki-base` | `wiki/**/*.base` |
+| `merge` | `atlas-merge` | `wiki/**`, here or, with `project` on `plan`, in a member |
+| `stub` | `wiki-edit`, through the `stub` tool | `wiki/**` pages; `plan` refuses this kind |
+
+The core writes three kinds of its own: `capture`, `sync`, and `undo`.
 
 Never writable: `wiki/log.md` (the core writes the entry from your summary),
 `wiki/meta/ledgers/source-ledger.json` (use the `sources` field), `ideas/`
@@ -97,12 +108,14 @@ it).
 - Save: the note, the index or MOC, the hot cache.
 - Ingest: pages, the index or MOC, the hot cache, the `sources` entries, the
   inbox removal, and the overview only when the big picture changed.
+- Edit: the pages changed, every page whose links a rename or move breaks,
+  and the index or MOC when a page appears, moves, or goes.
 - Fold: the fold page and the index.
 - Canvas: the canvas, plus its catalog only when the catalog changes.
-- Repair: the approved fixes only.
 - Merge: in a member, the pointers only; here, the upgraded pages, the
   bridges, the index or MOC, the hot cache.
-- Query: nothing. Persistence is a separate `save`.
+- Query and review: nothing. Keeping an answer is a `wiki-save`; fixing a
+  finding is a `wiki-edit`.
 
 ## Failure behavior
 
@@ -119,5 +132,6 @@ it).
 
 ## Undo
 
-`undo` reverts one operation as a new commit. It fails when a later operation
-overlaps the same lines; then propose a `repair` plan instead.
+`undo` puts back every page one operation wrote, as a new commit. It refuses
+when one of those pages changed since; then a `wiki-edit` repair is the way
+back.

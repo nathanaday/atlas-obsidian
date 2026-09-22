@@ -1,9 +1,16 @@
 ---
-name: save
-description: "Save a user-selected answer, decision, insight, or session summary into the project's wiki as one reviewed operation. Use only when the user asks to keep specific conversation content: /save, save this, save that answer, file this decision, keep this insight, preserve this result. Not for files or URLs; that is wiki-ingest."
+name: wiki-save
+description: "Keep something from the conversation in the project's wiki: an answer, a decision, an insight, or a session summary the user selects, as one reviewed operation. Use for save this, save that answer, keep this, file this decision, keep this insight, preserve this result, remember this in the wiki. Not for files or URLs (wiki-ingest) or for changing a page that exists (wiki-edit)."
 ---
 
-# Save selected conversation knowledge
+# Save to the wiki
+
+Keep what the user selects from the conversation as a page, cited as the
+conversation it is. Only the scope the user named is saved.
+
+Tools: `status`, `route`, `plan`, `apply`. Reads
+[operations.md](../wiki/references/operations.md) and
+[frontmatter.md](../wiki/references/frontmatter.md).
 
 Save only the scope the user selected. Never run automatically, never capture a
 whole transcript by default, never infer permission to archive unrelated
@@ -58,3 +65,8 @@ your summary.
 Show the title, destination, create or replace, and every warning. Apply only
 the reviewed scope. Report the operation id and changed paths. On `conflict`,
 read the page again and plan again.
+
+## Hand off
+
+`wiki-edit` when the user wants more changed on the page that exists;
+`wiki-query` to check what the wiki already says.

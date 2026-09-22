@@ -29,8 +29,29 @@ import (
 // MaxContextBytes bounds the hot cache text a session start may inject.
 const MaxContextBytes = 8 * 1024
 
-// Skills names the workflows without assuming a host's invocation syntax.
-const Skills = "wiki  wiki-ingest  wiki-query  wiki-lint  wiki-merge  wiki-mode  wiki-fold  save  describe  work  thread  thread-stub  thread-spec  thread-plan  thread-run  thread-receipt  canvas  obsidian-markdown  obsidian-bases  think  atlas  atlas-project"
+// Category is one noun of the skill system: its home skill and the verbs on it. See
+// docs/skills.md.
+type Category struct {
+	Home   string
+	Skills []string
+}
+
+// SkillMap is every skill the plugin ships, by category. The plugin test holds it equal
+// to the skills/ folders.
+var SkillMap = []Category{
+	{Home: "atlas", Skills: []string{"atlas-onboard", "atlas-project", "atlas-merge"}},
+	{Home: "wiki", Skills: []string{"wiki-ingest", "wiki-query", "wiki-save", "wiki-edit", "wiki-describe", "wiki-review", "wiki-fold", "wiki-canvas", "wiki-base"}},
+	{Home: "thread", Skills: []string{"thread-work", "thread-stub", "thread-spec", "thread-plan", "thread-run", "thread-receipt"}},
+}
+
+// Skills names the skills by category, without assuming a host's invocation syntax.
+var Skills = func() string {
+	var parts []string
+	for _, c := range SkillMap {
+		parts = append(parts, c.Home+" ("+strings.Join(c.Skills, " ")+")")
+	}
+	return strings.Join(parts, " · ")
+}()
 
 // MaxThreadLines bounds how many open threads the session start lists.
 const MaxThreadLines = 8
@@ -123,11 +144,11 @@ func projectLines(b *strings.Builder, pl *place.Place, now time.Time) {
 		if d := describe.Page(*pl.Entry); d != nil {
 			line := "The work is " + d.Summary() + "."
 			if d.Behind > describe.BehindThreshold {
-				line += " The describe skill brings the page up to date."
+				line += " The wiki-describe skill brings the page up to date."
 			}
 			b.WriteString(line + "\n")
 		} else {
-			b.WriteString("The wiki has no page describing this work; the describe skill writes it.\n")
+			b.WriteString("The wiki has no page describing this work; the wiki-describe skill writes it.\n")
 		}
 	}
 	b.WriteString(membersLine(pl, now))
@@ -238,7 +259,7 @@ func countsLine(p *project.Project, now time.Time) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	parts = append(parts, "Fill or stub them with the wiki-lint skill.")
+	parts = append(parts, "Fill or seed them with the wiki-edit skill.")
 	return strings.Join(parts, " ") + "\n"
 }
 

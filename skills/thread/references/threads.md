@@ -11,6 +11,9 @@ under `atlas/<name>/threads/`. Read this before any thread skill changes a page.
 | plan | `threads/plans/` | how the work will go, then its progress | `thread-plan`, `thread-run` |
 | receipt | `threads/receipts/` | how the thread ended: completed or killed | `thread-receipt` |
 
+`thread-work` moves a thread from one stage to the next by running the stage
+skill, and `thread` is the home: the board, the cards, the phases.
+
 ## The rule that matters
 
 The stage of a thread is never set. It is the furthest document that exists.
@@ -115,7 +118,8 @@ and no update for 14 days is stale; `status`, the hook, and the atlas say so.
 ## The wiki, the other half
 
 An open thread never reaches the wiki. A completed one may: `thread-receipt`
-offers one operation there, as a plan the user sees. The wiki is evidence for a
+offers what the work taught, and `wiki-save` or `wiki-describe` writes it as
+an operation the user sees. The wiki is evidence for a
 spec and a plan; the documents are the state of the work. The two halves sit in
 one folder and follow different rules: only an operation writes `wiki/`, while a
 document's prose is the model's to write with Edit.

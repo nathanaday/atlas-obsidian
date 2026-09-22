@@ -58,7 +58,7 @@ type Atlas struct {
 	Stage     func(registry.Entry, *capture.StagePlan) (*capture.StageResult, []string, error)
 	Sources   func(registry.Entry) []string
 	// StageProject writes a snapshot of the work into the project's own inbox, for the
-	// describe skill to ingest.
+	// wiki-describe skill to ingest.
 	StageProject func(registry.Entry) (*capture.ProjectStage, error)
 	// The thread calls, on a project: read the board and the notes waiting in its inbox,
 	// open a thread, file a document, change a card, reopen, and the phase calls.

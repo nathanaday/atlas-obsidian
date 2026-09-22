@@ -95,6 +95,12 @@ codex plugin add atlas-obsidian@nathanaday-atlas-obsidian
 
 ## Making a project
 
+Start a session in the folder and run `/atlas-obsidian:atlas-onboard`
+(`$atlas-onboard` in Codex). It makes the project, and for a folder with
+history it also describes the work in the wiki, proposes a structure for the
+wiki, and turns the TODO and FIXME lines, roadmap notes, and open issues it
+finds into threads you pick. Or from the terminal:
+
 ```bash
 cd ~/code/webapp
 atlas-obsidian init --description "The customer-facing web app."
@@ -116,21 +122,22 @@ claude
 The thread command writes a card and a stub in the words you gave it. The
 session that follows opens with that thread in view.
 
-From there, choose the skill in your agent. In Codex, type `$` and select the
-Atlas skill if another installed plugin uses the same name:
+From there, choose the skill in your agent. Every skill is a verb on one of
+three nouns, so the name says where it belongs: `atlas-…` for projects,
+`wiki-…` for what a project knows, `thread-…` for what it does. In Codex,
+type `$` and pick the skill.
 
-| Claude Code | Codex skill | What it does |
+| Claude Code | Codex | What it does |
 |---|---|---|
-| `/atlas-obsidian:describe` | `$describe` | describes this codebase in the wiki |
-| `/atlas-obsidian:thread-spec` | `$thread-spec` | turns a stub into a spec |
-| `/atlas-obsidian:thread-plan` | `$thread-plan` | reads the code and files the approach |
-| `/atlas-obsidian:thread-run` | `$thread-run` | does the work and keeps the plan current |
-| `/atlas-obsidian:thread-receipt` | `$thread-receipt` | closes the thread and captures what it taught |
+| `/atlas-obsidian:atlas` | `$atlas` | every project, and the map of every skill |
+| `/atlas-obsidian:thread-work` | `$thread-work` | moves a thread to its next stage, and on: spec, plan, the work, the receipt |
+| `/atlas-obsidian:wiki-ingest` | `$wiki-ingest` | turns the sources in the inbox into cited pages |
+| `/atlas-obsidian:wiki-query` | `$wiki-query` | answers from the wiki |
+| `/atlas-obsidian:wiki-review` | `$wiki-review` | checks the wiki, quick or deep |
 
-For example, use `/atlas-obsidian:thread-spec Filter vehicle false alarms` in
-Claude Code, or `$thread-spec Filter vehicle false alarms` in Codex. You can
-also ask either agent: “Use the Atlas wiki-query skill to explain this project's
-architecture.”
+For example, `/atlas-obsidian:thread-work Filter vehicle false alarms` writes
+the spec for that thread and stops for your yes, then the plan, then does the
+work. All 21 skills and how they fit: [docs/skills.md](docs/skills.md).
 
 To teach the wiki something, drop the source in the inbox and start a session:
 
@@ -166,7 +173,7 @@ edits there, and a member never knows it is listed. The members' threads come
 along too, under `threads/projects/<name>/`, and the hub's board shows every
 open thread in the ecosystem; a change to a member's thread, made from the hub,
 lands in the member. When two members wrote about one thing, `overlap` finds
-the pair and `/atlas-obsidian:wiki-merge` proposes the page that replaces
+the pair and `/atlas-obsidian:atlas-merge` proposes the page that replaces
 both, or a bridge between them. The design and its reasons:
 [docs/members-design.md](docs/members-design.md).
 
@@ -266,7 +273,7 @@ start inside it repairs the entry.
 - How the engine works and why: [docs/core-design.md](docs/core-design.md)
 - The layout of a project: [docs/v4-design.md](docs/v4-design.md)
 - How threads work: [docs/threads-design.md](docs/threads-design.md)
-- What each skill promises to do: [skills/](skills/), one `SKILL.md` per directory
+- The skills, how they fit, and what each owns: [docs/skills.md](docs/skills.md)
 
 External references: [Obsidian](https://obsidian.md),
 [Claude Code plugins](https://code.claude.com/docs/en/plugins),

@@ -1,6 +1,6 @@
 {
   "name": "atlas-obsidian",
-  "version": "5.5.0",
+  "version": "5.6.0",
   "description": "A source-cited Obsidian wiki and the threads of the work, shared by Claude Code and Codex.",
   "author": {"name": "nathanaday", "url": "https://github.com/nathanaday"},
   "license": "MIT",

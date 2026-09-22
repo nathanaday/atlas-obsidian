@@ -1,14 +1,18 @@
 ---
 name: wiki-fold
-description: "Create a bounded, extractive, structurally idempotent rollup of recent wiki log entries, previewed by default and applied as one operation on request. Use for fold the log, run a fold, log rollup, roll up log entries, commit the fold. Never modifies child pages."
+description: "Roll up a range of the wiki's log into one fold page: extractive, bounded, and the same every time for the same entries; previewed first, applied as one operation on request. Use for fold the log, run a fold, log rollup, roll up log entries, what happened in the wiki lately, commit the fold. Never changes the entries or the pages they name."
 ---
 
-# Extractive log fold
+# Fold the log
 
-Create an additive rollup of raw `wiki/log.md` entries in the project's wiki.
-Never modify, move, or delete child entries or their pages. Do not fold a
-fold, and do not trigger a fold automatically. The skill runs in a knowledge
-base session.
+`wiki/log.md` gets one entry per operation, so it grows without end. A fold
+is a page that rolls up a range of entries: what changed, which pages, and
+the themes across them, each line traced to its entry. It adds a page and
+changes nothing else. Never fold a fold, and never fold unasked.
+
+Tools: `status`, `plan`, `apply`. Reads
+[fold-template.md](references/fold-template.md) and
+[operations.md](../wiki/references/operations.md).
 
 ## Select a bounded range
 
@@ -63,3 +67,7 @@ When the user says to apply, build one plan of kind `fold` following
 
 Do not touch `wiki/hot.md`. The core writes the log entry from your summary.
 Show the preview, apply on approval, and report the operation id.
+
+## Hand off
+
+`wiki-review` for contradictions the fold found between an entry and a page.

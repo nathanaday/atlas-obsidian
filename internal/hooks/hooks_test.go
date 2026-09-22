@@ -152,7 +152,7 @@ func TestSessionStartInAProject(t *testing.T) {
 		"Description: The web app.",
 		"Wiki: atlas/code/wiki · ",
 		" pages · generic mode",
-		"The wiki has no page describing this work; the describe skill writes it.",
+		"The wiki has no page describing this work; the wiki-describe skill writes it.",
 		SearchSentence + " " + WriteSentence,
 		"Skills: " + Skills,
 		"Open threads: none. Open one with the thread-stub skill.",
@@ -228,7 +228,7 @@ func TestSessionStartReportsTheWikisCountsAndAnInterruptedOperation(t *testing.T
 	os.WriteFile(p.Path("wiki/concepts/Training.md"), []byte(training), 0o644)
 	os.WriteFile(p.Path("wiki/concepts/Backpropagation.md"), []byte(project.Skeleton("concept", "Backpropagation", now)), 0o644)
 	text := run(t, work, e, false, now)
-	want := "Stubs: 1 page to fill (Backpropagation). Wanted: 1 linked page does not exist yet (Optimizer). Fill or stub them with the wiki-lint skill."
+	want := "Stubs: 1 page to fill (Backpropagation). Wanted: 1 linked page does not exist yet (Optimizer). Fill or seed them with the wiki-edit skill."
 	if !strings.Contains(text, want) {
 		t.Errorf("missing the counts in:\n%s", text)
 	}

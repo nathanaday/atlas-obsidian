@@ -1,18 +1,18 @@
 ---
-name: canvas
-description: Create, inspect, and update Obsidian JSON Canvas boards with text, file, link, group, and edge nodes. Use for canvas status, canvas lists, visual maps, zones, spatial layouts, adding vault notes or media to a .canvas file, create canvas, add to canvas, put this on the canvas.
+name: wiki-canvas
+description: "Create, inspect, and change Obsidian canvas boards in the wiki: JSON Canvas files with text, file, link, and group nodes and the edges between them, written as one reviewed operation. Use for a canvas, a visual map, a board, zones, a spatial layout, add these pages to a canvas, put this on the canvas, canvas status."
 ---
 
-# Canvas
+# Canvas boards
 
-A canvas is a vault-scoped JSON Canvas document under `wiki/canvases/`. Reads
-are read-only; every change goes through one plan of kind `canvas`.
+A canvas is a JSON Canvas board under `wiki/canvases/`: pages, notes, and
+links laid out in space, with edges between them. Reading one changes
+nothing; every change is one plan of kind `canvas`.
 
-## Syntax source
-
-Prefer a separately installed `kepano/obsidian-skills` `json-canvas` skill for
-format details. Otherwise read [references/canvas-spec.md](references/canvas-spec.md).
-The open standard is [JSON Canvas 1.0](https://jsoncanvas.org/spec/1.0/).
+Tools: `status`, `plan`, `apply`. Reads
+[canvas-spec.md](references/canvas-spec.md), the format
+([JSON Canvas 1.0](https://jsoncanvas.org/spec/1.0/)), and
+[operations.md](../wiki/references/operations.md).
 
 ## Scope
 
@@ -77,3 +77,8 @@ Build one plan of kind `canvas` with the canvas and, when it changes, the
 catalog; see [operations.md](../wiki/references/operations.md). Removals,
 renames, and replacements need explicit consent after the preview. Report the
 operation id, changed paths, board name, node ids, and final positions.
+
+## Hand off
+
+`wiki-base` for a table view instead of a map; `wiki-edit` for the pages the
+board shows.

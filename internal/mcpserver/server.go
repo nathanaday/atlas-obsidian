@@ -210,10 +210,10 @@ func (s *Server) status(ctx context.Context, req *mcp.CallToolRequest, a Empty) 
 		if d := describe.Page(*pl.Entry); d != nil {
 			out.Described = &DescribedInfo{Description: *d, Summary: d.Summary()}
 			if d.Behind > describe.BehindThreshold {
-				out.Warnings = append(out.Warnings, fmt.Sprintf("the page describing this work is %d commits behind; the describe skill brings it up to date", d.Behind))
+				out.Warnings = append(out.Warnings, fmt.Sprintf("the page describing this work is %d commits behind; the wiki-describe skill brings it up to date", d.Behind))
 			}
 		} else {
-			out.Warnings = append(out.Warnings, registry.NotDescribed+"; the describe skill writes the page")
+			out.Warnings = append(out.Warnings, registry.NotDescribed+"; the wiki-describe skill writes the page")
 		}
 	}
 	if len(p.Config.Members) > 0 {
@@ -877,7 +877,7 @@ type OverlapOut struct {
 }
 
 // overlapNext says what the report is for.
-const overlapNext = "Read only the pages the report names. A duplicate pair is a candidate to upgrade into this project's own wiki, leaving a pointer in each member; a related pair or a shared name is a candidate for a bridge page here that links both. A settled pair is already covered by a page here. The wiki-merge skill turns the candidates into one plan the user approves."
+const overlapNext = "Read only the pages the report names. A duplicate pair is a candidate to upgrade into this project's own wiki, leaving a pointer in each member; a related pair or a shared name is a candidate for a bridge page here that links both. A settled pair is already covered by a page here. The atlas-merge skill turns the candidates into one plan the user approves."
 
 func (s *Server) overlap(ctx context.Context, req *mcp.CallToolRequest, a OverlapArgs) (*mcp.CallToolResult, OverlapOut, error) {
 	_, p, err := s.place()
@@ -907,7 +907,7 @@ func (s *Server) MCP() *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{Name: "route", Annotations: ro(),
 		Description: "Say where a new wiki page of a type belongs under the project's mode, whether a page with that title or alias already exists, and give a skeleton with the frontmatter conventions."}, s.route)
 	mcp.AddTool(server, &mcp.Tool{Name: "plan", Annotations: ro(),
-		Description: "Validate a set of changes to the wiki and hold them as a plan. Returns a plan_id, a preview of creates, replaces, and deletes, and warnings such as links that do not resolve. Nothing is written. Show the preview to the user before apply. With project, plan in another project the atlas lists, as the wiki-merge skill does for the pointer an upgraded page leaves in a member; apply then commits there."}, s.plan)
+		Description: "Validate a set of changes to the wiki and hold them as a plan. Returns a plan_id, a preview of creates, replaces, and deletes, and warnings such as links that do not resolve. Nothing is written. Show the preview to the user before apply. With project, plan in another project the atlas lists, as the atlas-merge skill does for the pointer an upgraded page leaves in a member; apply then commits there."}, s.plan)
 	mcp.AddTool(server, &mcp.Tool{Name: "apply",
 		Description: "Apply a held plan as one git commit and write its log entry. Edits made by hand in the wiki are committed first, so the operation can always be undone exactly; the work outside the wiki is never touched. The plan is consumed."}, s.apply)
 	mcp.AddTool(server, &mcp.Tool{Name: "undo",
@@ -917,7 +917,7 @@ func (s *Server) MCP() *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{Name: "lint", Annotations: ro(),
 		Description: "Run the deterministic health check on the project's wiki: dead and ambiguous links, duplicate basenames, orphans, pages missing from every index, missing frontmatter, empty sections, stale index entries, and ledger problems. Read-only."}, s.lint)
 	mcp.AddTool(server, &mcp.Tool{Name: "overlap", Annotations: ro(),
-		Description: "Find what this project's wiki and the mirrors of its members hold in common, without reading them into the session: pairs of pages from two origins that look like the same thing (duplicate) or like neighbours (related), scored by name, content, and the names they link, with evidence and whether a page here already covers them; link names two or more origins share; tags they share. Read-only and deterministic. The wiki-merge skill reads it first."}, s.overlap)
+		Description: "Find what this project's wiki and the mirrors of its members hold in common, without reading them into the session: pairs of pages from two origins that look like the same thing (duplicate) or like neighbours (related), scored by name, content, and the names they link, with evidence and whether a page here already covers them; link names two or more origins share; tags they share. With within, pair the pages of one wiki with each other too, for the wiki-review skill. Read-only and deterministic. The atlas-merge skill reads it first."}, s.overlap)
 	mcp.AddTool(server, &mcp.Tool{Name: "stub",
 		Description: "Create seed pages in the wiki for the pages it links to but nobody has written (lint's wanted pages). One commit, no plan preview; undo takes it back. Omit titles to stub every one of them with the mode's default type. Pass a title with a type when the name is a person, product, project, or organization (entity)."}, s.stub)
 	mcp.AddTool(server, &mcp.Tool{Name: "threads", Annotations: ro(),
@@ -933,7 +933,7 @@ func (s *Server) MCP() *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{Name: "settings",
 		Description: "Set an atlas setting and return them all: new_days, how long a project counts as new. With no arguments it only reads."}, s.settingsTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "stage",
-		Description: "Copy files or folders from outside the project into its inbox, skipping what it already captured or holds; omit paths to stage what is new in the folders it staged from before. With snapshot, write a snapshot of the work into the inbox for the describe skill. dry_run plans and copies nothing."}, s.stageTool)
+		Description: "Copy files or folders from outside the project into its inbox, skipping what it already captured or holds; omit paths to stage what is new in the folders it staged from before. With snapshot, write a snapshot of the work into the inbox for the wiki-describe skill. dry_run plans and copies nothing."}, s.stageTool)
 	return server
 }
 

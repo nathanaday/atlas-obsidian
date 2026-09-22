@@ -44,7 +44,7 @@ const (
 	// Sync rewrites the mirrors under wiki/projects/ from the project's members. The
 	// mirror package builds it; nothing else writes there.
 	Sync Kind = "sync"
-	// Merge is the wiki-merge skill's kind: in a hub, the pages it upgrades from its
+	// Merge is the atlas-merge skill's kind: in a hub, the pages it upgrades from its
 	// members and the bridges it builds between them; in a member, the pointer each
 	// upgraded page leaves behind. It writes under wiki/ like a save.
 	Merge Kind = "merge"

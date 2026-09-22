@@ -5,12 +5,13 @@ description: "Plan a thread: read its spec, explore the code as in plan mode, an
 
 # Plan a thread
 
-Read [threads.md](../wiki/references/threads.md). Tools: `threads`, `thread`.
-
 The plan is what you find when you look at the code with the spec in hand:
 the same thinking as an agent's plan mode, kept as a document. It is not
 a script for someone else to follow line by line, and nobody reviews it but
 the user.
+
+Tools: `threads`, `thread`. Reads
+[threads.md](../thread/references/threads.md).
 
 ## Find the approach
 
@@ -22,7 +23,9 @@ the user.
    change nothing.
 3. Settle the approach. When two approaches are close, pick one and say
    what the other would have cost. Ask the user only when the choice is
-   theirs.
+   theirs. Trace what the change touches beyond its own files: the callers,
+   the consumers, the data it reads and writes, the way back when it fails.
+   A plan that is sound locally and breaks a neighbour is not sound.
 
 ## What the plan holds
 
@@ -47,4 +50,7 @@ the same text. Otherwise file it directly. Call `thread` with `id`,
 `stage: plan`, and the plan as `text`. The thread is now at its plan. Tell
 the user the path and the approach in a few lines.
 
-The work is `thread-run`. Start it when the user says so.
+## Hand off
+
+The plan is a gate: the user agrees before the work starts. Then
+`thread-run`, or `thread-work` to go on through the stages.

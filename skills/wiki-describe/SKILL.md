@@ -1,12 +1,9 @@
 ---
-name: describe
-description: "Describe the work in the project's own wiki: stage a snapshot of it at the current commit, read it and the code, and write the entity page that says what the project is, how it is built and laid out, what it delivers, and the concepts it introduces; or bring that page up to date after the work moved on. Use for describe this project, map the repo, onboard this codebase, the wiki does not know this work, update the project page, the project page is behind."
+name: wiki-describe
+description: "Describe the work in the project's own wiki: stage a snapshot of it at the current commit, read it and the code, and write the entity page that says what the project is, how it is built and laid out, what it delivers, and the concepts it introduces; or bring that page up to date after the work moved on. Use for describe this project, map the repo, the wiki does not know this work, update the project page, the project page is behind. A whole first setup of a folder is atlas-onboard, which calls this."
 ---
 
 # Describe the work in the wiki
-
-Read [provenance.md](../wiki/references/provenance.md). Tools: `status`,
-`stage`, `capture`, `route`, `plan`, `apply` on the atlas MCP server.
 
 The work sits beside the project's folder: a repository, or documents. The wiki
 holds a map of it that later sessions can read: what it is for, how to build and
@@ -14,6 +11,10 @@ test it, its layout at the level that changes slowly, what it has delivered, the
 concepts it introduces, and where to look for what. A snapshot the core writes
 is the source that map cites, so every claim points at a commit through the
 ledger when the work is a repository.
+
+Tools: `status`, `stage`, `capture`, `threads`, `route`, `plan`, `apply`.
+Reads [provenance.md](../wiki/references/provenance.md) and
+[operations.md](../wiki/references/operations.md).
 
 ## What is about to happen
 
@@ -28,9 +29,10 @@ ledger when the work is a repository.
    `inbox/<name>-<short commit>.md`, or `<name>-<date>.md` for a
    folder that is not a repository: the work's AGENTS.md, CLAUDE.md, and README verbatim
    in fenced blocks, the files (folders only past 2000), the first heading of
-   every markdown file under `docs/`, and, when a page already describes the
-   project, `git log --stat` from that page's commit to HEAD. The result says
-   whether the snapshot is new or already waits.
+   every markdown file under `docs/`, the TODO, FIXME, XXX, and HACK lines of
+   the work, and, when a page already describes the project, `git log --stat`
+   from that page's commit to HEAD. The result says whether the snapshot is
+   new or already waits.
 2. `capture` the snapshot with its inbox path. Read the captured copy, not
    the inbox file.
 
@@ -91,3 +93,9 @@ sections that changed, and the new concepts. Keep what still holds. Do not
 rewrite the page from scratch when the log is small; say what changed in the
 page's own words. A page whose commit is not in the history (`behind` is -1)
 is treated as new. `thread-receipt` offers this update when a thread completes.
+
+## Hand off
+
+Back to `atlas-onboard` when it sent you: it proposes the structure and
+gathers the work in flight from the markers. Otherwise `wiki-query` to use
+the page, `wiki-edit` to change it by hand.

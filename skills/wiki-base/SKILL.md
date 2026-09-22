@@ -1,18 +1,21 @@
 ---
-name: obsidian-bases
-description: Explain, draft, and validate Obsidian Bases .base files with filters, formulas, properties, summaries, and table, card, or list views. Use for Obsidian Bases, database-like vault views, dynamic tables, reading lists, task trackers, filters, formulas, summaries, and .base file edits.
+name: wiki-base
+description: "Draft, explain, and change Obsidian Bases views over the wiki: .base files with filters, formulas, properties, summaries, and table, card, or list views, written as one reviewed operation. Use for a Base, Bases, a database view of the wiki, a dynamic table, a reading list, a tracker, filters, formulas, .base file edits."
 ---
 
-# Obsidian Bases
+# Bases views
 
-A compact workflow and fallback syntax reference. Prefer a separately installed
-`kepano/obsidian-skills` `obsidian-bases` skill, then the current
-[official Bases syntax](https://help.obsidian.md/bases/syntax), for detailed or
-version-sensitive fields and functions.
+A Base is a view over the wiki's pages, selected and shaped by their
+properties. This skill drafts one, explains one, or changes one. For a field
+or function this page does not cover, or one that changes between Obsidian
+versions, see the [official Bases syntax](https://help.obsidian.md/bases/syntax).
 
-Answer design and syntax questions read-only. A requested `.base` edit goes
-through one plan of kind `base`, with the file under `wiki/`; never write it
-directly.
+Tools: `status`, `plan`, `apply`. Reads
+[operations.md](../wiki/references/operations.md) and
+[frontmatter.md](../wiki/references/frontmatter.md).
+
+Answer design and syntax questions read-only. A `.base` change goes through
+one plan of kind `base`, with the file under `wiki/`; never write it directly.
 
 ## Workflow
 
@@ -119,3 +122,8 @@ Embed a Base or one named view in a page:
 
 After an applied edit, report the operation id, the changed path, the
 validation performed, and anything that still needs rendering in Obsidian.
+
+## Hand off
+
+`wiki-edit` when the pages lack the properties the view needs;
+`wiki-canvas` for a spatial map instead of a table.

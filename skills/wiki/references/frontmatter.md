@@ -28,7 +28,7 @@ sources:
 Types: `source`, `entity`, `concept`, `comparison`, `overview`, `meta`,
 `fold`, and in lyt mode `note` and `moc`. The `route` tool returns a skeleton
 with the right properties for a type. A project's thread and `phase` pages
-live in the project's other half; their properties are in [threads.md](threads.md).
+live in the project's other half; their properties are in [threads.md](../../thread/references/threads.md).
 
 Statuses commonly progress `seed`, `developing`, `evergreen`; anything can be
 `contested`, `deprecated`, or `archived`. Keep the values a wiki

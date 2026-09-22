@@ -64,7 +64,7 @@ Projects (PROJECT is a name, a path, or nothing for the project you are in):
                             --threads on|off, --add-member P, --remove-member P (each repeatable)
   sync [PROJECT]            mirror the wikis of its members under wiki/projects/, as one operation,
                             and their threads under threads/projects/
-  describe PROJECT          stage a snapshot of the work; the describe skill writes its page
+  describe PROJECT          stage a snapshot of the work; the wiki-describe skill writes its page
   forget PROJECT            drop a project from the atlas; its atlas/<name>/ folder stays
   open-ide NAME            open the work folder in the preferred IDE
   open-terminal NAME       open a terminal window at the work folder
@@ -1809,7 +1809,7 @@ func (e *env) lint(args []string) (int, error) {
 }
 
 // overlap reports the pages a project's own wiki and the mirrors of its members hold in
-// common, for the wiki-merge skill.
+// common, for the atlas-merge skill.
 func (e *env) overlap(args []string) (int, error) {
 	fs := newFlags("overlap", e.stderr)
 	asJSON := fs.Bool("json", false, "print the report as JSON")

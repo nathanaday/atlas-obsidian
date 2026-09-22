@@ -1,6 +1,6 @@
 // Package describe holds the facts that tie a project's wiki to the work beside it: the
 // page that describes the work, the commit that page was written from, and how far the
-// work has moved since. It reads pages and git and writes nothing; the describe skill
+// work has moved since. It reads pages and git and writes nothing; the wiki-describe skill
 // writes the page, and capture writes the snapshot it cites.
 package describe
 

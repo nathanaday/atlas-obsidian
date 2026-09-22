@@ -1,6 +1,6 @@
 ---
-name: wiki-merge
-description: "Merge the wikis of a project's members into the project's own: find the pages two members wrote about one thing and upgrade them into this wiki, and build bridge pages that join neighbouring pages across members. Use for merge the members, consolidate the wikis, merge the knowledge bases, what overlaps, find duplicates across projects, bridge the vaults, upgrade pages to the parent, adopt a new member's wiki."
+name: atlas-merge
+description: "Merge the wikis of a hub's members into the hub's own: find the pages two members wrote about one thing and upgrade them into the hub, and build bridge pages that join neighbouring pages across members, as one merge the user approves. Use for merge the members, consolidate the wikis, merge the knowledge bases, what overlaps across projects, find duplicates across projects, bridge the vaults, upgrade pages to the parent, adopt a new member's wiki. Duplicates inside one wiki are wiki-review's."
 ---
 
 # Merge the members' wikis
@@ -9,8 +9,11 @@ A hub mirrors its members' wikis under `wiki/projects/<name>/`. Each member
 wrote its pages alone, so two of them hold pages about one thing without
 knowing it, and the overlap is visible only here. This skill finds it cheaply,
 reads only the pages that matter, and proposes one merge the user approves
-before anything is written. Tools: `status`, `project`, `overlap`, `route`,
-`plan`, `apply` on the atlas MCP server.
+before anything is written.
+
+Tools: `status`, `project`, `overlap`, `route`, `plan`, `apply`. Reads
+[operations.md](../wiki/references/operations.md) and
+[provenance.md](../wiki/references/provenance.md).
 
 The merge has two moves:
 
@@ -156,3 +159,8 @@ origin.
 
 `undo` in a project takes back that project's operation; a merge undone here
 leaves the pointers in the members until they are undone there.
+
+## Hand off
+
+`wiki-review` for this wiki's own health after a large merge; `atlas-project`
+to add or remove members.

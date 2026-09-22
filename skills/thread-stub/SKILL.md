@@ -1,15 +1,15 @@
 ---
 name: thread-stub
-description: "Open a thread from a sentence, from a note waiting in the project's inbox, or in another project the atlas lists: a card and a stub in the user's words, no questions asked. Use for add a thread, note this, stub this, remember to, open a thread, report a bug, idea for later, todo, inbox notes, open this in project X."
+description: "Open a thread and stop there: a card and a stub in the user's words, from a sentence, from notes waiting in the project's inbox, or in another project the atlas lists, with no questions asked. Use for add a thread, note this, stub this, remember to, open a thread, report a bug, idea for later, todo, inbox notes, open this in project X. To start the work now, thread-work."
 ---
 
 # Open a thread
 
-Read [threads.md](../wiki/references/threads.md). Tools: `inbox`, `thread`.
-
 A stub is where a thread begins: a short, loose note about an issue, a
 feature, or a chore. It costs nothing. It holds what the user said, as they
 said it; the thinking comes later, in the spec.
+
+Tools: `inbox`, `thread`. Reads [threads.md](../thread/references/threads.md).
 
 ## Three doors, one result
 
@@ -31,6 +31,8 @@ own words and say that you did.
 
 ## Report
 
-Say the title, the id, and the stub's path. When the user wants to go
-further now, hand to `thread-spec`, or to `thread-plan` when the thread is
-small enough to need no spec.
+Say the title, the id, and the stub's path.
+
+## Hand off
+
+`thread-work` when the user wants to go further now; it picks the next stage.
