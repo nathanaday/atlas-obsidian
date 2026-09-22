@@ -185,6 +185,8 @@ type Captured struct {
 	Size            int64  `json:"size"`
 	AlreadyCaptured bool   `json:"already_captured"`
 	Warning         string `json:"warning,omitempty"`
+	// Measure says how big the source is: pages, lines, and a markdown outline.
+	Measure
 }
 
 // Result is one capture operation.
@@ -261,6 +263,11 @@ func captureInto(target *project.Project, srcPath func(rel string) string, resol
 			return nil, fmt.Errorf("%s is %d bytes; capture accepts up to %d", rel, size, MaxFileBytes)
 		}
 		c := Captured{Path: rel, SHA256: sum, Kind: KindOf(rel), Size: size}
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			return nil, err
+		}
+		c.Measure = measure(c.Kind, data)
 		if id, rec := led.FindBySHA(sum); id != "" {
 			c.AlreadyCaptured, c.SourceID, c.StoredPath = true, id, rec.Origin.Locator
 			res.Sources = append(res.Sources, c)
@@ -273,10 +280,6 @@ func captureInto(target *project.Project, srcPath func(rel string) string, resol
 		}
 		if !seen[sum] {
 			seen[sum] = true
-			data, err := os.ReadFile(abs)
-			if err != nil {
-				return nil, err
-			}
 			req.Writes = append(req.Writes, txn.Write{Path: c.StoredPath, Mode: txn.Create, Content: data})
 			update := ledger.Update{
 				ID: c.SourceID, Title: project.PageTitle(rel), Origin: &ledger.Origin{Kind: "file", Locator: c.StoredPath},

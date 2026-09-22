@@ -89,7 +89,8 @@ The wiki (PROJECT is a name, a path, or nothing for the project you are in):
   ingest PROJECT [PATH...]  stage new files into the inbox, then ingest them
   lint [PROJECT]            run the wiki health check
   overlap [PROJECT]         what the wiki and the mirrors of its members hold in common:
-                            --member NAME for one origin, --json, -n N pairs
+                            --member NAME for one origin, --within for one wiki's own
+                            near-duplicates, --json, -n N pairs
   stub PROJECT [TITLE...]   create seed pages for the pages your links name but nobody has written
   history [PROJECT]         list operations, newest first
   undo PROJECT OPERATION    take back one operation
@@ -1814,18 +1815,19 @@ func (e *env) overlap(args []string) (int, error) {
 	asJSON := fs.Bool("json", false, "print the report as JSON")
 	member := fs.String("member", "", "only the pairs, names, and tags that involve this origin")
 	limit := fs.Int("n", 0, "how many pairs, names, and tags at most, each (default 30)")
+	within := fs.Bool("within", false, "also pair pages of one origin with each other")
 	positional, err := parse(fs, args)
 	if err != nil {
 		return 2, nil
 	}
 	if len(positional) > 1 {
-		return 2, errors.New("usage: atlas-obsidian overlap [PROJECT] [--member NAME] [-n N] [--json]")
+		return 2, errors.New("usage: atlas-obsidian overlap [PROJECT] [--member NAME] [--within] [-n N] [--json]")
 	}
 	v, err := e.vaultArg(first(positional))
 	if err != nil {
 		return 1, err
 	}
-	report, err := overlap.Run(v.Atlas(), v.Name(), overlap.Options{Member: *member, Limit: *limit})
+	report, err := overlap.Run(v.Atlas(), v.Name(), overlap.Options{Member: *member, Limit: *limit, Within: *within})
 	if err != nil {
 		return 1, err
 	}

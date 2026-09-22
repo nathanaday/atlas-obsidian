@@ -59,6 +59,9 @@ type Options struct {
 	Member string
 	// Limit bounds each list; zero means DefaultLimit.
 	Limit int
+	// Within compares pages of one origin with each other as well, so one wiki's own
+	// near-duplicates show; without it only pages of two origins pair.
+	Within bool
 }
 
 // Origin is one wiki the hub reads: its own, or a member's mirror.
@@ -182,25 +185,25 @@ func Run(root, hub string, opts Options) (*Report, error) {
 			return nil, fmt.Errorf("no origin named %q; the origins are %s", opts.Member, strings.Join(names, ", "))
 		}
 	}
-	switch {
-	case len(report.Origins) == 0:
-		report.Note = "no pages to compare"
-		return report, nil
-	case len(report.Origins) == 1 && report.Origins[0].Own:
-		report.Note = "no mirrors under " + project.MirrorDir + "/; the project tool's sync action mirrors the members, and overlap compares the pages across them"
-		return report, nil
-	case len(report.Origins) == 1:
-		report.Note = "one origin only: the hub has no pages of its own and mirrors one member, so there is nothing to compare across"
-		return report, nil
-	}
 	withPages := 0
 	for _, o := range report.Origins {
 		if o.Pages > 0 {
 			withPages++
 		}
 	}
-	if withPages < 2 {
-		report.Note = "one origin holds pages, so there is nothing to compare across"
+	switch {
+	case opts.Within && len(ix.docs) < 2:
+		report.Note = "fewer than two pages to compare"
+		return report, nil
+	case opts.Within:
+	case len(report.Origins) == 1 && report.Origins[0].Own:
+		report.Note = "no mirrors under " + project.MirrorDir + "/; the project tool's sync action mirrors the members, and overlap compares the pages across them"
+		return report, nil
+	case len(report.Origins) == 1:
+		report.Note = "one origin only: the hub has no pages of its own and mirrors one member, so there is nothing to compare across"
+		return report, nil
+	case withPages < 2:
+		report.Note = "one origin holds pages, so there is nothing to compare across; within compares the pages of one wiki with each other"
 		return report, nil
 	}
 	pairs, scored := ix.pairs(opts)
@@ -209,7 +212,7 @@ func Run(root, hub string, opts Options) (*Report, error) {
 	report.Tags = append(report.Tags, ix.tags(opts)...)
 	report.Summary.Pairs, report.Summary.Names, report.Summary.Tags = len(report.Pairs), len(report.Names), len(report.Tags)
 	if len(report.Pairs)+len(report.Names)+len(report.Tags) == 0 {
-		report.Note = "no page of one origin looks like a page of another"
+		report.Note = "no page looks like another"
 	}
 	return report, nil
 }
@@ -503,7 +506,7 @@ func (ix *index) pairs(opts Options) ([]Pair, int) {
 	for i, a := range ix.docs {
 		for j := i + 1; j < len(ix.docs); j++ {
 			b := ix.docs[j]
-			if a.origin == b.origin {
+			if a.origin == b.origin && !opts.Within {
 				continue
 			}
 			if filter && a.origin != member && b.origin != member {

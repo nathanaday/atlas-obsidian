@@ -542,3 +542,30 @@ func TestVaultPagesNameKeyAndNear(t *testing.T) {
 		}
 	}
 }
+
+func TestUncitedListsContentPagesWithoutASource(t *testing.T) {
+	src := "---\ntitle: Paper\ntype: source\nstatus: seed\ncreated: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - x\n---\n# Paper\n\ntext\n"
+	root := fixture(t, map[string]string{
+		"wiki/index.md":            mkpage("Index", "# Index\n\n- [[Cited]]\n- [[Listed]]\n- [[Bare]]\n- [[Paper]]\n- [[Seed]]\n"),
+		"wiki/sources/Paper.md":    src,
+		"wiki/concepts/Cited.md":   mkpage("Cited", "# Cited\n\nFrom [[Paper]].\n"),
+		"wiki/concepts/Listed.md":  strings.Replace(mkpage("Listed", "# Listed\n\ntext\n"), "tags:", "sources:\n  - \"[[Paper]]\"\ntags:", 1),
+		"wiki/concepts/Bare.md":    mkpage("Bare", "# Bare\n\nA claim with no source. See [[Cited]].\n"),
+		"wiki/concepts/Seed.md":    strings.Replace(mkpage("Seed", "# Seed\n"), "status: seed", "status: seed", 1),
+		"wiki/projects/m/Other.md": mkpage("Other", "# Other\n\nMirrored, not ours.\n"),
+	})
+	r, err := Run(root, Options{AsOf: time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range r.Uncited {
+		got = append(got, f.Path)
+	}
+	if strings.Join(got, ",") != "wiki/concepts/Bare.md" || r.Summary.Uncited != 1 {
+		t.Fatalf("uncited %v, summary %d", got, r.Summary.Uncited)
+	}
+	if !strings.Contains(r.Markdown(), "## Uncited") {
+		t.Fatalf("markdown:\n%s", r.Markdown())
+	}
+}

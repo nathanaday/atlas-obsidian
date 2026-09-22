@@ -867,6 +867,7 @@ func (s *Server) lint(ctx context.Context, req *mcp.CallToolRequest, a LintArgs)
 type OverlapArgs struct {
 	Member string `json:"member,omitempty" jsonschema:"only the pairs, names, and tags that involve this origin: a mirror's folder name under wiki/projects/, or this project's own name"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"how many pairs, names, and tags at most, each (default 30)"`
+	Within bool   `json:"within,omitempty" jsonschema:"also pair pages of one origin with each other: the near-duplicates inside one wiki, for the wiki-review skill; works in a project with no members"`
 }
 
 // OverlapOut is the overlap report with a next line for the model.
@@ -883,7 +884,7 @@ func (s *Server) overlap(ctx context.Context, req *mcp.CallToolRequest, a Overla
 	if err != nil {
 		return nil, OverlapOut{}, err
 	}
-	report, err := overlap.Run(p.Atlas(), p.Name(), overlap.Options{Member: a.Member, Limit: a.Limit})
+	report, err := overlap.Run(p.Atlas(), p.Name(), overlap.Options{Member: a.Member, Limit: a.Limit, Within: a.Within})
 	if err != nil {
 		return nil, OverlapOut{}, err
 	}

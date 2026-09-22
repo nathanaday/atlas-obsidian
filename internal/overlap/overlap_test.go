@@ -250,3 +250,30 @@ func must(r *Report, err error) *Report {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+func TestWithinComparesOneWikisOwnPages(t *testing.T) {
+	root := fixture(t, map[string]string{
+		"wiki/index.md":             page("Index", "meta", "", "", "- [[Linux]]\n"),
+		"wiki/concepts/Linux.md":    page("Linux", "concept", "", "", os1),
+		"wiki/concepts/Linux OS.md": page("Linux OS", "concept", "", "", os1),
+		"wiki/concepts/Gradient.md": page("Gradient", "concept", "", "", "Slopes and descent.\n"),
+	})
+	r, err := Run(root, "solo", Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Pairs) != 0 || !strings.Contains(r.Note, "no mirrors") {
+		t.Fatalf("without within: %+v", r)
+	}
+	r, err = Run(root, "solo", Options{Within: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Pairs) == 0 || r.Note != "" {
+		t.Fatalf("within: %+v", r)
+	}
+	p := r.Pairs[0]
+	if p.A.Path != "wiki/concepts/Linux OS.md" || p.B.Path != "wiki/concepts/Linux.md" || p.Kind != Duplicate || p.A.Origin != "solo" || p.B.Origin != "solo" {
+		t.Fatalf("pair %+v", p)
+	}
+}

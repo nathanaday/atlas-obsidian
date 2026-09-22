@@ -1,11 +1,13 @@
 package describe
 
 import (
+	"bytes"
 	"fmt"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -28,6 +30,13 @@ const MaxLoggedCommits = 200
 
 // MaxWalkedFiles bounds the walk of a work folder that is not a repository.
 const MaxWalkedFiles = 20000
+
+// MaxMarkers bounds the TODO, FIXME, XXX, and HACK lines a snapshot lists, and
+// MaxMarkerFileBytes the size of a file it reads for them.
+const (
+	MaxMarkers         = 200
+	MaxMarkerFileBytes = 1 << 20
+)
 
 // Snapshot is what the atlas captures of a project: a small markdown file, written at
 // one commit when the work is a repository, that a page about the project can cite. The
@@ -122,6 +131,16 @@ func TakeSnapshot(e registry.Entry, since string, now time.Time) (*Snapshot, err
 			b.WriteString("- " + d + "\n")
 		}
 	}
+	if marks, more := markers(e.Path, files); len(marks) > 0 {
+		b.WriteString("\n## Markers\n\n")
+		b.WriteString("Lines in the work that mark unfinished work: TODO, FIXME, XXX, HACK. The onboarding gathers them into threads.\n\n")
+		for _, m := range marks {
+			b.WriteString("- " + m + "\n")
+		}
+		if more {
+			fmt.Fprintf(&b, "\nThe list stops at %d markers.\n", MaxMarkers)
+		}
+	}
 	if s.Since != "" {
 		if log, err := git.LogStat(s.Since, MaxLoggedCommits, skip...); err == nil && strings.TrimSpace(log) != "" {
 			fmt.Fprintf(&b, "\n## Changes since %s\n\n```text\n%s```\n", s.Since[:min(7, len(s.Since))], log)
@@ -129,6 +148,40 @@ func TakeSnapshot(e registry.Entry, since string, now time.Time) (*Snapshot, err
 	}
 	s.Content = []byte(b.String())
 	return s, nil
+}
+
+var marker = regexp.MustCompile(`\b(TODO|FIXME|XXX|HACK)\b`)
+
+// markers lists the lines of the work's text files that carry a marker, as path:line:
+// text, in file order. It reads files up to MaxMarkerFileBytes, skips binary ones, and
+// stops at MaxMarkers, saying so.
+func markers(root string, files []string) ([]string, bool) {
+	var out []string
+	for _, f := range files {
+		full := filepath.Join(root, filepath.FromSlash(f))
+		info, err := os.Stat(full)
+		if err != nil || !info.Mode().IsRegular() || info.Size() > MaxMarkerFileBytes {
+			continue
+		}
+		data, err := os.ReadFile(full)
+		if err != nil || bytes.IndexByte(data[:min(len(data), 8000)], 0) >= 0 {
+			continue
+		}
+		for i, line := range strings.Split(string(data), "\n") {
+			if !marker.MatchString(line) {
+				continue
+			}
+			if len(out) == MaxMarkers {
+				return out, true
+			}
+			text := strings.TrimSpace(line)
+			if r := []rune(text); len(r) > 160 {
+				text = string(r[:160]) + "…"
+			}
+			out = append(out, fmt.Sprintf("%s:%d: %s", f, i+1, text))
+		}
+	}
+	return out, false
 }
 
 func snapshotTitle(s *Snapshot) string {

@@ -221,3 +221,24 @@ func TestTheProjectsOwnFolderIsNotTheWork(t *testing.T) {
 		t.Fatalf("the snapshot leaves the project's folder out:\n%s", text)
 	}
 }
+
+func TestSnapshotListsTheMarkersOfUnfinishedWork(t *testing.T) {
+	work := filepath.Join(t.TempDir(), "app")
+	os.MkdirAll(filepath.Join(work, "src"), 0o755)
+	os.WriteFile(filepath.Join(work, "src", "main.go"), []byte("package main\n\n// TODO: retry on timeout\nfunc main() {} // FIXME(nate) leaks\n// a todo in lower case is prose\n"), 0o644)
+	os.WriteFile(filepath.Join(work, "logo.png"), []byte("PNG\x00TODO"), 0o644)
+	os.WriteFile(filepath.Join(work, "NOTES.md"), []byte("XXX decide the schema\n"), 0o644)
+	s, err := TakeSnapshot(registry.Entry{ID: "p-9", Name: "app", Path: work}, "", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(s.Content)
+	for _, want := range []string{"## Markers", "- NOTES.md:1: XXX decide the schema", "- src/main.go:3: // TODO: retry on timeout", "- src/main.go:4: func main() {} // FIXME(nate) leaks"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "logo.png:") || strings.Contains(text, "lower case") {
+		t.Errorf("a binary file or prose was listed:\n%s", text)
+	}
+}

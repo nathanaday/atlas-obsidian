@@ -101,6 +101,7 @@ type Summary struct {
 	IssuesFound    int            `json:"issues_found"`
 	WantedPages    int            `json:"wanted_pages"`
 	Stubs          int            `json:"stubs"`
+	Uncited        int            `json:"uncited"`
 	CategoryCounts map[string]int `json:"category_counts"`
 }
 
@@ -122,6 +123,9 @@ type Report struct {
 	MirrorErrors       []PathFinding        `json:"mirror_errors"`
 	WantedPages        []WantedPage         `json:"wanted_pages"`
 	Stubs              []Stub               `json:"stubs"`
+	// Uncited are content pages that cite no source: no sources property and no link
+	// to a source page. A signal for review, not a finding.
+	Uncited []PathFinding `json:"uncited"`
 }
 
 type page struct {
@@ -265,6 +269,7 @@ func Run(root string, opts Options) (*Report, error) {
 		incoming[pg.path] = map[string]bool{}
 	}
 	links := 0
+	cites := map[string]bool{}
 	for _, pg := range pages {
 		for _, l := range pg.links {
 			links++
@@ -300,6 +305,9 @@ func Run(root string, opts Options) (*Report, error) {
 				continue
 			}
 			c := candidates[0]
+			if sourceTarget(c) {
+				cites[l.source] = true
+			}
 			if _, ok := incoming[c.path]; ok && c.path != l.source {
 				incoming[c.path][l.source] = true
 			}
@@ -385,11 +393,17 @@ func Run(root string, opts Options) (*Report, error) {
 		}
 	}
 
+	for _, pg := range pages {
+		if uncited(pg, stubs[pg.path], cites[pg.path]) {
+			report.Uncited = append(report.Uncited, PathFinding{Path: pg.path})
+		}
+	}
+
 	report.LedgerErrors = ledgerErrors(root, opts.Overlay, present, asOf)
 	report.MirrorErrors = mirrorErrors(root, opts.Overlay, present)
 
 	sortFindings(report)
-	report.Summary = Summary{PagesScanned: len(pages), LinksScanned: links, WantedPages: len(report.WantedPages), Stubs: len(report.Stubs), CategoryCounts: map[string]int{
+	report.Summary = Summary{PagesScanned: len(pages), LinksScanned: links, WantedPages: len(report.WantedPages), Stubs: len(report.Stubs), Uncited: len(report.Uncited), CategoryCounts: map[string]int{
 		"dead_links":          len(report.DeadLinks),
 		"ambiguous_targets":   len(report.AmbiguousTargets),
 		"duplicate_basenames": len(report.DuplicateBasenames),
@@ -968,6 +982,30 @@ func stubOf(pg *page, incoming map[string]bool) (Stub, bool) {
 	return Stub{Path: pg.path, Empty: empty, LinkedFrom: from}, true
 }
 
+// sourceTarget says whether a link lands on evidence: a source page, a page in a sources
+// folder, or a captured file.
+func sourceTarget(t target) bool {
+	if t.page != nil && project.StringField(t.page.fields, "type") == "source" {
+		return true
+	}
+	return strings.Contains("/"+t.path, "/sources/") || strings.HasPrefix(t.path, project.CapturedDir+"/")
+}
+
+// uncitedExempt are the page types that carry no claims of their own to cite.
+var uncitedExempt = map[string]bool{"source": true, "meta": true, "fold": true, "moc": true, "overview": true}
+
+// uncited says whether a content page cites no source: it names none in its sources
+// property and links no source page. Stubs, mirrors, and navigation pages are exempt.
+func uncited(pg *page, stub, cites bool) bool {
+	if cites || stub || pg.mirrored || pg.frontErr != nil || !orphanCandidate(pg.path) || pg.isIndex || pg.isMOC {
+		return false
+	}
+	if uncitedExempt[project.StringField(pg.fields, "type")] {
+		return false
+	}
+	return len(project.StringList(pg.fields, "sources")) == 0
+}
+
 // bodyEmpty reports whether a page holds nothing below its frontmatter but headings, block
 // ids, comments, and whitespace.
 func bodyEmpty(pg *page) bool {
@@ -1134,6 +1172,9 @@ func (r *Report) fillEmpty() {
 	if r.WantedPages == nil {
 		r.WantedPages = []WantedPage{}
 	}
+	if r.Uncited == nil {
+		r.Uncited = []PathFinding{}
+	}
 	if r.Stubs == nil {
 		r.Stubs = []Stub{}
 	}
@@ -1209,6 +1250,13 @@ func (r *Report) Markdown() string {
 			refs = append(refs, fmt.Sprintf("`%s:%d`", l.Source, l.Line))
 		}
 		fmt.Fprintf(&b, "- %s ← %s\n", w.Title, strings.Join(refs, ", "))
+	}
+	section("Uncited", len(r.Uncited))
+	if len(r.Uncited) > 0 {
+		b.WriteString("Pages that cite no source. Not findings; the wiki-review skill weighs them.\n\n")
+	}
+	for _, f := range r.Uncited {
+		fmt.Fprintf(&b, "- `%s`\n", f.Path)
 	}
 	section("Stubs to fill", len(r.Stubs))
 	if len(r.Stubs) > 0 {
