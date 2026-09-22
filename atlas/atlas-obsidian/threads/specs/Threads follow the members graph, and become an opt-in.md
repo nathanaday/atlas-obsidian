@@ -6,8 +6,8 @@ created: 2026-09-22
 ---
 
 > [!spec] Threads follow the members graph, and become an opt-in
-> [Stub](<../stubs/Threads follow the members graph, and become an opt-in.md>) → **Spec** → [Plan](<../plans/Threads follow the members graph, and become an opt-in.md>) → Receipt
-> `thr-20260922-370b` · [Thread](<../Threads follow the members graph, and become an opt-in.md>) · filed 2026-09-22
+> [Stub](<../stubs/Threads follow the members graph, and become an opt-in.md>) → **Spec** → [Plan](<../plans/Threads follow the members graph, and become an opt-in.md>) → [Receipt](<../receipts/Threads follow the members graph, and become an opt-in.md>)
+> `thr-20260922-370b` · [Thread](<../archive/Threads follow the members graph, and become an opt-in.md>) · filed 2026-09-22
 
 ## What will be true
 
