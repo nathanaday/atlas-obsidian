@@ -66,6 +66,8 @@ answer; do not retry with a guess.
   count, and the counts and the commit when something changed. Nothing new
   means no commit. Run it after adding or removing a member; the session-start
   hook runs it too. A mirrored page is changed in its own project, never here.
+  After the first sync of a new member, offer `wiki-merge`: it finds what the
+  members' wikis hold in common and proposes what to upgrade into this wiki.
 - Forget: `project` with `action: forget`. The work folder and its
   `atlas/<name>/` stay. Deleting `atlas/<name>/` is how a project ends, and
   that is the user's to do by hand.

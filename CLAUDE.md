@@ -80,7 +80,7 @@ may write:
 Three carriers, and a new capability splits across them rather than picking one.
 
 1. A tool is a fact or a commit. Code owns whatever two correct runs must
-   answer the same way (`status`, `route`, `threads`, `history`, `lint`) and
+   answer the same way (`status`, `route`, `threads`, `history`, `lint`, `overlap`) and
    every path that changes bytes (`capture`, `plan`, `apply`, `undo`,
    `thread`, `phase`, `stub`, `project`). No tool writes prose; `thread` files
    the text the model gives it.
@@ -135,7 +135,8 @@ internal/describe/      the page in the wiki that describes the work, how far th
 internal/capture/       inbox listing with a hint per file, staging into inbox/ (files, and the work's snapshot), capture into .raw/captured/
 internal/ledger/        the source ledger
 internal/lint/          the health check, and the link resolver the mirror shares
-internal/mirror/        members: the closure of a project's members, the transform of both halves, sync (the wiki as one operation, the threads as files), and FindThread
+internal/mirror/        members: the closure of a project's members, the transform of both halves, sync (the wiki as one operation, the threads as files), FindThread, and the redirect of a page that moved into the hub
+internal/overlap/       what a hub's origins hold in common: the pages scored by name, content, and links; the shared names and tags; the report the wiki-merge skill reads
 internal/mcpserver/     the tools, thin over the packages above
 internal/hooks/         session-start (the project, its wiki, the page that describes the work, the open threads, the inbox, and hot.md), guard, touched, stop
 internal/claudecode/    Claude Code's plugin registry, `claude plugin`, launching claude in the work
@@ -248,6 +249,12 @@ claude-atlas or claude-obsidian name any more, and the schemas restarted at
   the pages nearest the link (`preferNear`). The session-start hook syncs a
   project with members; `refresh` does not, because refresh writes nothing
   git tracks.
+- A merge writes a member only as the member's own operation: `plan` takes
+  `project`, and the `merge` kind writes under `wiki/` like a save. The pointer
+  it leaves (`moved_to`, `moved_to_project`) is the one member page a hub
+  reads differently: `mirror.movedInto` skips it and sends every link to it to
+  the hub's page. `overlap` compares the hub's own pages and its mirrors as
+  they sit on disk, never the members' working trees, so it needs no config.
 - A kind bounds a plan's writes (`txn.allowed`), and every model kind writes
   only under `wiki/`, and never under `wiki/projects/`, which only `sync`
   writes. Reserved: `wiki/log.md`, the source ledger, `project.json`,

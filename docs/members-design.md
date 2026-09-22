@@ -218,9 +218,78 @@ skills, is left for later.
 | A hand-made file in a mirror | removed at the next sync; the guard makes it rare |
 | The opt-in key | `threads: true`; absent means off; a future model adds its own key |
 
+## Merge: what two members wrote about one thing
+
+Added 2026-09-22, with 5.5.0. Each member wrote its pages alone, so two of
+them hold pages about one thing without knowing it: cs513-course's "CS513
+Course Project" and cs513-project's "cs513-project" describe one group
+project, and neither links the other. The overlap is visible only from the
+hub. Reading every mirrored page into a session to look for it costs more
+than it finds, so the finding is code and the deciding is the model.
+
+**`overlap` is the finding.** A read-only tool and command over the hub's
+wiki as it sits on disk: its own pages are one origin, each mirror another.
+It reads the pages as lint reads them (`lint.Vault.Pages`), tokenizes each
+into a TF-IDF vector with the title, aliases, and headings weighted, and
+scores every pair of pages from two origins three ways: name (equal once
+reduced to letters and digits, or a typing distance apart), content (the
+cosine of the vectors), and links (the Jaccard index of the names each page
+links). A pair appears when a name matches, the content cosine reaches 0.2,
+or a quarter of the link names coincide; it is a `duplicate` at a matching
+name or a cosine of 0.6, `related` otherwise. Each pair carries its evidence
+(the terms and the link names both share) and whether a hub page already
+settles it: one named like either page, or one that links both. The report
+also lists the link names two or more origins share that resolve to no hub
+page, or to a different page in each origin, and the tags they share. It is
+bounded (thirty of each by default), deterministic (term ids follow the
+alphabet, ties break by path), and needs no config: the mirror is what the
+hub sees. `member` narrows it to one origin, for a member adopted into a hub
+that merged before.
+
+**`wiki-merge` is the deciding.** The skill reads the report, then only the
+pages the candidates name, and proposes one merge in one message: pages to
+upgrade, bridges to build, candidates to leave, each with a reason. Two
+moves:
+
+- An **upgrade** writes one page in the hub from the member versions, citing
+  the members' source pages through the mirror, and leaves a **pointer** in
+  each member: the same file, its frontmatter gaining `moved_to` (the path
+  in the hub) and `moved_to_project` (the hub's id), its body one line. The
+  member's links to it still resolve.
+- A **bridge** is a new hub page that links the pages it joins. Nothing in a
+  member changes.
+
+**A member changes only as its own operation.** `plan` takes `project`, as
+the thread tools do, and the kind `merge` writes under `wiki/` like a save.
+The skill plans the pointers in each member, shows the preview, applies
+there, then plans the hub's pages and applies here, then syncs. Two
+repositories are two commits whatever wraps them, and the user sees each.
+This is the one write into a member the design allows, and principle 2 now
+reads: sync never writes a member; a merge writes one only as that member's
+own reviewed operation.
+
+**Sync honours the pointer.** A member page whose `moved_to_project` is this
+hub and whose `moved_to` names a page the hub holds is not mirrored, and
+every member link that resolves to it is rewritten to the hub's page
+(`mirror.movedInto`). In the hub the graph has one page for the thing, and
+every member's link lands on it. A pointer that names another hub, or a page
+the hub does not hold, is mirrored as written. `overlap` leaves a moved page
+out, so a settled upgrade never comes back as a candidate.
+
+| Question | Decision |
+|---|---|
+| Delete the member page or leave a pointer | a pointer: deleting breaks every link to it and asks the model to rewrite each page that linked it; the pointer keeps the member's graph whole with one write and becomes a redirect in the hub |
+| Compare the mirrors or the members' working trees | the mirrors: what the hub sees, kept current by sync, no config needed |
+| The similarity measures | TF-IDF cosine, lint's name key and edit distance, Jaccard over link names: small, standard, in the binary; an embedding model is a dependency and a network call for a gain the report does not need yet |
+| One merge tool that writes both repositories, or `project` on `plan` | `project` on `plan`: the same reviewed operation the user knows, one commit per repository, each previewed |
+| Where the thresholds live | constants in `overlap`, tuned on a real hub; the report keeps every score so the model can disagree |
+
 ## Left for later
 
 - A derived "cited by" callout on a member's page, written by the member's
   own hook, if a member should ever learn which hubs link to it.
 - Copying captured sources into the hub, if a citation that cannot be opened
   from the hub turns out to matter.
+- A posting-list cut in `overlap` (compare only pages that share a term), if
+  a hub past a few thousand pages makes the all-pairs loop slow.
+- Overlapping threads across members.

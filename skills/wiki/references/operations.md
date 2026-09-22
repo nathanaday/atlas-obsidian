@@ -24,6 +24,7 @@ project and its one wiki. None takes a vault argument.
 | `undo` | take back an applied operation |
 | `history` | recent operations |
 | `lint` | the health check |
+| `overlap` | what this wiki and the mirrors of its members hold in common: duplicate and related pairs, shared link names, shared tags; read-only |
 | `stub` | seed a page for every wanted link, or for `titles[]` (each `title` and `type`); `type` sets the default for titles that name none |
 | `stage` | copy files from outside into `inbox/`, or with `snapshot` write a snapshot of the work there |
 | `project` | the project's own facts: name, description, filing mode |
@@ -53,6 +54,9 @@ project and its one wiki. None takes a vault argument.
    given it must match the file as you read it; when omitted the plan pins the
    file as it is now. Either way, apply refuses if the file changes afterwards.
 
+   `project` names another project the atlas lists; the plan is then made and
+   applied there, as that project's own operation. Only `wiki-merge` uses it.
+
 4. Show the user the preview and warnings. Warnings name links that do not
    resolve, empty sections, and new pages that no index or MOC links to. Fix
    what you can with a new plan, or explain why the warning is acceptable.
@@ -69,6 +73,7 @@ The kind bounds what a plan may write. The core rejects anything outside it.
 |---|---|
 | `ingest` | `wiki/**`; may also `delete` a file under `inbox/` once it is captured |
 | `save`, `markdown`, `repair`, `fold` | `wiki/**` |
+| `merge` | `wiki/**`, in this project or, with `project` on `plan`, in a member: the pointer an upgraded page leaves behind |
 | `stub` | `wiki/**`, only through the `stub` tool; `plan` refuses this kind |
 | `canvas` | `wiki/canvases/**/*.canvas` and `wiki/canvases/canvases.md` |
 | `base` | `wiki/**/*.base` |
@@ -95,6 +100,8 @@ it).
 - Fold: the fold page and the index.
 - Canvas: the canvas, plus its catalog only when the catalog changes.
 - Repair: the approved fixes only.
+- Merge: in a member, the pointers only; here, the upgraded pages, the
+  bridges, the index or MOC, the hot cache.
 - Query: nothing. Persistence is a separate `save`.
 
 ## Failure behavior

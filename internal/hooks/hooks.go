@@ -30,7 +30,7 @@ import (
 const MaxContextBytes = 8 * 1024
 
 // Skills names the workflows without assuming a host's invocation syntax.
-const Skills = "wiki  wiki-ingest  wiki-query  wiki-lint  wiki-mode  wiki-fold  save  describe  work  thread  thread-stub  thread-spec  thread-plan  thread-run  thread-receipt  canvas  obsidian-markdown  obsidian-bases  think  atlas  atlas-project"
+const Skills = "wiki  wiki-ingest  wiki-query  wiki-lint  wiki-merge  wiki-mode  wiki-fold  save  describe  work  thread  thread-stub  thread-spec  thread-plan  thread-run  thread-receipt  canvas  obsidian-markdown  obsidian-bases  think  atlas  atlas-project"
 
 // MaxThreadLines bounds how many open threads the session start lists.
 const MaxThreadLines = 8

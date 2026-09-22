@@ -165,7 +165,9 @@ The mirrors are derived: sync rewrites them as one operation, the guard refuses
 edits there, and a member never knows it is listed. The members' threads come
 along too, under `threads/projects/<name>/`, and the hub's board shows every
 open thread in the ecosystem; a change to a member's thread, made from the hub,
-lands in the member. The design and its reasons:
+lands in the member. When two members wrote about one thing, `overlap` finds
+the pair and `/atlas-obsidian:wiki-merge` proposes the page that replaces
+both, or a bridge between them. The design and its reasons:
 [docs/members-design.md](docs/members-design.md).
 
 ## Seeing every project

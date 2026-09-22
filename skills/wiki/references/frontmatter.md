@@ -63,6 +63,10 @@ commit: fc70d93a…               # the commit the page was written from, in ful
 # note (lyt)
 mocs:
   - "[[Map of Content]]"
+
+# a member page whose content a merge moved into a hub (wiki-merge)
+moved_to: wiki/concepts/Operating systems.md   # the page's path in the hub
+moved_to_project: 5e55ba2b-…                   # the hub's id; that hub mirrors the page no more
 ```
 
 ## Rules

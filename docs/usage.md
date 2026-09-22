@@ -32,6 +32,7 @@ one tool from a Claude Code session, so scripts, muscle memory, and the
 | — | `config new-days N` | `settings` |
 | — | `stub PROJECT [TITLE...]` | `stub` |
 | — | `lint`, `history`, `undo`, `recover`, `apply` | `lint`, `history`, `undo` |
+| — | `overlap [PROJECT]` | `overlap`, then the `wiki-merge` skill |
 | — | `setup`, `doctor`, `info`, `version` | — |
 
 ## One thing
@@ -144,6 +145,32 @@ the end. These are plain files, not an operation. A thread named on the hub,
 by id or title, may belong to a member: `thread PROJECT file|set|close|reopen`
 and the `thread` tool find the owner, make the change there, and bring the
 mirror up to date. `threads` on a hub lists the member boards after its own.
+
+### Merge the members' wikis
+
+Two members write about one thing without knowing it, and only the hub sees
+both. `overlap` finds the candidates without reading the wiki into a session:
+
+```bash
+atlas-obsidian overlap usc-f26
+atlas-obsidian overlap usc-f26 --member cs513-project   # only pairs that involve one origin
+atlas-obsidian overlap usc-f26 --json -n 10
+```
+
+It reads the hub's own pages and every mirror, scores each pair of pages from
+two origins by name, by content, and by the names they link, and reports the
+pairs that look like one thing (`duplicate`) or like neighbours (`related`),
+the link names two origins share, and the tags they share, each with its
+evidence and whether a page in the hub already covers it. The report is
+deterministic and bounded.
+
+The `wiki-merge` skill reads it, reads only the pages it names, and proposes
+one merge: pages to **upgrade** into the hub, one page each written from the
+member versions, and **bridge** pages that join neighbouring pages across
+members. Each upgraded member page becomes a pointer, `moved_to` and
+`moved_to_project` in its frontmatter, written as that member's own `merge`
+operation; the hub's pages are one `merge` operation there. The next sync
+mirrors a moved page no more and sends every link to it to the hub's page.
 
 **A moved project heals itself.** The config holds the work folder's path.
 Move the folder, then start a session in it: the hook finds the project's id
@@ -306,6 +333,7 @@ In the session, the skills are on the slash menu:
 | `/atlas-obsidian:wiki-query` | answer from the wiki, with citations |
 | `/atlas-obsidian:save` | keep an answer or decision as a page |
 | `/atlas-obsidian:wiki-lint` | check the wiki's health |
+| `/atlas-obsidian:wiki-merge` | find what the members' wikis hold in common; upgrade pages into this wiki and build bridges |
 | `/atlas-obsidian:wiki-mode` | read or change the filing mode |
 | `/atlas-obsidian:wiki-fold` | roll up log entries |
 | `/atlas-obsidian:canvas` | create and update Obsidian Canvas boards |
@@ -317,8 +345,8 @@ In the session, the skills are on the slash menu:
 
 Claude shows a preview of every change to the wiki before it applies it. Each
 applied change is one git commit. Every tool acts on this session's project;
-`threads`, `thread`, `phase`, and `stage` take `project` to reach another
-project the atlas lists.
+`threads`, `thread`, `phase`, `stage`, and `plan` take `project` to reach
+another project the atlas lists.
 
 ## Ingest sources
 

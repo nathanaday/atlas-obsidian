@@ -70,6 +70,7 @@ a stage folder; the `thread`, `phase`, and `project` tools make those changes.
 | Answer from what the wiki already holds | `wiki-query` |
 | Keep a specific answer, decision, or insight | `save` |
 | Check the wiki's health | `wiki-lint` |
+| Merge the members' wikis into this one: find what they hold in common, upgrade pages, build bridges | `wiki-merge` |
 | Read or change the filing mode | `wiki-mode` |
 | Roll up log entries | `wiki-fold` |
 | Describe the work in the project's own wiki, or bring its page up to date | `describe` |
@@ -90,8 +91,9 @@ a stage folder; the `thread`, `phase`, and `project` tools make those changes.
 Query is read-only. Keeping an answer is a separate `save` operation the user
 asks for. Never update the hot cache merely because a session ended.
 
-Every tool acts on this session's project. The thread tools take `project` to
-reach another project the atlas lists; the `atlas` tool names them.
+Every tool acts on this session's project. The thread tools, and `plan` for
+`wiki-merge`, take `project` to reach another project the atlas lists; the
+`atlas` tool names them.
 
 ## The operation contract
 
