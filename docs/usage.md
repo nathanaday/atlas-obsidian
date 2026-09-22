@@ -448,8 +448,8 @@ job.
 
 | Key | What it does |
 |---|---|
-| `↑` `↓` `←` `→` | select the nearest project that way |
-| Tab, Shift+Tab | select the next project, the previous |
+| `→` `↓` Tab | the next project along the map |
+| `←` `↑` Shift+Tab | the previous one |
 | Shift+arrows | nudge the selected project; the map answers |
 | Enter | open the selected project's card; again to close it |
 | `/` | find a project by name; Enter keeps the match, Esc goes back |
@@ -465,6 +465,11 @@ job.
 | `q` | quit |
 
 The map fits the screen at any size and again when the terminal resizes.
+
+The arrows walk one path through the map: it starts at the leftmost project and
+always goes to the nearest project not visited yet, so every project is
+reached once and each step is a short hop. `→` walks it forward, `←` walks it
+back, and both wrap at the ends. `/` jumps to a project by name as you type.
 
 ```bash
 atlas-obsidian

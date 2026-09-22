@@ -65,13 +65,16 @@ func entriesOf(items []Item) []registry.Entry {
 	return out
 }
 
-// sized is a view at a known size with its map settled.
+// sized is a view at a known size with its map settled through its own ticks.
 func sized(items []Item, opener Opener, acts actions.Atlas) view {
 	v := newView(items, opener, acts)
 	next, _ := v.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	v = next.(view)
-	v.graph.settle()
-	v.ticking = false
+	v.ticking = true
+	for i := 0; i < 2000 && v.ticking; i++ {
+		next, _ = v.Update(tickMsg(time.Now()))
+		v = next.(view)
+	}
 	return v
 }
 
@@ -206,43 +209,37 @@ func TestTheSelectionLightsItsNeighbors(t *testing.T) {
 	}
 }
 
-func TestArrowsTabAndFindMoveTheSelection(t *testing.T) {
+func TestArrowsWalkTheMapAndFindJumps(t *testing.T) {
 	v := sized(sample(), Opener{}, actions.Atlas{})
-	if selectedName(v) != "firmware" {
-		t.Fatalf("the first by name is selected: %s", selectedName(v))
+	order := v.graph.tour()
+	if v.sel != order[0] {
+		t.Fatalf("the walk starts at the leftmost project: %s", selectedName(v))
 	}
-	v = pressV(v, tea.KeyTab)
-	if selectedName(v) != "gateway" {
-		t.Fatalf("Tab: %s", selectedName(v))
-	}
-	v = pressV(v, tea.KeyShiftTab, tea.KeyShiftTab)
-	if selectedName(v) != "webapp" {
-		t.Fatalf("Shift+Tab wraps: %s", selectedName(v))
-	}
-	// An arrow moves to the nearest node that way, and stays put with none there.
-	from := v.sel
-	moved := false
-	for _, k := range []tea.KeyType{tea.KeyUp, tea.KeyDown, tea.KeyLeft, tea.KeyRight} {
-		w := pressV(v, k)
-		if w.sel != from {
-			moved = true
-			// The chosen node lies in that direction.
-			a, b := v.graph.nodes[from], w.graph.nodes[w.sel]
-			switch k {
-			case tea.KeyUp:
-				if b.y >= a.y {
-					t.Fatal("up went down")
-				}
-			case tea.KeyRight:
-				if b.x <= a.x {
-					t.Fatal("right went left")
-				}
-			}
+	// Right visits every project once, in the tour's order, then wraps.
+	for i := 1; i < len(order); i++ {
+		v = pressV(v, tea.KeyRight)
+		if v.sel != order[i] {
+			t.Fatalf("step %d: %s", i, selectedName(v))
 		}
 	}
-	if !moved {
-		t.Fatal("no arrow moved the selection")
+	v = pressV(v, tea.KeyRight)
+	if v.sel != order[0] {
+		t.Fatal("right wraps to the start")
 	}
+	// Left walks back the same path; Tab and the vertical arrows are the same keys.
+	v = pressV(v, tea.KeyLeft)
+	if v.sel != order[len(order)-1] {
+		t.Fatal("left wraps to the end")
+	}
+	v = pressV(v, tea.KeyLeft, tea.KeyUp, tea.KeyShiftTab)
+	if v.sel != order[len(order)-4] {
+		t.Fatalf("back three: %s", selectedName(v))
+	}
+	v = pressV(v, tea.KeyTab, tea.KeyDown)
+	if v.sel != order[len(order)-2] {
+		t.Fatalf("forward two: %s", selectedName(v))
+	}
+	v = selectName(t, v, "webapp")
 	v = keyV(v, "/")
 	if v.find == nil {
 		t.Fatal("/ opens find")

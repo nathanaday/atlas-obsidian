@@ -2,6 +2,7 @@ package tui
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/nathanaday/atlas-obsidian/internal/registry"
@@ -67,27 +68,39 @@ func TestTheLayoutSettlesAndIsTheSameTwice(t *testing.T) {
 	}
 }
 
-func TestNearestPicksByDirection(t *testing.T) {
-	g := &graph{nodes: []node{{name: "o"}, {name: "right", x: 10}, {name: "up", y: -10}, {name: "far right", x: 30}}}
-	if got := g.nearest(0, 1, 0); g.nodes[got].name != "right" {
-		t.Fatalf("right: %s", g.nodes[got].name)
+func TestTheTourVisitsEveryNodeOnceByShortHops(t *testing.T) {
+	g := &graph{nodes: []node{{name: "far right", x: 30}, {name: "left", x: -20}, {name: "mid", x: 0}, {name: "up", x: 1, y: -8}}}
+	order := g.tour()
+	var names []string
+	for _, i := range order {
+		names = append(names, g.nodes[i].name)
 	}
-	if got := g.nearest(0, 0, -1); g.nodes[got].name != "up" {
-		t.Fatalf("up: %s", g.nodes[got].name)
+	if strings.Join(names, ",") != "left,mid,up,far right" {
+		t.Fatalf("tour %v", names)
 	}
-	if got := g.nearest(0, -1, 0); got != 0 {
-		t.Fatalf("nothing to the left stays: %d", got)
+	// Forward wraps from the last to the first, and back from the first to the last.
+	if g.along(order[3], 1) != order[0] || g.along(order[0], -1) != order[3] {
+		t.Fatal("wrap")
 	}
-	if got := g.nearest(1, 1, 0); g.nodes[got].name != "far right" {
-		t.Fatalf("from right, right: %s", g.nodes[got].name)
+	if g.along(order[1], 1) != order[2] || g.along(order[2], -1) != order[1] {
+		t.Fatal("steps")
+	}
+	if (&graph{}).along(0, 1) != -1 {
+		t.Fatal("empty")
+	}
+	g = buildGraph(linkedItems())
+	g.settle()
+	seen := map[int]bool{}
+	for _, i := range g.tour() {
+		seen[i] = true
+	}
+	if len(seen) != len(g.nodes) {
+		t.Fatalf("the tour covers %d of %d nodes", len(seen), len(g.nodes))
 	}
 }
 
-func TestCycleAndFind(t *testing.T) {
+func TestFind(t *testing.T) {
 	g := buildGraph(linkedItems())
-	if g.cycle(len(g.nodes)-1, 1) != 0 || g.cycle(0, -1) != len(g.nodes)-1 {
-		t.Fatal("cycle wraps")
-	}
 	if i := g.find("svc"); g.nodes[i].name != "svc-a" {
 		t.Fatalf("find prefix: %s", g.nodes[i].name)
 	}

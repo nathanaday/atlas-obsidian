@@ -109,7 +109,10 @@ type view struct {
 	acts   actions.Atlas
 	graph  *graph
 	// sel is the selected node, an index into graph.nodes; -1 when there is none.
+	// chosen says the user moved it; until then the selection follows the walk's
+	// start, the leftmost project, as the map settles.
 	sel     int
+	chosen  bool
 	ticking bool
 	panel   panelKind
 	// settings is the settings panel, over everything else while open.
@@ -162,8 +165,8 @@ func (v *view) take(items []Item, keep string) {
 	v.sel = -1
 	if i, ok := v.graph.byID[keep]; ok {
 		v.sel = i
-	} else if len(v.graph.nodes) > 0 {
-		v.sel = 0
+	} else if order := v.graph.tour(); len(order) > 0 {
+		v.sel = order[0]
 	}
 	v.graph.wake()
 }
@@ -218,10 +221,11 @@ func (v view) Init() tea.Cmd {
 	return tick()
 }
 
-// select moves the selection to a node and records that it changed.
+// selectNode moves the selection to a node, from then on the user's choice.
 func (v *view) selectNode(i int) {
 	if i >= 0 && i < len(v.graph.nodes) {
 		v.sel = i
+		v.chosen = true
 	}
 }
 
@@ -234,6 +238,11 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.graph.step()
 		if v.graph.settled() {
 			v.ticking = false
+			if !v.chosen {
+				if order := v.graph.tour(); len(order) > 0 {
+					v.sel = order[0]
+				}
+			}
 			return v, nil
 		}
 		return v, tick()
@@ -331,18 +340,10 @@ func (v view) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return v, nil
 		}
 		return v, tea.Quit
-	case tea.KeyTab:
-		v.selectNode(v.graph.cycle(v.sel, 1))
-	case tea.KeyShiftTab:
-		v.selectNode(v.graph.cycle(v.sel, -1))
-	case tea.KeyUp:
-		v.selectNode(v.graph.nearest(v.sel, 0, -1))
-	case tea.KeyDown:
-		v.selectNode(v.graph.nearest(v.sel, 0, 1))
-	case tea.KeyLeft:
-		v.selectNode(v.graph.nearest(v.sel, -1, 0))
-	case tea.KeyRight:
-		v.selectNode(v.graph.nearest(v.sel, 1, 0))
+	case tea.KeyRight, tea.KeyDown, tea.KeyTab:
+		v.selectNode(v.graph.along(v.sel, 1))
+	case tea.KeyLeft, tea.KeyUp, tea.KeyShiftTab:
+		v.selectNode(v.graph.along(v.sel, -1))
 	case tea.KeyShiftUp, tea.KeyShiftDown, tea.KeyShiftLeft, tea.KeyShiftRight:
 		return v.nudge(msg.Type)
 	}
@@ -718,8 +719,8 @@ func (v view) overlay() []string {
 // helpLines is the body of the keys panel.
 func helpLines(harness string) []string {
 	rows := [][2]string{
-		{"↑ ↓ ← →", "select the nearest project that way"},
-		{"Tab / Shift+Tab", "select the next, the previous"},
+		{"→ or Tab", "the next project along the map"},
+		{"← or Shift+Tab", "the previous one"},
 		{"Shift+arrows", "nudge the selected project; the map answers"},
 		{"Enter", "open its card; again to close"},
 		{"/", "find a project by name"},
@@ -828,7 +829,7 @@ func (v view) hints() string {
 	case v.panel == panelHelp:
 		keys = []hint{{"? close", 0}, {"q quit", 1}}
 	case v.current() != nil && v.current().Entry.Error != "":
-		keys = []hint{{"Enter card", 0}, {"R refresh", 2}, {"arrows select", 3}, {"? keys", 1}, {"q quit", 0}}
+		keys = []hint{{"Enter card", 0}, {"R refresh", 2}, {"←→ select", 3}, {"? keys", 1}, {"q quit", 0}}
 	case v.current() != nil:
 		enter := "Enter card"
 		if v.panel == panelCard {

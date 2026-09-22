@@ -206,42 +206,55 @@ func (g *graph) bounds() (minX, minY, maxX, maxY float64) {
 	return
 }
 
-// nearest is the node closest to from in a direction, or from when none lies that way.
-// A node counts as lying that way when it sits within a wide cone, and the closest by
-// distance stretched for how far off the axis it is wins, so a diagonal neighbor is
-// reachable from either arrow.
-func (g *graph) nearest(from int, dx, dy float64) int {
-	if from < 0 || from >= len(g.nodes) {
-		return from
+// tour is the order the arrow keys walk the map in: from the leftmost node, always to
+// the nearest node not yet visited. Every node is reached once, each step is a short
+// hop, and the walk never bounces between two neighbors. It follows the layout, so it
+// is stable once the map has settled.
+func (g *graph) tour() []int {
+	n := len(g.nodes)
+	if n == 0 {
+		return nil
 	}
-	best, bestScore := from, math.Inf(1)
-	for i, n := range g.nodes {
-		if i == from {
-			continue
-		}
-		ox, oy := n.x-g.nodes[from].x, n.y-g.nodes[from].y
-		d := math.Hypot(ox, oy)
-		if d == 0 {
-			continue
-		}
-		cos := (ox*dx + oy*dy) / d
-		if cos < 0.35 {
-			continue
-		}
-		score := d / cos
-		if score < bestScore {
-			best, bestScore = i, score
+	start := 0
+	for i := range g.nodes {
+		if g.nodes[i].x < g.nodes[start].x {
+			start = i
 		}
 	}
-	return best
+	order := []int{start}
+	seen := make([]bool, n)
+	seen[start] = true
+	for len(order) < n {
+		at := g.nodes[order[len(order)-1]]
+		next, best := -1, math.Inf(1)
+		for i := range g.nodes {
+			if seen[i] {
+				continue
+			}
+			d := math.Hypot(g.nodes[i].x-at.x, g.nodes[i].y-at.y)
+			if d < best {
+				next, best = i, d
+			}
+		}
+		seen[next] = true
+		order = append(order, next)
+	}
+	return order
 }
 
-// cycle is the node after from by name, wrapping; backwards with delta -1.
-func (g *graph) cycle(from, delta int) int {
-	if len(g.nodes) == 0 {
+// step along the tour: the node delta places after from, wrapping at the ends.
+func (g *graph) along(from, delta int) int {
+	order := g.tour()
+	if len(order) == 0 {
 		return -1
 	}
-	return ((from+delta)%len(g.nodes) + len(g.nodes)) % len(g.nodes)
+	at := 0
+	for i, id := range order {
+		if id == from {
+			at = i
+		}
+	}
+	return order[((at+delta)%len(order)+len(order))%len(order)]
 }
 
 // find is the first node whose name contains text, without regard to case, or -1.
