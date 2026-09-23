@@ -126,7 +126,7 @@ func threadSummaryFor(p *project.Project, today time.Time) *registry.ThreadSumma
 		}
 		sum.Open = append(sum.Open, registry.ThreadLine{
 			ID: t.ID, Title: t.Title, Stage: t.Stage, Priority: t.Priority, Phase: t.Phase, Blocked: t.Blocked,
-			Updated: t.Updated, Path: file, Stale: threads.Stale(t, today),
+			Updated: t.Updated, Path: file, Stale: threads.Stale(t, today), Summary: threads.Summary(p, t),
 		})
 	}
 	var open, finished []string

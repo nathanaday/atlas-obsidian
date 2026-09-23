@@ -150,7 +150,7 @@ func TestDeriveAProject(t *testing.T) {
 	if _, err := threads.CreatePhase(p, "Alpha", "", nil, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := threads.Start(p, threads.New{Title: "Blocked one", Phase: "Alpha"}, now); err != nil {
+	if _, err := threads.Start(p, threads.New{Title: "Blocked one", Text: "Waits on the vendor.", Phase: "Alpha"}, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := threads.Start(p, threads.New{Title: "Stale one"}, now.AddDate(0, 0, -20)); err != nil {
@@ -173,7 +173,7 @@ func TestDeriveAProject(t *testing.T) {
 	if state.Threads == nil || state.Threads.Counts.Open != 2 || state.Threads.Counts.Stale != 1 || state.Threads.Counts.Notes != 1 || len(state.Threads.Open) != 2 {
 		t.Fatalf("threads %+v", state.Threads)
 	}
-	if strings.Join(state.Threads.Phases, ",") != "Alpha" || state.Threads.Open[0].Title != "Stale one" || !state.Threads.Open[0].Stale || state.Threads.Open[1].Phase != "Alpha" || !filepath.IsAbs(state.Threads.Open[1].Path) {
+	if strings.Join(state.Threads.Phases, ",") != "Alpha" || state.Threads.Open[0].Title != "Stale one" || !state.Threads.Open[0].Stale || state.Threads.Open[1].Phase != "Alpha" || !filepath.IsAbs(state.Threads.Open[1].Path) || state.Threads.Open[1].Summary != "Waits on the vendor." {
 		t.Fatalf("open %+v phases %v", state.Threads.Open, state.Threads.Phases)
 	}
 	if state.Described == nil || state.Described.Page != "wiki/entities/code.md" || state.Described.Behind != 1 {

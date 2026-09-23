@@ -406,3 +406,19 @@ func TestEveryFunctionRefusesWhileThreadsAreOff(t *testing.T) {
 		t.Fatalf("after: %v %+v", err, board)
 	}
 }
+
+func TestSummaryIsTheStubsFirstParagraph(t *testing.T) {
+	p := newProject(t)
+	th := start(t, p, "", "# Login breaks on Safari\n\nThe cookie\nis dropped.\n\nA second paragraph.")
+	if got := Summary(p, *th); got != "The cookie is dropped." {
+		t.Fatalf("summary %q", got)
+	}
+	long := start(t, p, "Long", strings.Repeat("word ", 100))
+	if got := Summary(p, *long); len([]rune(got)) != summaryRunes || !strings.HasSuffix(got, "…") {
+		t.Fatalf("summary %q", got)
+	}
+	bare := start(t, p, "Bare", "")
+	if got := Summary(p, *bare); got != "" {
+		t.Fatalf("summary %q", got)
+	}
+}

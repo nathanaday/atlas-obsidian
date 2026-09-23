@@ -4,8 +4,10 @@ package links
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -25,7 +27,24 @@ type Link struct {
 	Branch     string `json:"branch,omitempty"`
 	LastCommit string `json:"last_commit,omitempty"`
 	Dirty      *int   `json:"dirty,omitempty"`
+	Head       string `json:"head,omitempty"`    // the short sha of HEAD
+	Subject    string `json:"subject,omitempty"` // HEAD's subject line
+	Remote     string `json:"remote,omitempty"`  // the origin URL
+	// Upstream is the branch HEAD tracks. Ahead and Behind count against it as of the last
+	// fetch, which is Fetched; nothing here reaches the network.
+	Upstream string `json:"upstream,omitempty"`
+	Ahead    *int   `json:"ahead,omitempty"`
+	Behind   *int   `json:"behind,omitempty"`
+	Fetched  string `json:"fetched,omitempty"`
 }
+
+// Diverged reports whether the branch is ahead of or behind its upstream.
+func (l Link) Diverged() bool {
+	return l.Ahead != nil && *l.Ahead > 0 || l.Behind != nil && *l.Behind > 0
+}
+
+// Changed reports whether the work has uncommitted changes.
+func (l Link) Changed() bool { return l.Dirty != nil && *l.Dirty > 0 }
 
 // Touched is the latest date the link shows activity on, if any.
 func (l Link) Touched() (time.Time, bool) {
@@ -75,8 +94,30 @@ func inspectRepo(link *Link, dir string) {
 	if branch, ok := git(dir, "rev-parse", "--abbrev-ref", "HEAD"); ok {
 		link.Branch = branch
 	}
-	if date, ok := git(dir, "log", "-1", "--format=%cs"); ok {
-		link.LastCommit = date
+	if head, ok := git(dir, "log", "-1", "--format=%h%x00%cs%x00%s"); ok {
+		if f := strings.SplitN(head, "\x00", 3); len(f) == 3 {
+			link.Head, link.LastCommit, link.Subject = f[0], f[1], f[2]
+		}
+	}
+	if url, ok := git(dir, "remote", "get-url", "origin"); ok {
+		link.Remote = url
+	}
+	if up, ok := git(dir, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"); ok {
+		link.Upstream = up
+		if counts, ok := git(dir, "rev-list", "--left-right", "--count", "HEAD...@{upstream}"); ok {
+			var ahead, behind int
+			if _, err := fmt.Sscan(counts, &ahead, &behind); err == nil {
+				link.Ahead, link.Behind = &ahead, &behind
+			}
+		}
+	}
+	if p, ok := git(dir, "rev-parse", "--git-path", "FETCH_HEAD"); ok {
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(dir, p)
+		}
+		if info, err := os.Stat(p); err == nil {
+			link.Fetched = info.ModTime().Format("2006-01-02")
+		}
 	}
 	if status, ok := git(dir, "status", "--porcelain"); ok {
 		n := 0

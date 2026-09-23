@@ -156,6 +156,53 @@ func (t Thread) Doc(stage string) *Doc {
 // Current is the document of the thread's stage, or nil when the thread has none.
 func (t Thread) Current() *Doc { return t.Doc(t.Stage) }
 
+// summaryRunes bounds a thread's summary.
+const summaryRunes = 240
+
+// Summary is the first paragraph of the thread's stub, in the user's words, on one line
+// and at most summaryRunes long; the document of its stage stands in when the stub is
+// gone. It skips the frontmatter, the callouts, the headings, and the rules; "" when
+// nothing is left or the paragraph only repeats the title.
+func Summary(p *project.Project, t Thread) string {
+	d := t.Doc(Stub)
+	if d == nil {
+		d = t.Current()
+	}
+	if d == nil {
+		return ""
+	}
+	content, err := os.ReadFile(p.Path(d.Path))
+	if err != nil {
+		return ""
+	}
+	_, body, _ := project.Frontmatter(string(content))
+	var para []string
+	for _, line := range strings.Split(body+"\n", "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, ">") && !strings.HasPrefix(line, "#") && strings.Trim(line, "-*_ ") != "" {
+			para = append(para, line)
+			continue
+		}
+		if len(para) > 0 {
+			break
+		}
+	}
+	text := oneLine(strings.Join(para, " "))
+	if text == t.Title {
+		return ""
+	}
+	return clip(text, summaryRunes)
+}
+
+// clip cuts s to n runes, ending in an ellipsis when it cut.
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimSpace(string(r[:n-1])) + "…"
+}
+
 // Phase is what a phase page's frontmatter says: a named slice of the timeline.
 type Phase struct {
 	Path    string `json:"path"` // relative to the project folder

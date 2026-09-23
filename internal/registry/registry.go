@@ -162,6 +162,8 @@ type ThreadLine struct {
 	Updated  string `json:"updated"`
 	Path     string `json:"path"` // absolute path of the document of the thread's stage
 	Stale    bool   `json:"stale,omitempty"`
+	// Summary is the first paragraph of the stub, clipped (threads.Summary).
+	Summary string `json:"summary,omitempty"`
 }
 
 // ThreadSummary is what refresh read from a project's threads.

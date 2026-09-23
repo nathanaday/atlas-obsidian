@@ -61,3 +61,54 @@ func TestRemoteURLIsRepoAndCleanName(t *testing.T) {
 		t.Fatal("CleanName")
 	}
 }
+
+func TestInspectUpstream(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git is not installed")
+	}
+	root := t.TempDir()
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s", args, out)
+		}
+	}
+	commit := func(dir, name string) {
+		t.Helper()
+		os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644)
+		git(dir, "add", name)
+		git(dir, "commit", "-q", "-m", "add "+name)
+	}
+	bare, a, b := filepath.Join(root, "bare.git"), filepath.Join(root, "a"), filepath.Join(root, "b")
+	git(root, "init", "-q", "--bare", "-b", "main", bare)
+	git(root, "clone", "-q", bare, a)
+	commit(a, "one")
+	git(a, "push", "-q", "origin", "main")
+	git(root, "clone", "-q", bare, b)
+
+	link := Inspect(Repo, a)
+	if link.Upstream != "origin/main" || link.Remote != bare || link.Head == "" || link.Subject != "add one" {
+		t.Fatalf("got %+v", link)
+	}
+	if link.Diverged() || link.Changed() || *link.Ahead != 0 || *link.Behind != 0 {
+		t.Fatalf("in sync, got %+v", link)
+	}
+
+	commit(a, "two")
+	commit(b, "three")
+	git(b, "push", "-q", "origin", "main")
+	git(a, "fetch", "-q")
+	link = Inspect(Repo, a)
+	if *link.Ahead != 1 || *link.Behind != 1 || !link.Diverged() || link.Fetched == "" {
+		t.Fatalf("one each way, got %+v", link)
+	}
+
+	lone := filepath.Join(root, "lone")
+	git(root, "init", "-q", "-b", "main", lone)
+	commit(lone, "x")
+	if l := Inspect(Repo, lone); l.Upstream != "" || l.Ahead != nil || l.Remote != "" || l.Fetched != "" || l.Diverged() {
+		t.Fatalf("no upstream, got %+v", l)
+	}
+}
