@@ -172,6 +172,16 @@ func TestTheVersionControlLens(t *testing.T) {
 			t.Fatalf("the card lacks %q:\n%s", want, screen)
 		}
 	}
+	if !strings.Contains(screen, "● uncommitted changes  ● ahead of or behind upstream  ● in step, or no git") {
+		t.Fatalf("the lens names its colors:\n%s", screen)
+	}
+	if other := stripANSI(keyV(v, "l").View()); strings.Contains(other, "uncommitted changes") {
+		t.Fatal("only the version control lens shows the legend")
+	}
+	narrow, _ := v.Update(tea.WindowSizeMsg{Width: 50, Height: 20})
+	if screen := stripANSI(narrow.(view).View()); !strings.Contains(screen, "● changes  ● ahead/behind  ● in step") {
+		t.Fatalf("a narrow screen takes the short legend:\n%s", screen)
+	}
 	if in := v.intent(); !in.Git || !strings.Contains(v.hints(), "c git") {
 		t.Fatalf("c handles the git state: %+v %q", in, v.hints())
 	}

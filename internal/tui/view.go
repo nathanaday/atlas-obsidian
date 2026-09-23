@@ -857,6 +857,9 @@ func (v *view) draw() *canvas {
 		text := v.nodeStyle(i).Render(v.label(i))
 		v.placeLabel(c, v.cells[i], text)
 	}
+	if legend := v.lens.legend(v.width - 4); legend != "" {
+		c.place(2, c.h-1, legend)
+	}
 	if lines := v.overlay(); len(lines) > 0 {
 		width := lipgloss.Width(lines[0])
 		x := max(0, v.width-width-1)

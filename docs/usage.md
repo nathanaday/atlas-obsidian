@@ -529,7 +529,7 @@ is red.
 |---|---|---|
 | details (the first) | the selection lights what it mirrors, and what mirrors it in the hub color; the rest is gray | the path, the description, the links, the page that describes the work, the wiki, the last operation, the inbox, when it was touched |
 | threads | a project with open threads is yellow and sits on a yellow disk; the disk grows with the count | the open count, a bar per stage (stub, spec, plan), what is blocked or stale, the phases, and a list of the open threads with the first line of each stub |
-| version control | red: uncommitted changes; yellow: ahead of or behind the upstream; gray: in step, or no git | the branch, the head, the upstream with how far ahead or behind, when the last fetch ran, the origin URL, the uncommitted count, the last commit |
+| version control | red: uncommitted changes; yellow: ahead of or behind the upstream; gray: in step, or no git; a legend on the bottom row names the colors | the branch, the head, the upstream with how far ahead or behind, when the last fetch ran, the origin URL, the uncommitted count, the last commit |
 
 On the threads card, `↑` and `↓` move through the list. `c` starts the
 preferred harness on the thread under the cursor: the session reads the thread

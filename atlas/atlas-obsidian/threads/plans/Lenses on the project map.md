@@ -115,4 +115,5 @@ The three-layer rule requires every new key to have a command.
   - The histogram bars stop at 30 cells, and a preview line ends in an ellipsis.
 - Checked by rendering the real atlas (20 projects) through each lens at 130×38 and 70×20; tmux is not installed. The disk reads as a small yellow blob beside the name. The glyph fallback is not needed.
 - 2026-09-22: The cursor is clamped when a refresh shortens the list. `make install` done (5.6.0).
+- 2026-09-22: The version control lens has a legend on the bottom row of the map, with a short form below about 80 columns. Requested after the user's first look.
 - Next: the user tries `c` and `p` on the threads card and `c` on the version control card in a real terminal. Those launches cannot run under `go test`. Then `thread-receipt`.

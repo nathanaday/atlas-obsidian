@@ -48,6 +48,20 @@ func (l lens) tag() string {
 	return memberSt.Render(l.String())
 }
 
+// legend names the colors of a lens whose colors are not obvious, on one line no wider
+// than width, in short words when the long ones do not fit; "" for the rest.
+func (l lens) legend(width int) string {
+	if l != lensGit {
+		return ""
+	}
+	key := func(st lipgloss.Style, text string) string { return st.Render("●") + " " + dim.Render(text) }
+	long := strings.Join([]string{key(dirtySt, "uncommitted changes"), key(threadSt, "ahead of or behind upstream"), key(fadedSt, "in step, or no git")}, "  ")
+	if lipgloss.Width(long) <= width {
+		return long
+	}
+	return strings.Join([]string{key(dirtySt, "changes"), key(threadSt, "ahead/behind"), key(fadedSt, "in step")}, "  ")
+}
+
 // openThreads is how many threads a project has open; 0 before a refresh.
 func openThreads(e registry.Entry) int {
 	if s := e.State; s != nil && s.Threads != nil {
