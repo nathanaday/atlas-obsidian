@@ -224,6 +224,7 @@ func (v *view) topOf(i int) node {
 // enter opens a hub's cluster onto the screen with the hub selected. The camera starts
 // where the overview stood, so the cluster opens out of it.
 func (v *view) enter(hub int) {
+	v.graph = v.top
 	offset, scale := v.fit()
 	id := v.top.nodes[hub].id
 	v.graph = v.top.sub(hub, nil)
@@ -454,7 +455,7 @@ func (v view) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if v.current() == nil {
 			return v, nil
 		}
-		if v.panel == panelNone && v.opens() {
+		if v.panel != panelCard && v.opens() {
 			v.enter(v.sel)
 			return v, v.wake()
 		}
@@ -466,6 +467,7 @@ func (v view) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			v.panel = panelNone
 		case v.cluster != "":
 			v.leave()
+			return v, v.run()
 		default:
 			return v, tea.Quit
 		}

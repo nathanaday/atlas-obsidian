@@ -37,6 +37,8 @@ type graph struct {
 	nodes []node
 	byID  map[string]int
 	alpha float64
+	// heads caches tops: the links never change once the graph is built.
+	heads []int
 }
 
 // buildGraph lays the projects on a circle, each at an angle its id fixes, and links
@@ -211,6 +213,9 @@ func (g *graph) bounds() (minX, minY, maxX, maxY float64) {
 // the members check refuses but a hand-edited file could hold, gets its first node as a
 // top project, so every node belongs to some cluster.
 func (g *graph) tops() []int {
+	if g.heads != nil || len(g.nodes) == 0 {
+		return g.heads
+	}
 	var out []int
 	reached := make([]bool, len(g.nodes))
 	mark := func(i int) {
@@ -231,6 +236,7 @@ func (g *graph) tops() []int {
 		}
 	}
 	sort.Ints(out)
+	g.heads = out
 	return out
 }
 

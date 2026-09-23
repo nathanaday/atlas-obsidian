@@ -353,6 +353,48 @@ func TestFindCrossesLevelsAndEscPutsThemBack(t *testing.T) {
 	}
 }
 
+func TestLeavingAClusterWakesAnOverviewThatHasNotSettled(t *testing.T) {
+	// Enter on a hub before the overview settles; the cluster settles; Esc.
+	v := newView(sample(), Opener{}, actions.Atlas{})
+	v.sel = v.top.byID["id-platform"]
+	v = settleV(pressV(v, tea.KeyEnter))
+	if v.cluster == "" || v.top.settled() {
+		t.Fatal("the overview should still be moving")
+	}
+	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	v = next.(view)
+	if v.cluster != "" || cmd == nil || !v.ticking {
+		t.Fatal("Esc starts the ticks for the overview")
+	}
+	if v = settleV(v); !v.top.settled() {
+		t.Fatal("the overview settles")
+	}
+}
+
+func TestFindFromOneClusterToAnotherOpensFromTheOverview(t *testing.T) {
+	items := append(sample(), proj("lab", "id-bench"), proj("bench"))
+	v := selectName(t, sized(items, Opener{}, actions.Atlas{}), "thesis")
+	want, scale := func() ([2]float64, float64) { w := v; w.graph = w.top; return w.fit() }()
+	v = keyV(v, "/")
+	for _, r := range "bench" {
+		v = keyV(v, string(r))
+	}
+	if v.cluster != "id-lab" || v.cam == nil {
+		t.Fatalf("find opens lab's cluster: %q", v.cluster)
+	}
+	if v.cam.offset != want || v.cam.scale != scale {
+		t.Fatal("the camera starts at the overview's transform")
+	}
+}
+
+func TestEnterOpensAClusterUnderTheKeysPanel(t *testing.T) {
+	v := selectName(t, sized(sample(), Opener{}, actions.Atlas{}), "platform")
+	v = pressV(keyV(v, "?"), tea.KeyEnter)
+	if v.cluster != "id-platform" || v.panel != panelNone {
+		t.Fatalf("cluster %q panel %v", v.cluster, v.panel)
+	}
+}
+
 func TestAnAtlasWithoutLinksWalksEveryProject(t *testing.T) {
 	items := []Item{proj("alpha"), proj("beta"), proj("gamma")}
 	v := sized(items, Opener{}, actions.Atlas{})
