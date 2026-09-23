@@ -78,13 +78,24 @@ func sized(items []Item, opener Opener, acts actions.Atlas) view {
 	return v
 }
 
-// selectName puts the selection on the node with that name.
+// settleV runs the ticks until the map on screen is still.
+func settleV(v view) view {
+	v.ticking = true
+	for i := 0; i < 2000 && v.ticking; i++ {
+		next, _ := v.Update(tickMsg(time.Now()))
+		v = next.(view)
+	}
+	return v
+}
+
+// selectName selects the project with that name the way find does: inside the cluster
+// that holds it, or on the overview for a top project. The map settles after.
 func selectName(t *testing.T, v view, name string) view {
 	t.Helper()
-	for i, n := range v.graph.nodes {
+	for i, n := range v.top.nodes {
 		if n.name == name {
-			v.sel = i
-			return v
+			v.show(i)
+			return settleV(v)
 		}
 	}
 	t.Fatalf("no node %s", name)
@@ -138,7 +149,7 @@ func TestTheScreenIsAMapOfEveryProject(t *testing.T) {
 	if !strings.Contains(lines[0], "Atlas") || !strings.Contains(lines[0], "5 projects") || !strings.Contains(lines[0], "3 links") || !strings.Contains(lines[0], "1 problem") {
 		t.Fatalf("header %q", lines[0])
 	}
-	for _, name := range []string{"● platform", "● webapp", "● firmware", "● thesis", "● notes", "✗ gateway"} {
+	for _, name := range []string{"◉ platform", "● webapp", "● firmware", "● thesis", "● notes", "✗ gateway"} {
 		if !strings.Contains(screen, name) {
 			t.Fatalf("the map lacks %s:\n%s", name, screen)
 		}
@@ -164,8 +175,8 @@ func TestTheScreenIsAMapOfEveryProject(t *testing.T) {
 func TestTheSummaryNamesTheLinksOfTheSelection(t *testing.T) {
 	v := selectName(t, sized(sample(), Opener{}, actions.Atlas{}), "platform")
 	s := stripANSI(v.summary())
-	if !strings.Contains(s, "platform") || !strings.Contains(s, "mirrors firmware, webapp") && !strings.Contains(s, "mirrors webapp, firmware") {
-		t.Fatalf("summary %q", s)
+	if !strings.Contains(s, "platform") || !strings.Contains(s, "3 in its cluster: firmware, thesis, webapp") {
+		t.Fatalf("a hub on the overview names its cluster: %q", s)
 	}
 	if strings.Contains(s, "no threads") || strings.Contains(s, "inbox empty") {
 		t.Fatalf("a zero is left out: %q", s)
@@ -201,6 +212,20 @@ func TestTheSelectionLightsItsNeighbors(t *testing.T) {
 	if styles["platform"].GetForeground() != hubColor {
 		t.Fatal("a hub wears the hub color")
 	}
+	if styles["firmware"].GetForeground() != mutedColor {
+		t.Fatal("the rest of the cluster fades")
+	}
+	// On the overview a hub lights its whole cluster, and the rest fade.
+	v = selectName(t, pressV(v, tea.KeyEsc), "platform")
+	styles = map[string]lipgloss.Style{}
+	for i, n := range v.graph.nodes {
+		styles[n.name] = v.nodeStyle(i)
+	}
+	for _, name := range []string{"webapp", "firmware", "thesis"} {
+		if styles[name].GetForeground() != projectColor {
+			t.Fatalf("%s is lit with its cluster", name)
+		}
+	}
 	if styles["notes"].GetForeground() != mutedColor {
 		t.Fatal("the rest fade")
 	}
@@ -209,37 +234,89 @@ func TestTheSelectionLightsItsNeighbors(t *testing.T) {
 	}
 }
 
-func TestArrowsWalkTheMapAndFindJumps(t *testing.T) {
+func TestArrowsWalkTheClustersThenEnterOne(t *testing.T) {
 	v := sized(sample(), Opener{}, actions.Atlas{})
-	order := v.graph.tour()
-	if v.sel != order[0] {
-		t.Fatalf("the walk starts at the leftmost project: %s", selectedName(v))
+	if v.cluster != "" || v.graph != v.top {
+		t.Fatal("the view opens on the overview")
 	}
-	// Right visits every project once, in the tour's order, then wraps.
-	for i := 1; i < len(order); i++ {
+	order := v.graph.tour(v.graph.tops())
+	if len(order) != 3 || v.sel != order[0] {
+		t.Fatalf("the walk starts at the leftmost top project: %s of %d", selectedName(v), len(order))
+	}
+	// Right visits every top project once, then wraps; members are skipped.
+	var seen []string
+	for range order {
+		seen = append(seen, selectedName(v))
 		v = pressV(v, tea.KeyRight)
-		if v.sel != order[i] {
-			t.Fatalf("step %d: %s", i, selectedName(v))
-		}
 	}
-	v = pressV(v, tea.KeyRight)
-	if v.sel != order[0] {
-		t.Fatal("right wraps to the start")
+	if v.sel != order[0] || strings.Contains(strings.Join(seen, ","), "webapp") {
+		t.Fatalf("the overview walks %v", seen)
 	}
-	// Left walks back the same path; Tab and the vertical arrows are the same keys.
 	v = pressV(v, tea.KeyLeft)
 	if v.sel != order[len(order)-1] {
 		t.Fatal("left wraps to the end")
 	}
-	v = pressV(v, tea.KeyLeft, tea.KeyUp, tea.KeyShiftTab)
-	if v.sel != order[len(order)-4] {
-		t.Fatalf("back three: %s", selectedName(v))
+	v = pressV(v, tea.KeyUp, tea.KeyShiftTab, tea.KeyTab, tea.KeyDown)
+	if v.sel != order[len(order)-1] {
+		t.Fatalf("the other keys walk the same path: %s", selectedName(v))
 	}
-	v = pressV(v, tea.KeyTab, tea.KeyDown)
-	if v.sel != order[len(order)-2] {
-		t.Fatalf("forward two: %s", selectedName(v))
+	// Enter on a hub opens its cluster, the hub selected, the camera easing.
+	v = selectName(t, v, "platform")
+	if !strings.Contains(v.hints(), "Enter open cluster") {
+		t.Fatalf("hints %q", v.hints())
 	}
+	next, cmd := v.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	v = next.(view)
+	if v.cluster != "id-platform" || selectedName(v) != "platform" || v.panel != panelNone || v.cam == nil || cmd == nil {
+		t.Fatalf("Enter opens the cluster: cluster=%q sel=%s cam=%v", v.cluster, selectedName(v), v.cam)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(stripANSI(v.header())), "Atlas › platform") || !strings.Contains(v.header(), "4 projects") {
+		t.Fatalf("header %q", stripANSI(v.header()))
+	}
+	v = settleV(v)
+	if v.cam != nil || v.ticking {
+		t.Fatal("the camera arrives and the map settles")
+	}
+	screen := stripANSI(v.View())
+	if strings.Contains(screen, "notes") || strings.Contains(screen, "gateway") || !strings.Contains(screen, "● thesis") || !strings.Contains(screen, "● platform") {
+		t.Fatalf("the cluster fills the screen alone:\n%s", screen)
+	}
+	// Inside, the arrows walk every project of the cluster.
+	inside := map[string]bool{}
+	for range v.graph.nodes {
+		inside[selectedName(v)] = true
+		v = pressV(v, tea.KeyRight)
+	}
+	if len(inside) != 4 {
+		t.Fatalf("the cluster walks %v", inside)
+	}
+	// Enter now opens the card, Esc closes it, Esc again leaves with the hub selected.
 	v = selectName(t, v, "webapp")
+	v = pressV(v, tea.KeyEnter)
+	if v.panel != panelCard || v.cluster == "" {
+		t.Fatal("Enter in a cluster opens the card")
+	}
+	v = pressV(v, tea.KeyEsc)
+	if v.panel != panelNone || v.cluster == "" {
+		t.Fatal("Esc closes the card first")
+	}
+	next, cmd = v.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	v = next.(view)
+	if quits(cmd) || v.cluster != "" || v.graph != v.top || selectedName(v) != "platform" {
+		t.Fatalf("Esc leaves the cluster: cluster=%q sel=%s", v.cluster, selectedName(v))
+	}
+	if _, cmd = v.Update(tea.KeyMsg{Type: tea.KeyEsc}); !quits(cmd) {
+		t.Fatal("Esc on the overview quits")
+	}
+	// A top project with no members opens its card on the first Enter.
+	v = selectName(t, v, "notes")
+	if v = pressV(v, tea.KeyEnter); v.panel != panelCard || v.cluster != "" {
+		t.Fatal("notes has nothing to enter")
+	}
+}
+
+func TestFindCrossesLevelsAndEscPutsThemBack(t *testing.T) {
+	v := selectName(t, sized(sample(), Opener{}, actions.Atlas{}), "notes")
 	v = keyV(v, "/")
 	if v.find == nil {
 		t.Fatal("/ opens find")
@@ -247,21 +324,69 @@ func TestArrowsWalkTheMapAndFindJumps(t *testing.T) {
 	for _, r := range "the" {
 		v = keyV(v, string(r))
 	}
-	if selectedName(v) != "thesis" {
-		t.Fatalf("typing jumps: %s", selectedName(v))
+	if selectedName(v) != "thesis" || v.cluster != "id-platform" {
+		t.Fatalf("typing jumps into the cluster that holds the match: %s in %q", selectedName(v), v.cluster)
 	}
 	if !strings.Contains(v.View(), "find: the") {
 		t.Fatal(v.footer())
 	}
 	v = pressV(v, tea.KeyEsc)
-	if v.find != nil || selectedName(v) != "webapp" {
-		t.Fatalf("Esc puts the selection back: %s", selectedName(v))
+	if v.find != nil || v.cluster != "" || selectedName(v) != "notes" {
+		t.Fatalf("Esc puts the level and the selection back: %s in %q", selectedName(v), v.cluster)
 	}
+	// From inside a cluster, a top project takes the view out to the overview.
+	v = selectName(t, v, "webapp")
 	v = keyV(v, "/")
 	v = keyV(v, "n")
 	v = pressV(v, tea.KeyEnter)
-	if v.find != nil || selectedName(v) != "notes" {
-		t.Fatalf("Enter keeps: %s", selectedName(v))
+	if v.find != nil || selectedName(v) != "notes" || v.cluster != "" {
+		t.Fatalf("Enter keeps: %s in %q", selectedName(v), v.cluster)
+	}
+	// A match already in the cluster on screen stays there.
+	v = selectName(t, v, "thesis")
+	was := v.graph
+	v = keyV(v, "/")
+	for _, r := range "firm" {
+		v = keyV(v, string(r))
+	}
+	if selectedName(v) != "firmware" || v.graph != was {
+		t.Fatal("the cluster is not rebuilt for a match inside it")
+	}
+}
+
+func TestAnAtlasWithoutLinksWalksEveryProject(t *testing.T) {
+	items := []Item{proj("alpha"), proj("beta"), proj("gamma")}
+	v := sized(items, Opener{}, actions.Atlas{})
+	seen := map[string]bool{}
+	for range items {
+		seen[selectedName(v)] = true
+		v = pressV(v, tea.KeyRight)
+	}
+	if len(seen) != 3 {
+		t.Fatalf("walked %v", seen)
+	}
+	if v = pressV(v, tea.KeyEnter); v.panel != panelCard || v.cluster != "" {
+		t.Fatal("Enter opens the card")
+	}
+}
+
+func TestAClusterFitsASmallScreen(t *testing.T) {
+	v := sized(sample(), Opener{}, actions.Atlas{})
+	next, _ := v.Update(tea.WindowSizeMsg{Width: 60, Height: 16})
+	v = selectName(t, next.(view), "thesis")
+	lines := strings.Split(v.View(), "\n")
+	if len(lines) != 16 {
+		t.Fatalf("%d lines", len(lines))
+	}
+	for i, line := range lines {
+		if lipgloss.Width(line) > 60 {
+			t.Fatalf("line %d overflows: %q", i, line)
+		}
+	}
+	for _, name := range []string{"platform", "webapp", "firmware", "thesis"} {
+		if !strings.Contains(stripANSI(v.View()), name) {
+			t.Fatalf("%s is missing:\n%s", name, stripANSI(v.View()))
+		}
 	}
 }
 
@@ -316,9 +441,13 @@ func TestEnterOpensTheCardWithOnlyWhatExists(t *testing.T) {
 	if v.panel != panelNone {
 		t.Fatal("Esc closes the card")
 	}
+	v = pressV(v, tea.KeyEsc)
+	if v.cluster != "" {
+		t.Fatal("Esc in a cluster leaves it")
+	}
 	_, cmd := v.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if !quits(cmd) {
-		t.Fatal("Esc on the map quits")
+		t.Fatal("Esc on the overview quits")
 	}
 	// A project nobody described carries the signal.
 	v = selectName(t, v, "firmware")
@@ -486,8 +615,14 @@ func TestRefreshReloadsAndKeepsTheSelection(t *testing.T) {
 	if refreshed != 1 || !v.changed || v.busy != "" || v.status != "refreshed" {
 		t.Fatalf("refreshed=%d changed=%v busy=%q status=%q", refreshed, v.changed, v.busy, v.status)
 	}
-	if len(v.graph.nodes) != 7 || selectedName(v) != "thesis" {
-		t.Fatalf("nodes %d selected %s", len(v.graph.nodes), selectedName(v))
+	if len(v.top.nodes) != 7 || v.cluster != "id-platform" || len(v.graph.nodes) != 4 || selectedName(v) != "thesis" {
+		t.Fatalf("nodes %d cluster %q selected %s", len(v.top.nodes), v.cluster, selectedName(v))
+	}
+	// A refresh that drops the hub's links returns to the overview.
+	items[0].Entry.Members = nil
+	v = runCmd(keyV(v, "R"), v.refreshCmd())
+	if v.cluster != "" || v.graph != v.top || v.sel < 0 {
+		t.Fatalf("a cluster that is gone returns to the overview: %q", v.cluster)
 	}
 	none := sized(sample(), Opener{}, actions.Atlas{})
 	if none = keyV(none, "R"); !strings.Contains(none.errMsg, "not available") {

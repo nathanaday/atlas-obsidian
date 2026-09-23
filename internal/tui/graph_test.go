@@ -70,7 +70,7 @@ func TestTheLayoutSettlesAndIsTheSameTwice(t *testing.T) {
 
 func TestTheTourVisitsEveryNodeOnceByShortHops(t *testing.T) {
 	g := &graph{nodes: []node{{name: "far right", x: 30}, {name: "left", x: -20}, {name: "mid", x: 0}, {name: "up", x: 1, y: -8}}}
-	order := g.tour()
+	order := g.tour(nil)
 	var names []string
 	for _, i := range order {
 		names = append(names, g.nodes[i].name)
@@ -79,19 +79,23 @@ func TestTheTourVisitsEveryNodeOnceByShortHops(t *testing.T) {
 		t.Fatalf("tour %v", names)
 	}
 	// Forward wraps from the last to the first, and back from the first to the last.
-	if g.along(order[3], 1) != order[0] || g.along(order[0], -1) != order[3] {
+	if along(order, order[3], 1) != order[0] || along(order, order[0], -1) != order[3] {
 		t.Fatal("wrap")
 	}
-	if g.along(order[1], 1) != order[2] || g.along(order[2], -1) != order[1] {
+	if along(order, order[1], 1) != order[2] || along(order, order[2], -1) != order[1] {
 		t.Fatal("steps")
 	}
-	if (&graph{}).along(0, 1) != -1 {
+	if along(nil, 0, 1) != -1 || (&graph{}).tour(nil) != nil {
 		t.Fatal("empty")
+	}
+	// A tour over a set visits only the set.
+	if sub := g.tour([]int{0, 3}); len(sub) != 2 || sub[0] != 3 {
+		t.Fatalf("tour over a set %v", sub)
 	}
 	g = buildGraph(linkedItems())
 	g.settle()
 	seen := map[int]bool{}
-	for _, i := range g.tour() {
+	for _, i := range g.tour(nil) {
 		seen[i] = true
 	}
 	if len(seen) != len(g.nodes) {
@@ -109,5 +113,80 @@ func TestFind(t *testing.T) {
 	}
 	if g.find("zzz") != -1 || g.find("") != -1 {
 		t.Fatal("no match")
+	}
+}
+
+// clusterItems is two hubs that share a member, a hub nested in a cluster, a project on
+// its own, and a problem.
+func clusterItems() []Item {
+	e := func(id string, members ...string) Item {
+		return Item{Entry: registry.Entry{ID: id, Name: id, Path: "/" + id, Members: members}}
+	}
+	broken := Item{Entry: registry.Entry{Path: "/old/zeta", Error: "not found", Reason: registry.ReasonMissing}}
+	return []Item{e("hub1", "mid", "shared"), e("mid", "leaf"), e("leaf"), e("hub2", "shared"), e("shared"), e("lone"), broken}
+}
+
+func names(g *graph, list []int) string {
+	var out []string
+	for _, i := range list {
+		out = append(out, g.nodes[i].name)
+	}
+	return strings.Join(out, ",")
+}
+
+func TestTopsAndClusters(t *testing.T) {
+	g := buildGraph(clusterItems())
+	if got := names(g, g.tops()); got != "hub1,hub2,lone,zeta" {
+		t.Fatalf("tops %s", got)
+	}
+	if got := names(g, g.closure(g.byID["hub1"])); got != "leaf,mid,shared" {
+		t.Fatalf("hub1's cluster holds the nested hub's member: %s", got)
+	}
+	if got := names(g, g.closure(g.byID["hub2"])); got != "shared" {
+		t.Fatalf("hub2 %s", got)
+	}
+	if len(g.closure(g.byID["lone"])) != 0 || g.top(g.byID["mid"]) || !g.top(g.byID["lone"]) {
+		t.Fatal("lone and mid")
+	}
+	// A cycle that no top project reaches still gets one.
+	cycle := buildGraph([]Item{
+		{Entry: registry.Entry{ID: "a", Name: "a", Members: []string{"b"}}},
+		{Entry: registry.Entry{ID: "b", Name: "b", Members: []string{"a"}}},
+	})
+	if got := names(cycle, cycle.tops()); got != "a" {
+		t.Fatalf("cycle tops %s", got)
+	}
+}
+
+func TestAClusterOpensFromTheOverviewsPositions(t *testing.T) {
+	g := buildGraph(clusterItems())
+	g.settle()
+	hub := g.byID["hub1"]
+	s := g.sub(hub, nil)
+	if got := names(s, s.tour(nil)); len(s.nodes) != 4 || !strings.Contains(got, "hub1") {
+		t.Fatalf("cluster %s", got)
+	}
+	for _, n := range s.nodes {
+		o := g.nodes[g.byID[n.id]]
+		if n.x != o.x || n.y != o.y {
+			t.Fatalf("%s starts at %v,%v, not %v,%v", n.name, n.x, n.y, o.x, o.y)
+		}
+	}
+	// Only links inside the cluster: shared keeps hub1 and loses hub2.
+	if sh := s.nodes[s.byID["shared"]]; len(sh.hubs) != 1 || len(s.edges()) != 3 {
+		t.Fatalf("links %+v edges %d", sh, len(s.edges()))
+	}
+	s.settle()
+	again := g.sub(hub, nil)
+	again.settle()
+	for i := range s.nodes {
+		if s.nodes[i].x != again.nodes[i].x || s.nodes[i].y != again.nodes[i].y {
+			t.Fatal("the cluster's layout is not deterministic")
+		}
+	}
+	// Built again over a laid-out cluster, it keeps that layout.
+	kept := g.sub(hub, s)
+	if kept.nodes[0].x != s.nodes[0].x || kept.nodes[0].y != s.nodes[0].y {
+		t.Fatal("the previous layout is lost")
 	}
 }

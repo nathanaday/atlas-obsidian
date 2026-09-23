@@ -1,6 +1,8 @@
 // Package tui is the atlas view: every project on one screen as a map, each project a
-// node and each member link an edge, laid out by a live force simulation. It shows and
-// launches; creating and changing project content is the CLI's and the session's job.
+// node and each member link an edge, laid out by a live force simulation. The overview
+// walks the clusters, one per project no other mirrors; Enter opens a cluster onto the
+// whole screen. It shows and launches; creating and changing project content is the
+// CLI's and the session's job.
 package tui
 
 import (
@@ -62,6 +64,10 @@ const frame = 33 * time.Millisecond
 // nudgeCells is how far a Shift+arrow moves a node, in cells.
 const nudgeCells = 3.0
 
+// ease is the share of the way to the map's fit the camera covers each frame while a
+// cluster opens.
+const ease = 0.2
+
 type tickMsg time.Time
 
 // agentDoneMsg reports that a harness session ended and the view has the terminal back.
@@ -107,7 +113,14 @@ type view struct {
 	byID   map[string]*Item
 	opener Opener
 	acts   actions.Atlas
-	graph  *graph
+	// top is the overview, every project; graph is the map on screen: top itself, or
+	// the cluster of the hub whose id is cluster.
+	top     *graph
+	graph   *graph
+	cluster string
+	// cam is the transform while a cluster opens, easing from the overview's toward
+	// the cluster's fit; nil when the map is drawn at its fit.
+	cam *camera
 	// sel is the selected node, an index into graph.nodes; -1 when there is none.
 	// chosen says the user moved it; until then the selection follows the walk's
 	// start, the leftmost project, as the map settles.
@@ -118,9 +131,9 @@ type view struct {
 	// settings is the settings panel, over everything else while open.
 	settings      bool
 	settingChoice string
-	// find is the prompt that jumps to a name, and the selection before it opened.
+	// find is the prompt that jumps to a name, and where the view stood before it opened.
 	find    *textinput.Model
-	findWas int
+	findWas place
 	// stub is the one-line prompt for a new thread, and the project it opens in.
 	stub     *textinput.Model
 	stubInto *Item
@@ -138,6 +151,19 @@ type view struct {
 
 // cell is a node's place on the canvas.
 type cell struct{ x, y int }
+
+// camera is the transform from the map's dots to the canvas's.
+type camera struct {
+	offset [2]float64
+	scale  float64
+}
+
+// place is where the view stands: the map on screen, its cluster, and the selection.
+type place struct {
+	graph   *graph
+	cluster string
+	sel     int
+}
 
 func newView(items []Item, opener Opener, acts actions.Atlas) view {
 	v := view{opener: opener, acts: acts, width: 100, height: 40, sel: -1}
@@ -161,14 +187,79 @@ func (v *view) take(items []Item, keep string) {
 			v.refreshed = s.GeneratedAt
 		}
 	}
-	v.graph = buildGraph(items)
+	prev := v.graph
+	v.top = buildGraph(items)
+	v.graph, v.cam = v.top, nil
+	if hub, ok := v.top.byID[v.cluster]; ok && len(v.top.closure(hub)) > 0 {
+		v.graph = v.top.sub(hub, prev)
+	} else {
+		v.cluster = ""
+	}
 	v.sel = -1
-	if i, ok := v.graph.byID[keep]; ok {
+	if i, ok := v.graph.byID[keep]; ok && (v.cluster != "" || v.top.top(i)) {
 		v.sel = i
-	} else if order := v.graph.tour(); len(order) > 0 {
+	} else if order := v.graph.tour(v.walk()); len(order) > 0 {
 		v.sel = order[0]
 	}
 	v.graph.wake()
+}
+
+// walk is the nodes the arrows step through: the top projects on the overview, every
+// project in a cluster.
+func (v *view) walk() []int {
+	if v.cluster == "" {
+		return v.graph.tops()
+	}
+	return nil
+}
+
+// topOf is a node of the map on screen as a node of the overview, which holds every
+// link, including those that leave the cluster.
+func (v *view) topOf(i int) node {
+	return v.top.nodes[v.top.byID[v.graph.nodes[i].id]]
+}
+
+// enter opens a hub's cluster onto the screen with the hub selected. The camera starts
+// where the overview stood, so the cluster opens out of it.
+func (v *view) enter(hub int) {
+	offset, scale := v.fit()
+	id := v.top.nodes[hub].id
+	v.graph = v.top.sub(hub, nil)
+	v.cluster = id
+	v.cam = &camera{offset: offset, scale: scale}
+	v.panel = panelNone
+	v.selectNode(v.graph.byID[id])
+}
+
+// leave returns to the overview with the cluster's hub selected.
+func (v *view) leave() {
+	id := v.cluster
+	v.graph, v.cluster, v.cam = v.top, "", nil
+	v.panel = panelNone
+	v.selectNode(v.top.byID[id])
+}
+
+// show selects a project given as a node of the overview, moving to the level that
+// holds it: the cluster on screen when it is there, the overview for a top project, and
+// otherwise the cluster of the first top project that mirrors it.
+func (v *view) show(i int) {
+	id := v.top.nodes[i].id
+	if j, ok := v.graph.byID[id]; ok && (v.cluster != "" || v.top.top(i)) {
+		v.selectNode(j)
+		return
+	}
+	if v.top.top(i) {
+		v.leave()
+		v.selectNode(i)
+		return
+	}
+	for _, t := range v.top.tops() {
+		if contains(v.top.closure(t), i) {
+			v.enter(t)
+			v.selectNode(v.graph.byID[id])
+			return
+		}
+	}
 }
 
 // current is the selected project, or nil.
@@ -206,14 +297,38 @@ func tick() tea.Cmd {
 	return tea.Tick(frame, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-// wake puts energy into the map and starts the ticks when they are not running.
+// wake puts energy into the map and starts the ticks.
 func (v *view) wake() tea.Cmd {
 	v.graph.wake()
-	if v.ticking || v.graph.settled() {
+	return v.run()
+}
+
+// run starts the ticks when the map moves and they are not running.
+func (v *view) run() tea.Cmd {
+	if v.ticking || !v.moving() {
 		return nil
 	}
 	v.ticking = true
 	return tick()
+}
+
+// moving reports whether the next frame differs: the layout has energy or a cluster is
+// still opening.
+func (v *view) moving() bool { return !v.graph.settled() || v.cam != nil }
+
+// pan moves the camera part of the way to the map's fit, and drops it once it arrives.
+func (v *view) pan() {
+	if v.cam == nil {
+		return
+	}
+	offset, scale := v.fit()
+	c := v.cam
+	c.scale += (scale - c.scale) * ease
+	c.offset[0] += (offset[0] - c.offset[0]) * ease
+	c.offset[1] += (offset[1] - c.offset[1]) * ease
+	if math.Abs(scale-c.scale) < scale/100 && math.Abs(offset[0]-c.offset[0]) < 1 && math.Abs(offset[1]-c.offset[1]) < 1 {
+		v.cam = nil
+	}
 }
 
 func (v view) Init() tea.Cmd {
@@ -236,10 +351,11 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return v, nil
 		}
 		v.graph.step()
-		if v.graph.settled() {
+		v.pan()
+		if !v.moving() {
 			v.ticking = false
 			if !v.chosen {
-				if order := v.graph.tour(); len(order) > 0 {
+				if order := v.graph.tour(v.walk()); len(order) > 0 {
 					v.sel = order[0]
 				}
 			}
@@ -248,6 +364,7 @@ func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return v, tick()
 	case tea.WindowSizeMsg:
 		v.width, v.height = msg.Width, msg.Height
+		v.cam = nil
 		return v, nil
 	case agentDoneMsg:
 		if msg.err != nil {
@@ -330,24 +447,38 @@ func (v view) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.Type {
 	case tea.KeyEnter:
-		if v.current() != nil {
-			v.panel = togglePanel(v.panel, panelCard)
-		}
-		return v, nil
-	case tea.KeyEsc:
-		if v.panel != panelNone {
-			v.panel = panelNone
+		if v.current() == nil {
 			return v, nil
 		}
-		return v, tea.Quit
+		if v.panel == panelNone && v.opens() {
+			v.enter(v.sel)
+			return v, v.wake()
+		}
+		v.panel = togglePanel(v.panel, panelCard)
+		return v, nil
+	case tea.KeyEsc:
+		switch {
+		case v.panel != panelNone:
+			v.panel = panelNone
+		case v.cluster != "":
+			v.leave()
+		default:
+			return v, tea.Quit
+		}
+		return v, nil
 	case tea.KeyRight, tea.KeyDown, tea.KeyTab:
-		v.selectNode(v.graph.along(v.sel, 1))
+		v.selectNode(along(v.graph.tour(v.walk()), v.sel, 1))
 	case tea.KeyLeft, tea.KeyUp, tea.KeyShiftTab:
-		v.selectNode(v.graph.along(v.sel, -1))
+		v.selectNode(along(v.graph.tour(v.walk()), v.sel, -1))
 	case tea.KeyShiftUp, tea.KeyShiftDown, tea.KeyShiftLeft, tea.KeyShiftRight:
 		return v.nudge(msg.Type)
 	}
 	return v, nil
+}
+
+// opens reports whether Enter opens a cluster: the selection is a hub on the overview.
+func (v view) opens() bool {
+	return v.cluster == "" && v.sel >= 0 && len(v.graph.closure(v.sel)) > 0
 }
 
 // togglePanel opens a panel, or closes it when it is the one open.
@@ -363,7 +494,7 @@ func (v view) nudge(key tea.KeyType) (tea.Model, tea.Cmd) {
 	if v.sel < 0 {
 		return v, nil
 	}
-	_, scale := v.fit()
+	_, scale := v.transform()
 	step := nudgeCells * 2 / scale
 	switch key {
 	case tea.KeyShiftUp:
@@ -443,28 +574,31 @@ func (v view) openFind() (tea.Model, tea.Cmd) {
 	in.Prompt = "  find: "
 	in.Width = max(20, v.width-lipgloss.Width(in.Prompt)-4)
 	in.Focus()
-	v.find, v.findWas = &in, v.sel
+	v.find, v.findWas = &in, place{graph: v.graph, cluster: v.cluster, sel: v.sel}
 	return v, textinput.Blink
 }
 
-// updateFind forwards keys to the prompt and moves the selection to the first match;
-// Enter keeps it, Esc puts the selection back.
+// updateFind forwards keys to the prompt and moves the selection to the first match
+// among every project, at whichever level holds it; Enter keeps it, Esc puts the level
+// and the selection back.
 func (v view) updateFind(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
 		v.find = nil
-		v.selectNode(v.findWas)
-		return v, nil
+		v.graph, v.cluster, v.cam = v.findWas.graph, v.findWas.cluster, nil
+		v.panel = panelNone
+		v.selectNode(v.findWas.sel)
+		return v, v.run()
 	case tea.KeyEnter:
 		v.find = nil
 		return v, nil
 	}
 	in, cmd := v.find.Update(msg)
 	v.find = &in
-	if i := v.graph.find(in.Value()); i >= 0 {
-		v.selectNode(i)
+	if i := v.top.find(in.Value()); i >= 0 {
+		v.show(i)
 	}
-	return v, cmd
+	return v, tea.Batch(cmd, v.run())
 }
 
 // openStub opens the one-line prompt that opens a thread in a project.
@@ -545,17 +679,21 @@ func (v view) open(item *Item) (tea.Model, tea.Cmd) {
 
 func (v view) mapHeight() int { return max(5, v.height-3) }
 
-// header is the first line: the atlas, its counts, and when it was refreshed.
+// header is the first line: where the view stands, its counts, and when the atlas was
+// refreshed.
 func (v view) header() string {
 	projects, problems, links := 0, 0, len(v.graph.edges())
-	for _, it := range v.items {
-		if it.Entry.Error != "" {
+	for _, n := range v.graph.nodes {
+		if n.problem {
 			problems++
 		} else {
 			projects++
 		}
 	}
 	left := "  " + title.Render("Atlas")
+	if hub, ok := v.top.byID[v.cluster]; ok {
+		left += dim.Render(" › ") + title.Render(v.top.nodes[hub].name)
+	}
 	var counts []string
 	counts = append(counts, fmt.Sprintf("%d project%s", projects, plural(projects)))
 	if links > 0 {
@@ -575,12 +713,25 @@ func (v view) header() string {
 	return lipgloss.NewStyle().MaxWidth(v.width).Render(left)
 }
 
-// labelOf is a node's marker and name.
-func labelOf(n node) string {
-	if n.problem {
+// label is a node's marker and name. On the overview a hub, which Enter opens, wears a
+// ring.
+func (v view) label(i int) string {
+	n := v.graph.nodes[i]
+	switch {
+	case n.problem:
 		return "✗ " + n.name
+	case v.cluster == "" && len(n.members) > 0 && v.graph.top(i):
+		return "◉ " + n.name
 	}
 	return "● " + n.name
+}
+
+// transform is how the map is drawn now: the camera while a cluster opens, else the fit.
+func (v view) transform() (offset [2]float64, scale float64) {
+	if v.cam != nil {
+		return v.cam.offset, v.cam.scale
+	}
+	return v.fit()
 }
 
 // fit is the transform from the map's dots to the canvas's: the offset of the map's
@@ -589,8 +740,8 @@ func labelOf(n node) string {
 func (v view) fit() (offset [2]float64, scale float64) {
 	c := v.mapHeight()
 	labels := 0
-	for _, n := range v.graph.nodes {
-		labels = max(labels, lipgloss.Width(labelOf(n)))
+	for i := range v.graph.nodes {
+		labels = max(labels, lipgloss.Width(v.label(i)))
 	}
 	padL, padR, padT, padB := 4.0, float64(2*(labels+2)), 4.0, 6.0
 	minX, minY, maxX, maxY := v.graph.bounds()
@@ -607,7 +758,7 @@ func (v view) fit() (offset [2]float64, scale float64) {
 // first so it keeps its place, and the panel over all of it.
 func (v *view) draw() *canvas {
 	c := newCanvas(v.width, v.mapHeight())
-	offset, scale := v.fit()
+	offset, scale := v.transform()
 	dots := make([][2]int, len(v.graph.nodes))
 	v.cells = make([]cell, len(v.graph.nodes))
 	for i, n := range v.graph.nodes {
@@ -616,9 +767,10 @@ func (v *view) draw() *canvas {
 		dots[i] = [2]int{x, y}
 		v.cells[i] = cell{x / 2, y / 4}
 	}
+	lit := v.lit()
 	for _, e := range v.graph.edges() {
 		var layer int8 = 1
-		if e[0] == v.sel || e[1] == v.sel {
+		if lit[e[0]] && lit[e[1]] || v.cluster != "" && (e[0] == v.sel || e[1] == v.sel) {
 			layer = 2
 		}
 		c.line(dots[e[0]][0], dots[e[0]][1], dots[e[1]][0], dots[e[1]][1], layer)
@@ -633,7 +785,7 @@ func (v *view) draw() *canvas {
 		}
 	}
 	for _, i := range order {
-		text := v.nodeStyle(i).Render(labelOf(v.graph.nodes[i]))
+		text := v.nodeStyle(i).Render(v.label(i))
 		v.placeLabel(c, v.cells[i], text)
 	}
 	if lines := v.overlay(); len(lines) > 0 {
@@ -663,7 +815,21 @@ func (v view) placeLabel(c *canvas, at cell, text string) {
 	c.place(x, at.y, text)
 }
 
-// nodeStyle is how a node's label reads against the selection.
+// lit is the selected cluster on the overview, hub and closure; inside a cluster, none.
+func (v view) lit() map[int]bool {
+	out := map[int]bool{}
+	if v.cluster != "" || v.sel < 0 {
+		return out
+	}
+	out[v.sel] = true
+	for _, m := range v.graph.closure(v.sel) {
+		out[m] = true
+	}
+	return out
+}
+
+// nodeStyle is how a node's label reads against the selection. On the overview the
+// selected project lights its whole cluster; inside one, its members and its hubs.
 func (v view) nodeStyle(i int) lipgloss.Style {
 	n := v.graph.nodes[i]
 	switch {
@@ -673,6 +839,11 @@ func (v view) nodeStyle(i int) lipgloss.Style {
 		return problemSt
 	case v.sel < 0:
 		return nodeSt
+	case v.cluster == "":
+		if v.lit()[i] {
+			return memberSt
+		}
+		return fadedSt
 	case contains(v.graph.nodes[v.sel].members, i):
 		return memberSt
 	case contains(v.graph.nodes[v.sel].hubs, i):
@@ -705,11 +876,12 @@ func (v view) overlay() []string {
 			return nil
 		}
 		var members, hubs []string
-		for _, m := range v.graph.nodes[v.sel].members {
-			members = append(members, v.graph.nodes[m].name)
+		n := v.topOf(v.sel)
+		for _, m := range n.members {
+			members = append(members, v.top.nodes[m].name)
 		}
-		for _, h := range v.graph.nodes[v.sel].hubs {
-			hubs = append(hubs, v.graph.nodes[h].name)
+		for _, h := range n.hubs {
+			hubs = append(hubs, v.top.nodes[h].name)
 		}
 		return panel(entryName(it.Entry), cardLines(it.Entry, members, hubs), width, tall)
 	}
@@ -719,10 +891,10 @@ func (v view) overlay() []string {
 // helpLines is the body of the keys panel.
 func helpLines(harness string) []string {
 	rows := [][2]string{
-		{"→ or Tab", "the next project along the map"},
+		{"→ or Tab", "the next cluster; inside one, the next project"},
 		{"← or Shift+Tab", "the previous one"},
 		{"Shift+arrows", "nudge the selected project; the map answers"},
-		{"Enter", "open its card; again to close"},
+		{"Enter", "open a cluster, or the card; again to close"},
 		{"/", "find a project by name"},
 		{"o", "open atlas/<name>/ in Obsidian"},
 		{"c", "start " + harnessLabel(harness) + " in the work folder"},
@@ -731,7 +903,7 @@ func helpLines(harness string) []string {
 		{"n", "open a thread"},
 		{"R", "refresh every project"},
 		{",", "settings: harness and IDE"},
-		{"Esc", "close a panel; on the map, quit"},
+		{"Esc", "close a panel; leave a cluster; else quit"},
 		{"q", "quit"},
 	}
 	var out []string
@@ -755,19 +927,25 @@ func (v view) summary() string {
 	if e.Error != "" {
 		return errSt.Render(entryName(e)) + "  " + dim.Render(e.Error)
 	}
-	n := v.graph.nodes[v.sel]
+	n := v.topOf(v.sel)
 	parts := []string{memberSt.Render(e.Name)}
-	if len(n.members) > 0 {
+	if v.opens() {
+		var names []string
+		for _, m := range v.graph.closure(v.sel) {
+			names = append(names, v.graph.nodes[m].name)
+		}
+		parts = append(parts, fmt.Sprintf("%d in its cluster: ", len(names))+memberSt.Render(strings.Join(names, ", ")))
+	} else if len(n.members) > 0 {
 		var names []string
 		for _, m := range n.members {
-			names = append(names, v.graph.nodes[m].name)
+			names = append(names, v.top.nodes[m].name)
 		}
 		parts = append(parts, "mirrors "+memberSt.Render(strings.Join(names, ", ")))
 	}
 	if len(n.hubs) > 0 {
 		var names []string
 		for _, h := range n.hubs {
-			names = append(names, v.graph.nodes[h].name)
+			names = append(names, v.top.nodes[h].name)
 		}
 		parts = append(parts, "mirrored by "+hubSt.Render(strings.Join(names, ", ")))
 	}
@@ -832,12 +1010,18 @@ func (v view) hints() string {
 		keys = []hint{{"Enter card", 0}, {"R refresh", 2}, {"←→ select", 3}, {"? keys", 1}, {"q quit", 0}}
 	case v.current() != nil:
 		enter := "Enter card"
-		if v.panel == panelCard {
+		switch {
+		case v.panel == panelCard:
 			enter = "Enter close"
+		case v.opens():
+			enter = "Enter open cluster"
 		}
 		keys = []hint{{enter, 0}, {"o Obsidian", 4}, {"c " + harnessLabel(v.harness()), 5}, {"i IDE", 6}, {"t terminal", 7}, {"n thread", 8}, {"/ find", 3}, {"R refresh", 10}, {", settings", 9}, {"? keys", 2}, {"q quit", 1}}
 	default:
 		keys = []hint{{"R refresh", 2}, {", settings", 3}, {"? keys", 1}, {"q quit", 0}}
+	}
+	if v.cluster != "" && v.panel == panelNone && !v.settings {
+		keys = append(keys[:1], append([]hint{{"Esc back", 1}}, keys[1:]...)...)
 	}
 	for len(keys) > 1 {
 		var parts []string

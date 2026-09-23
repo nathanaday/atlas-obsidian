@@ -22,7 +22,7 @@ one tool from a Claude Code session, so scripts, muscle memory, and the
 | — | `open-codex NAME [--thread ID]` | — |
 | `n` open a new thread | `thread PROJECT new TEXT` | `thread` |
 | `R` refresh | `refresh` | `atlas` with `refresh` |
-| arrows and Tab select; `/` finds; Enter opens the card; `?` shows every key; `q` quits | — | — |
+| arrows and Tab select; Enter opens a cluster or the card; Esc steps back; `/` finds; `?` shows every key; `q` quits | — | — |
 | — | `init [PATH]`, `edit NAME`, `forget NAME` | `project` |
 | — | `edit NAME --add-member P`, `sync [PROJECT]` | `project` with `add_members`, then `sync` |
 | — | `init --no-threads`, `edit NAME --threads on\|off` | `project` with `threads` |
@@ -491,22 +491,34 @@ atlas-obsidian open-vault
 map of every project. Each project is a node, each member link is an edge, and
 a force simulation lays them out: linked projects pull together, every project
 pushes the others away, and the map settles like a mobile. Nudge a node and the
-rest answer. The selected project is filled with the project color; the
-projects it mirrors are lit in the same color, the projects that mirror it in
-the hub color, and everything else fades. A folder the atlas could not read is
-a red node. The line under the map says what the selection is, what it mirrors
-and what mirrors it, and its facts; a zero is left out. Enter opens the card:
-only the rows that have something to say. The view is for seeing what exists
-and getting there; creating and changing things is the CLI's and the session's
-job.
+rest answer. A folder the atlas could not read is a red node. The view is for
+seeing what exists and getting there; creating and changing things is the CLI's
+and the session's job.
+
+The map has two levels. The overview shows every project, and the arrows walk
+only the top projects: those no other project mirrors, including a project with
+no links. Each top project heads a cluster: itself and every project it mirrors,
+directly or through a member. A hub, a top project with members, wears a ring
+(`◉`); selecting it lights its whole cluster, and everything else fades. Enter on
+a hub opens its cluster: the map then holds only the cluster's projects, which
+spread out from where they stood to fill the screen, and the header reads
+`Atlas › <hub>`. Inside, the arrows walk every project in the cluster; the
+selected one is filled, the projects it mirrors are lit in the project color,
+and the projects that mirror it in the hub color. Esc returns to the overview
+with the hub selected. An atlas with no links has one level.
+
+The line under the map says what the selection is, what it mirrors (for a hub on
+the overview, its whole cluster) and what mirrors it, and its facts; a zero is
+left out. Enter on anything that is not a hub on the overview opens the card:
+only the rows that have something to say.
 
 | Key | What it does |
 |---|---|
-| `→` `↓` Tab | the next project along the map |
+| `→` `↓` Tab | the next top project on the overview; the next project inside a cluster |
 | `←` `↑` Shift+Tab | the previous one |
 | Shift+arrows | nudge the selected project; the map answers |
-| Enter | open the selected project's card; again to close it |
-| `/` | find a project by name; Enter keeps the match, Esc goes back |
+| Enter | open the selected hub's cluster, or the card; again to close the card |
+| `/` | find any project by name, at either level; Enter keeps the match, Esc goes back |
 | `o` | open `atlas/<name>/` in Obsidian |
 | `c` | start the preferred harness in the work |
 | `i` | open the work folder in the preferred IDE |
@@ -515,15 +527,17 @@ job.
 | `R` | refresh in the background |
 | `,` | settings: the harness and the IDE |
 | `?` | show every key; again to hide them |
-| Esc | close the card, the settings, or the keys; on the map, quit |
+| Esc | close the card, the settings, or the keys; else leave the cluster; on the overview, quit |
 | `q` | quit |
 
 The map fits the screen at any size and again when the terminal resizes.
 
-The arrows walk one path through the map: it starts at the leftmost project and
-always goes to the nearest project not visited yet, so every project is
-reached once and each step is a short hop. `→` walks it forward, `←` walks it
-back, and both wrap at the ends. `/` jumps to a project by name as you type.
+The arrows walk one path through the projects of the level: it starts at the
+leftmost and always goes to the nearest one not visited yet, so each is reached
+once and each step is a short hop. `→` walks it forward, `←` walks it back, and
+both wrap at the ends. `/` jumps to a project by name as you type; when the
+match lies in another cluster, the view moves there, and Esc puts the view and
+the selection back.
 
 ```bash
 atlas-obsidian

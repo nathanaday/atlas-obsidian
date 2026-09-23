@@ -186,10 +186,13 @@ atlas-obsidian
 With no arguments the binary opens a map of every project it knows. Each
 project is a node and each member link is an edge, laid out by a live force
 simulation, so the projects that share knowledge sit together and the map
-settles like a mobile. `→` and `←` walk every project along one path through the map, `/` finds one
-by name as you type, and Shift+arrows nudge a node while the rest answer. The selected project is filled, what it mirrors and what mirrors it
-are lit, and one line under the map says how it connects. Enter opens its
-card with only the facts that exist.
+settles like a mobile. `→` and `←` walk the clusters, one per project that no
+other project mirrors. Enter on a hub opens its cluster onto the whole screen,
+where the arrows walk every project in it, and Esc steps back out. `/` finds any
+project by name as you type, and Shift+arrows nudge a node while the rest
+answer. The selected project is filled, what it mirrors and what mirrors it are
+lit, and one line under the map says how it connects. Enter on a project opens
+its card with only the facts that exist.
 
 From the map: `o` opens `atlas/<name>/` in Obsidian, `c` starts your preferred
 harness in the work folder, `i` opens it in VS Code, `t` opens a terminal

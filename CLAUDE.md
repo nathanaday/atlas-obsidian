@@ -152,7 +152,7 @@ internal/registry/      the scan of the projects the config lists, the entries, 
 internal/refresh/       derive one entry's state, rewrite the registry, list an entry's signals
 internal/manage/        init, edit, forget, and register a project
 internal/links/         the facts git reports about a folder, and CleanName
-internal/tui/           Bubble Tea screens: the view (a force-directed map of the projects and their member links on a braille canvas, the selection's summary, the card, find, settings, launch keys)
+internal/tui/           Bubble Tea screens: the view (a force-directed map of the projects and their member links on a braille canvas, an overview of the clusters and each cluster opened onto the screen, the selection's summary, the card, find, settings, launch keys)
 internal/terminal/      open a terminal window at a folder
 internal/ide/           open the project root in the preferred IDE (VS Code for now)
 internal/obsidian/      Obsidian's vault registry, obsidian:// URIs, restart

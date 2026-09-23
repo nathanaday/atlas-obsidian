@@ -206,28 +206,114 @@ func (g *graph) bounds() (minX, minY, maxX, maxY float64) {
 	return
 }
 
-// tour is the order the arrow keys walk the map in: from the leftmost node, always to
-// the nearest node not yet visited. Every node is reached once, each step is a short
-// hop, and the walk never bounces between two neighbors. It follows the layout, so it
-// is stable once the map has settled.
-func (g *graph) tour() []int {
-	n := len(g.nodes)
-	if n == 0 {
+// tops are the projects no other project mirrors, in node order: each heads a cluster.
+// A project with no links is a top project. A cycle that no top project reaches, which
+// the members check refuses but a hand-edited file could hold, gets its first node as a
+// top project, so every node belongs to some cluster.
+func (g *graph) tops() []int {
+	var out []int
+	reached := make([]bool, len(g.nodes))
+	mark := func(i int) {
+		out = append(out, i)
+		reached[i] = true
+		for _, m := range g.closure(i) {
+			reached[m] = true
+		}
+	}
+	for i, n := range g.nodes {
+		if len(n.hubs) == 0 {
+			mark(i)
+		}
+	}
+	for i := range g.nodes {
+		if !reached[i] {
+			mark(i)
+		}
+	}
+	sort.Ints(out)
+	return out
+}
+
+// closure is every node a node mirrors, directly or through a member, in node order and
+// without the node itself: the projects its mirror holds.
+func (g *graph) closure(i int) []int {
+	seen := map[int]bool{i: true}
+	queue := []int{i}
+	var out []int
+	for len(queue) > 0 {
+		at := queue[0]
+		queue = queue[1:]
+		for _, m := range g.nodes[at].members {
+			if !seen[m] {
+				seen[m] = true
+				out = append(out, m)
+				queue = append(queue, m)
+			}
+		}
+	}
+	sort.Ints(out)
+	return out
+}
+
+// top reports whether a node heads a cluster.
+func (g *graph) top(i int) bool { return contains(g.tops(), i) }
+
+// sub is the graph of a hub's cluster: the hub, its closure, and the links among them.
+// Each node starts where it stands in g, or where it stood in prev when prev holds it, so
+// the cluster opens out of the overview and keeps its layout across a refresh.
+func (g *graph) sub(hub int, prev *graph) *graph {
+	set := append([]int{hub}, g.closure(hub)...)
+	sort.Ints(set)
+	s := &graph{byID: map[string]int{}, alpha: 1}
+	for _, i := range set {
+		n := g.nodes[i]
+		n.vx, n.vy, n.members, n.hubs = 0, 0, nil, nil
+		if prev != nil {
+			if j, ok := prev.byID[n.id]; ok {
+				n.x, n.y = prev.nodes[j].x, prev.nodes[j].y
+			}
+		}
+		s.byID[n.id] = len(s.nodes)
+		s.nodes = append(s.nodes, n)
+	}
+	for _, i := range set {
+		from := s.byID[g.nodes[i].id]
+		for _, m := range g.nodes[i].members {
+			if to, ok := s.byID[g.nodes[m].id]; ok {
+				s.nodes[from].members = append(s.nodes[from].members, to)
+				s.nodes[to].hubs = append(s.nodes[to].hubs, from)
+			}
+		}
+	}
+	return s
+}
+
+// tour is the order the arrow keys walk a set of nodes in, or every node when among is
+// nil: from the leftmost, always to the nearest not yet visited. Every node is reached
+// once, each step is a short hop, and the walk never bounces between two neighbors. It
+// follows the layout, so it is stable once the map has settled.
+func (g *graph) tour(among []int) []int {
+	if among == nil {
+		among = make([]int, len(g.nodes))
+		for i := range among {
+			among[i] = i
+		}
+	}
+	if len(among) == 0 {
 		return nil
 	}
-	start := 0
-	for i := range g.nodes {
+	start := among[0]
+	for _, i := range among {
 		if g.nodes[i].x < g.nodes[start].x {
 			start = i
 		}
 	}
 	order := []int{start}
-	seen := make([]bool, n)
-	seen[start] = true
-	for len(order) < n {
+	seen := map[int]bool{start: true}
+	for len(order) < len(among) {
 		at := g.nodes[order[len(order)-1]]
 		next, best := -1, math.Inf(1)
-		for i := range g.nodes {
+		for _, i := range among {
 			if seen[i] {
 				continue
 			}
@@ -242,9 +328,9 @@ func (g *graph) tour() []int {
 	return order
 }
 
-// step along the tour: the node delta places after from, wrapping at the ends.
-func (g *graph) along(from, delta int) int {
-	order := g.tour()
+// along steps a tour: the node delta places after from, wrapping at the ends. A from
+// outside the tour steps from its start.
+func along(order []int, from, delta int) int {
 	if len(order) == 0 {
 		return -1
 	}
