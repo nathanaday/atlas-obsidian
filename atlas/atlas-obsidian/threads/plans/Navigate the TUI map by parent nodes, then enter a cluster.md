@@ -6,8 +6,8 @@ created: 2026-09-22
 ---
 
 > [!plan] Navigate the TUI map by parent nodes, then enter a cluster
-> [Stub](<../stubs/Navigate the TUI map by parent nodes, then enter a cluster.md>) → [Spec](<../specs/Navigate the TUI map by parent nodes, then enter a cluster.md>) → **Plan** → Receipt
-> `thr-20260922-5fe9` · [Thread](<../Navigate the TUI map by parent nodes, then enter a cluster.md>) · filed 2026-09-22
+> [Stub](<../stubs/Navigate the TUI map by parent nodes, then enter a cluster.md>) → [Spec](<../specs/Navigate the TUI map by parent nodes, then enter a cluster.md>) → **Plan** → [Receipt](<../receipts/Navigate the TUI map by parent nodes, then enter a cluster.md>)
+> `thr-20260922-5fe9` · [Thread](<../archive/Navigate the TUI map by parent nodes, then enter a cluster.md>) · filed 2026-09-22
 
 ## Approach
 
