@@ -1,16 +1,32 @@
 
 
-### Functional
+## Core Features
 
-Connect kb's together
-
-Or sync multiple kb's to a high level kb
-
-Skill to ingest huge documents (hundreds of pages) efficiently using map, reduce, merge style pipeline + subagents
+Consider losing the "signal" entity
+- Should be threads
 
 
-### Cool / Sugary 
+
+## Skills
+
+
+
+## CLI
+
+You should be able to open `atlas-obsidian` on a cluster already
+
+
+
+## Cool / Sugary 
+
+Add a README.md to each atlas/ project page
+- When you open atlas/ on any project repo, it tells you about what the atlas project is and links you to the github source
 
 Create a hook that updates the readme with a rendered image of the knowledge graph on each refresh
 
 Create an obsidian plugin for ingesting, linting, and opening claude on a mind map node
+
+
+## TUI
+
+
