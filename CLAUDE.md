@@ -16,7 +16,7 @@ Read `README.md` first. This file holds what the code and README do not say.
 | Core design and the reasons behind it: the engine, one operation one commit | `docs/core-design.md` |
 | Members: a project mirrors other projects' wikis under `wiki/projects/` | `docs/members-design.md` |
 | History, not contracts: the designs this one replaced | `docs/v3-design.md`, `docs/v2-design.md`, `docs/atlas-design.md`, `docs/tasks-design.md`, `docs/stubs-design.md`, `docs/spec.md`, `docs/superpowers/` |
-| The skill system: three categories, the map, the workflow, who owns what, the shape of a skill | `docs/skills.md` |
+| The skill system: three categories, the map, the workflow, who owns what, the form of a skill | `docs/skills.md` |
 | Each skill's contract | `skills/<name>/SKILL.md`, `skills/wiki/references/`, `skills/thread/references/` |
 
 ## Why the project exists
