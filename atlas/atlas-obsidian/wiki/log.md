@@ -13,6 +13,15 @@ tags:
 
 Newest completed operations appear first. atlas-obsidian writes this page.
 
+## 2026-09-22 — ingest-20260923-060723-b086
+
+file the atlas-obsidian CLI reference 5.6.0: atlas-obsidian CLI reference 5.6.0, atlas-obsidian CLI; clear the inbox
+
+- Created: [[atlas-obsidian CLI]], [[atlas-obsidian CLI reference 5.6.0]]
+- Updated: [[index|Wiki Index]], [[hot|Hot Cache]]
+- Removed: `inbox/atlas-obsidian CLI reference 5.6.0.md`
+- Sources: src-378e30848deb6d0bd79e
+
 ## 2026-09-22 — capture-20260923-060544-65a7
 
 capture atlas-obsidian CLI reference 5.6.0.md

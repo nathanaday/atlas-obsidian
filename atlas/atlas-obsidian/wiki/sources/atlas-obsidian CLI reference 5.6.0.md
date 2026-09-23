@@ -1,9 +1,42 @@
-# atlas-obsidian CLI reference, version 5.6.0
+---
+type: source
+title: "atlas-obsidian CLI reference 5.6.0"
+status: developing
+created: 2026-09-22
+updated: 2026-09-22
+tags:
+  - source
+  - cli
+  - reference
+source_type: reference
+author: atlas-obsidian
+date_published: 2026-09-22
+url:
+source_id: src-378e30848deb6d0bd79e
+version: 5.6.0
+---
 
-This reference lists every command of the `atlas-obsidian` binary at version
-5.6.0. The sources are `atlas-obsidian help`, the flag definitions and usage
-errors in `internal/cli/cli.go`, and `docs/usage.md`, all read at the same
-commit.
+# atlas-obsidian CLI reference 5.6.0
+
+## Summary
+
+The full command reference of the [[atlas-obsidian CLI]] at version 5.6.0,
+built from `atlas-obsidian help`, the flag definitions and usage errors in
+`internal/cli/cli.go`, and `docs/usage.md` at commit `a13908d`. The
+sections follow the categories of the short usage: getting started,
+projects, threads, the wiki, across the atlas, and the plugin. Captured copy:
+`.raw/captured/613e5241708a5a61b8f110f5d85cf40dae972e4a2695942cd1d10a5910a486cc.md`.
+
+## Notes
+
+- The short usage (`atlas-obsidian help`) omits some flags: `describe
+  --no-claude`, `ingest --dry-run --no-claude`, `lint --json --strict`,
+  `history -n`, `stub --type`, `doctor --agent`, and the `setup` flags. This
+  reference lists them.
+- `describe` accepts no PROJECT inside a project, though the short usage
+  shows `describe PROJECT`.
+- `ingest` and `stub` print `[PROJECT]` in their usage errors but require the
+  argument; `.` names the current project.
 
 ## Invocation
 
