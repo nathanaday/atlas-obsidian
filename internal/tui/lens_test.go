@@ -92,6 +92,14 @@ func TestTheThreadsCard(t *testing.T) {
 	if in := v.intent(); !in.Ask || in.Thread != "thr-20260917-0003" {
 		t.Fatalf("c asks about the thread under the cursor: %+v", in)
 	}
+	// A refresh that closed threads keeps the cursor on the list.
+	items := sample()
+	items[1].Entry.State.Threads.Open = items[1].Entry.State.Threads.Open[:1]
+	fewer := v
+	fewer.take(items, "id-webapp")
+	if fewer.cursor != 0 || !fewer.threadCard() {
+		t.Fatalf("after a refresh the cursor is %d", fewer.cursor)
+	}
 	v = pressV(v, tea.KeyUp, tea.KeyUp, tea.KeyUp)
 	if v.cursor != 0 {
 		t.Fatalf("↑ stops at the top: %d", v.cursor)

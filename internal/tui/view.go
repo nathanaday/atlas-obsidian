@@ -209,6 +209,7 @@ func (v *view) take(items []Item, keep string) {
 	} else if order := v.graph.tour(v.walk()); len(order) > 0 {
 		v.sel = order[0]
 	}
+	v.cursor = max(0, min(v.cursor, len(v.openList())-1))
 	v.graph.wake()
 }
 
