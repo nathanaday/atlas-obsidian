@@ -2,7 +2,7 @@
 
 Status: designed and built 2026-09-22, with 5.6.0. This document is the
 source of truth for the skills: the concept, the map, the workflow, who owns
-what, and the shape every skill follows. `internal/plugin` holds the plugin's
+what, and the form every skill follows. `internal/plugin` holds the plugin's
 files to it.
 
 ## One concept
@@ -90,9 +90,9 @@ a folder ──atlas-onboard──▶ a project
 - **Several projects** become one hub through `atlas-project` (members) and
   `atlas-merge` (what they hold in common).
 
-## The shape of a skill
+## The form of a skill
 
-Every SKILL.md follows one shape, so a reader finds the same thing in the
+Every SKILL.md follows one form, so a reader finds the same thing in the
 same place:
 
 1. Frontmatter: `name` (the folder), and `description`: what it does in one

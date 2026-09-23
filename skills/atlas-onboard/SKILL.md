@@ -73,8 +73,10 @@ and the page `wiki-describe` wrote:
    introduces, as concepts. At most twelve, each with a one-line reason.
    A page the describe operation wrote is not proposed again.
 3. Show the structure as one list. On a yes, `wiki-edit` seeds the pages the
-   user picked, as one commit through the `stub` tool. A seed costs little,
-   and lint lists it as a stub until an ingest or a save fills it.
+   user picked in one operation: a skeleton for each from `route`, linked
+   from the project page and the index, so no seed starts as an orphan. A
+   seed costs little, and lint lists it as a stub until an ingest or a save
+   fills it.
 
 An empty folder tree is not a structure. Propose folders only for pages that
 exist or are seeded now.
@@ -92,7 +94,8 @@ When threads are on, find the work already under way:
   reaches the network.
 
 Show the candidates as one numbered list: a title, where it came from, and a
-line of the text. The user picks. Each pick becomes a thread with
+line of the text. The user picks. A fault you found while reading the work
+may join the list, marked as yours. Each pick becomes a thread with
 `thread-stub`'s rule: the words as found, with the file and line or the issue
 number, and nothing added. A pile of forty stubs helps nobody; say when the
 list is long and offer the ten that matter most.
@@ -100,7 +103,9 @@ list is long and offer the ten that matter most.
 ## 6. Report
 
 Say what exists now: the project's folder, the describe operation, the
-seeded pages, the threads opened, and what was skipped. Then say how to
+seeded pages, the threads opened, and what was skipped. The thread files are
+the work's own files and nothing commits them: say they wait for the user's
+next commit. Then say how to
 work: a session anywhere inside the work is the project's session;
 `atlas-obsidian open-vault NAME` opens it in Obsidian; the inbox takes
 sources for `wiki-ingest` and notes for `thread-stub`.

@@ -12,7 +12,8 @@ user sees before it lands.
 
 Tools: `status`, `inbox`, `stage`, `capture`, `route`, `plan`, `apply`.
 Reads [operations.md](../wiki/references/operations.md),
-[provenance.md](../wiki/references/provenance.md), and, for a long source,
+[provenance.md](../wiki/references/provenance.md),
+[syntax.md](../wiki/references/syntax.md), and, for a long source,
 [large-sources.md](references/large-sources.md).
 
 ## 1. Agree on scope

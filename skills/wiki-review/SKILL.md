@@ -28,8 +28,9 @@ unclear, run the quick review and offer the deep one.
      and duplicate basenames, with path and line.
    - **Unreachable pages**: orphans, and pages no index or map lists.
    - **Duplicates**: `overlap`'s `duplicate` pairs inside this wiki, with
-     their scores and shared terms; the `related` pairs only when their
-     content score is high.
+     their scores and shared terms; the open `related` pairs only when their
+     content score is high. A settled pair is one page linking the other,
+     such as a page and the source it cites: leave it out.
    - **Weak evidence**: lint's `uncited` pages, which cite no source.
    - **Unfinished**: stubs to fill, wanted pages, empty sections, missing
      properties, ledger errors.

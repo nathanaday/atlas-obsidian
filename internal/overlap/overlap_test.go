@@ -138,9 +138,12 @@ func TestReportFindsDuplicatesRelatedPagesNamesAndTags(t *testing.T) {
 	if len(r.Tags) != 1 || r.Tags[0].Tag != "ops" || strings.Join(r.Tags[0].Origins, "+") != "a+b" || r.Tags[0].Pages != 2 {
 		t.Fatalf("tags %+v", r.Tags)
 	}
-	// Ranked: score descending, ties by path.
+	// Ranked: open pairs first, then score descending, ties by path.
 	for i := 1; i < len(r.Pairs); i++ {
-		if r.Pairs[i].Score > r.Pairs[i-1].Score {
+		if r.Pairs[i-1].Settled && !r.Pairs[i].Settled {
+			t.Fatalf("a settled pair before an open one at %d", i)
+		}
+		if r.Pairs[i].Settled == r.Pairs[i-1].Settled && r.Pairs[i].Score > r.Pairs[i-1].Score {
 			t.Fatalf("unsorted at %d: %+v", i, r.Pairs)
 		}
 	}
@@ -273,7 +276,39 @@ func TestWithinComparesOneWikisOwnPages(t *testing.T) {
 		t.Fatalf("within: %+v", r)
 	}
 	p := r.Pairs[0]
-	if p.A.Path != "wiki/concepts/Linux OS.md" || p.B.Path != "wiki/concepts/Linux.md" || p.Kind != Duplicate || p.A.Origin != "solo" || p.B.Origin != "solo" {
+	if p.A.Path != "wiki/concepts/Linux OS.md" || p.B.Path != "wiki/concepts/Linux.md" || p.Kind != Duplicate || p.A.Origin != "solo" || p.B.Origin != "solo" || p.Settled {
 		t.Fatalf("pair %+v", p)
+	}
+}
+
+func TestWithinALinkSettlesARelatedPairButNotADuplicate(t *testing.T) {
+	root := fixture(t, map[string]string{
+		"wiki/index.md":                page("Index", "meta", "", "", "- [[Kernel]]\n"),
+		"wiki/sources/OS Book.md":      page("OS Book", "source", "", "", os1+os2),
+		"wiki/concepts/Kernel.md":      page("Kernel", "concept", "", "", "The kernel schedules each process and drivers talk to hardware. From [[OS Book]]. See [[Kernel copy]].\n"),
+		"wiki/concepts/Kernel copy.md": page("Kernel copy", "concept", "", "", "The kernel schedules each process and drivers talk to hardware.\n"),
+	})
+	r, err := Run(root, "solo", Options{Within: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range r.Pairs {
+		switch {
+		case strings.HasSuffix(p.B.Path, "OS Book.md") || strings.HasSuffix(p.A.Path, "OS Book.md"):
+			if p.A.Path == "wiki/concepts/Kernel.md" || p.B.Path == "wiki/concepts/Kernel.md" {
+				if !p.Linked || (p.Kind == Related && !p.Settled) {
+					t.Errorf("a page and the source it cites: %+v", p)
+				}
+			}
+		case strings.Contains(p.A.Path, "Kernel") && strings.Contains(p.B.Path, "Kernel"):
+			if p.Kind != Duplicate || !p.Linked || p.Settled {
+				t.Errorf("linked duplicates stay open: %+v", p)
+			}
+		}
+		for _, term := range p.SharedTerms {
+			if allDigits(term) {
+				t.Errorf("a bare number as a shared term: %+v", p)
+			}
+		}
 	}
 }

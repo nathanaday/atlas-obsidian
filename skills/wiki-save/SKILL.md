@@ -9,8 +9,9 @@ Keep what the user selects from the conversation as a page, cited as the
 conversation it is. Only the scope the user named is saved.
 
 Tools: `status`, `route`, `plan`, `apply`. Reads
-[operations.md](../wiki/references/operations.md) and
-[frontmatter.md](../wiki/references/frontmatter.md).
+[operations.md](../wiki/references/operations.md),
+[frontmatter.md](../wiki/references/frontmatter.md), and
+[syntax.md](../wiki/references/syntax.md).
 
 Save only the scope the user selected. Never run automatically, never capture a
 whole transcript by default, never infer permission to archive unrelated

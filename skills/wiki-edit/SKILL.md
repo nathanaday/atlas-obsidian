@@ -57,7 +57,12 @@ Tools: `status`, `lint`, `route`, `stub`, `plan`, `apply`. Reads
 - **Seed wanted pages.** `stub` with no titles seeds every page the wiki's
   links want; with `titles` and a `type`, the ones the user names. It is one
   commit with no preview; undo takes it back. Say which pages it will seed
-  first.
+  first. `stub` refuses a title no link wants, so a seed never starts as an
+  orphan.
+- **Seed a structure.** New pages no link wants yet (the structure
+  `atlas-onboard` proposes, a profile's first pages): one `markdown` plan
+  with a `route` skeleton for each, and the links that reach them, from the
+  index and the page that describes the work.
 
 Every new page joins the index or a map of content in the same plan; a
 removed page leaves it; a moved page's entry follows it.

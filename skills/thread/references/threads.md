@@ -61,6 +61,10 @@ callout and rewrites it. Everything under it is prose.
 | Edit | the prose of a document that exists, and of a phase page |
 | Nobody by hand in a session | `threads/` and `project.json`; the hook refuses, and it refuses a new file written straight into a stage folder |
 
+The thread files are the work's own files, tracked like the code, and no
+tool commits them. They go in the work's next commit; `thread-run` commits
+the plan's progress with each slice.
+
 The user may edit any page in any editor. Deleting a document by hand moves
 the thread back to the stage before it.
 

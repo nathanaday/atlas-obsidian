@@ -242,7 +242,7 @@ func TestTheLaunchPromptsNameSkills(t *testing.T) {
 	}
 }
 
-// TestEverySkillSaysWhereItSits holds each skill to the shape docs/skills.md sets: the
+// TestEverySkillSaysWhereItSits holds each skill to the form docs/skills.md sets: the
 // tools it uses and the skills around it.
 func TestEverySkillSaysWhereItSits(t *testing.T) {
 	for _, dir := range skillDirs(t) {

@@ -89,7 +89,7 @@ for the next run, and the user can ask for it.
 ## Propose one merge
 
 Show the user everything before any write, in one message they can answer in
-a line. In this shape:
+a line. In this form:
 
 > **Merge into usc-f26.**
 >

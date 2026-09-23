@@ -96,9 +96,12 @@ type Pair struct {
 	SharedTerms []string `json:"shared_terms,omitempty"`
 	SharedLinks []string `json:"shared_links,omitempty"`
 	// UpgradedTo is a hub page named like one of the two; BridgedBy are the hub pages
-	// that link to both. Either settles the pair.
+	// that link to both. Either settles a pair of two origins. Linked says one page
+	// links the other, which settles a related pair of one origin: a page and the
+	// source it cites, or two pages that already point at each other.
 	UpgradedTo string   `json:"upgraded_to,omitempty"`
 	BridgedBy  []string `json:"bridged_by,omitempty"`
+	Linked     bool     `json:"linked,omitempty"`
 	Settled    bool     `json:"settled"`
 }
 
@@ -453,7 +456,7 @@ func tokens(text string) []string {
 		}
 		w := b.String()
 		b.Reset()
-		if len(w) < 3 || stopwords[w] {
+		if len(w) < 3 || stopwords[w] || allDigits(w) {
 			return
 		}
 		if w = stem(w); len(w) >= 3 {
@@ -469,6 +472,17 @@ func tokens(text string) []string {
 	}
 	flush()
 	return out
+}
+
+// allDigits says a word is a bare number: a year, a line, a count. Such words match
+// across pages that share nothing else. A word that mixes letters and digits stays.
+func allDigits(w string) bool {
+	for _, r := range w {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
 }
 
 // stem strips the common English suffixes: plural s, ies, ing, ed, and the doubled
@@ -519,7 +533,12 @@ func (ix *index) pairs(opts Options) ([]Pair, int) {
 			}
 		}
 	}
+	// Open pairs first: a settled one is already covered, and the limit should not
+	// spend itself on them.
 	sort.Slice(out, func(i, j int) bool {
+		if out[i].Settled != out[j].Settled {
+			return !out[i].Settled
+		}
 		if out[i].Score != out[j].Score {
 			return out[i].Score > out[j].Score
 		}
@@ -549,6 +568,13 @@ func (ix *index) score(i, j int) (Pair, bool) {
 	p := Pair{Kind: Related, A: ix.page(a), B: ix.page(b), Name: round(name), Content: round(content), Links: round(links), SharedTerms: ix.sharedTerms(a, b), SharedLinks: sharedLinks, Score: round(score)}
 	if name >= NameDuplicate || content >= ContentDuplicate {
 		p.Kind = Duplicate
+	}
+	if a.origin == b.origin {
+		// Inside one wiki a third page that links both says nothing: the index and the
+		// source pages link everything. A direct link settles a related pair.
+		p.Linked = a.linked[b.info.Path] || b.linked[a.info.Path]
+		p.Settled = p.Linked && p.Kind == Related
+		return p, true
 	}
 	for _, d := range []*doc{a, b} {
 		if d.origin == 0 {
@@ -917,6 +943,8 @@ func (r *Report) Markdown() string {
 				settled = "upgraded: " + p.UpgradedTo
 			case len(p.BridgedBy) > 0:
 				settled = "bridged by " + strings.Join(p.BridgedBy, ", ")
+			case p.Settled && p.Linked:
+				settled = "linked"
 			}
 			fmt.Fprintf(&b, "| %s | %.2f | %s: %s | %s: %s | %.2f | %.2f | %.2f | %s | %s |\n", p.Kind, p.Score, p.A.Origin, p.A.Path, p.B.Origin, p.B.Path, p.Name, p.Content, p.Links, strings.TrimPrefix(ev, "; "), settled)
 		}
