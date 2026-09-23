@@ -27,7 +27,7 @@ func sameStyle(a, b lipgloss.Style) bool { return a.Render("x") == b.Render("x")
 
 func TestLCyclesTheLenses(t *testing.T) {
 	v := selectName(t, sized(sample(), Opener{}, actions.Atlas{}), "webapp")
-	for _, want := range []lens{lensThreads, lensGit, lensDetails} {
+	for _, want := range []lens{lensThreads, lensGit, lensWiki} {
 		v = keyV(v, "l")
 		if v.lens != want || !strings.Contains(stripANSI(v.header()), "· "+want.String()) {
 			t.Fatalf("lens %v, header %q", v.lens, stripANSI(v.header()))
@@ -56,10 +56,10 @@ func TestTheThreadsLensColorsAndSizes(t *testing.T) {
 	if !sameStyle(v.nodeStyle(v.sel), selectedSt) {
 		t.Fatal("the selection stays filled")
 	}
-	if !strings.Contains(v.View(), diskSt.Render("⣿")) {
+	if !strings.Contains(v.View(), threadDiskSt.Render("⣿")) {
 		t.Fatal("a project with open threads sits on a disk")
 	}
-	if diskRadius(0) != 0 || diskRadius(1) >= diskRadius(4) || diskRadius(4) >= diskRadius(9) || diskRadius(1000) != 12 {
+	if threadRadius(0) != 0 || threadRadius(1) >= threadRadius(4) || threadRadius(4) >= threadRadius(9) || threadRadius(1000) != 12 {
 		t.Fatal("the disk grows with the count, within a bound")
 	}
 }
@@ -195,5 +195,28 @@ func TestTheVersionControlLens(t *testing.T) {
 	}
 	if !sameStyle(v.nodeStyle(nodeAt(t, v, "notes")), selectedSt) {
 		t.Fatal("the selection stays filled")
+	}
+}
+
+func TestTheWikiLensSizesTheWikis(t *testing.T) {
+	withColor(t)
+	v := selectName(t, sized(sample(), Opener{}, actions.Atlas{}), "notes")
+	if v.lens != lensWiki || !strings.Contains(stripANSI(v.header()), "· wiki") {
+		t.Fatal("the view opens on the wiki lens")
+	}
+	color := func(st lipgloss.Style) string { return strings.SplitN(st.Render("x"), "x", 2)[0] }
+	if screen := v.View(); !strings.Contains(screen, color(wikiDiskSt)) || strings.Contains(screen, color(threadDiskSt)) {
+		t.Fatal("every wiki sits on a disk of the wiki color")
+	}
+	for pages, want := range map[int]int{0: 0, 1: 1, 4: 2, 24: 4, 100: 9, 144: 10, 5000: 14} {
+		if got := wikiRadius(pages); got != want {
+			t.Errorf("%d pages: radius %d, want %d", pages, got, want)
+		}
+	}
+	items := sample()
+	fresh := items[4]
+	fresh.Entry.State = nil
+	if lensWiki.radius(fresh.Entry) != 0 {
+		t.Fatal("a project nobody refreshed has no disk")
 	}
 }

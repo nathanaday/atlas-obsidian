@@ -32,7 +32,7 @@ func touchedText(s *registry.State) string {
 	}
 }
 
-// facts is what a project's state says in a few words through the Details lens: pages,
+// facts is what a project's state says in a few words through the Wiki lens: pages,
 // the inbox, and when it was touched. A zero is left out; a project nobody refreshed says so.
 func facts(s *registry.State) []string {
 	if s == nil {
@@ -89,7 +89,7 @@ func problemFix(e registry.Entry) string {
 	return e.Error
 }
 
-// cardLines is the body of a project's card through the Details lens: only the rows that
+// cardLines is the body of a project's card through the Wiki lens: only the rows that
 // have something to say. The threads and git have lenses of their own.
 func cardLines(e registry.Entry, members, hubs []string) []string {
 	var out []string

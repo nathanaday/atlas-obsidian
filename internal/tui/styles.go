@@ -7,13 +7,14 @@ import (
 )
 
 // The palette: the project color for what is selected and what it mirrors, a second
-// color for what mirrors it, red for what is wrong, yellow for what waits on the user
-// through a lens, green for the version control lens, and two grays for what is not in
-// focus.
+// color for what mirrors it, red for what is wrong, cyan for the wiki lens, yellow for
+// what waits on the user through a lens, green for the version control lens, and two
+// grays for what is not in focus.
 const (
 	projectColor = lipgloss.Color("12")
 	hubColor     = lipgloss.Color("13")
 	problemColor = lipgloss.Color("9")
+	wikiColor    = lipgloss.Color("6")
 	waitColor    = lipgloss.Color("11")
 	gitColor     = lipgloss.Color("10")
 	mutedColor   = lipgloss.Color("245")
@@ -43,7 +44,10 @@ var (
 	threadSt = lipgloss.NewStyle().Foreground(waitColor).Bold(true)
 	dirtySt  = lipgloss.NewStyle().Foreground(problemColor).Bold(true)
 	gitSt    = lipgloss.NewStyle().Foreground(gitColor).Bold(true)
-	diskSt   = lipgloss.NewStyle().Foreground(waitColor)
+	wikiSt   = lipgloss.NewStyle().Foreground(wikiColor).Bold(true)
+	// The disks under the nodes: a wiki's size, and open threads.
+	wikiDiskSt   = lipgloss.NewStyle().Foreground(wikiColor)
+	threadDiskSt = lipgloss.NewStyle().Foreground(waitColor)
 )
 
 // stripANSI drops escape sequences: it measures styled text and renders a row plain.

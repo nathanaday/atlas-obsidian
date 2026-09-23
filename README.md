@@ -194,8 +194,10 @@ answer. The selected project is filled, what it mirrors and what mirrors it are
 lit, and one line under the map says how it connects. Enter on a project opens
 its card with only the facts that exist.
 
-`l` changes the lens: the same map colored by one aspect. The threads lens
-shows which projects have open threads, with a disk that grows with the count,
+`l` changes the lens: the same map colored by one aspect. The wiki lens, the
+first, sets each project on a disk that grows with its wiki's page count. The
+threads lens shows which projects have open threads, with a disk that grows
+with the count,
 and its card lists them; the version control lens shows uncommitted work in red
 and a branch ahead of or behind its upstream in yellow.
 

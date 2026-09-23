@@ -18,7 +18,7 @@ import (
 type lens int
 
 const (
-	lensDetails lens = iota
+	lensWiki lens = iota
 	lensThreads
 	lensGit
 	lensCount
@@ -31,7 +31,7 @@ func (l lens) String() string {
 	case lensGit:
 		return "version control"
 	}
-	return "details"
+	return "wiki"
 }
 
 // next is the lens l cycles to.
@@ -45,7 +45,7 @@ func (l lens) tag() string {
 	case lensGit:
 		return gitSt.Render(l.String())
 	}
-	return memberSt.Render(l.String())
+	return wikiSt.Render(l.String())
 }
 
 // legend names the colors of a lens whose colors are not obvious, on one line no wider
@@ -104,27 +104,60 @@ func (v view) lensStyle(i int) lipgloss.Style {
 	return fadedSt
 }
 
-// diskRadius is the radius in dots of the disk under a project with n open threads: it
+// threadRadius is the radius in dots of the disk under a project with n open threads: it
 // grows with the square root, so the disk's area follows the count.
-func diskRadius(n int) int {
+func threadRadius(n int) int {
 	if n <= 0 {
 		return 0
 	}
 	return min(12, int(math.Round(1.5+2*math.Sqrt(float64(n)))))
 }
 
-// disks draws, through the Threads lens, a disk under each project with open threads.
-func (v view) disks(c *canvas, dots [][2]int) {
-	if v.lens != lensThreads {
-		return
+// wikiRadius is the radius in dots of the disk under a wiki of n pages. The area follows
+// the count: a new wiki's four pages make a speck, a hundred pages eight dots, and the
+// disk stops growing near three hundred.
+func wikiRadius(n int) int {
+	if n <= 0 {
+		return 0
 	}
+	return max(1, min(14, int(math.Round(0.85*math.Sqrt(float64(n))))))
+}
+
+// pagesOf is how many pages a project's wiki has; 0 before a refresh.
+func pagesOf(e registry.Entry) int {
+	if s := e.State; s != nil && s.Pages != nil {
+		return *s.Pages
+	}
+	return 0
+}
+
+// radius is the disk under a project through the lens, in dots; 0 for none.
+func (l lens) radius(e registry.Entry) int {
+	switch l {
+	case lensWiki:
+		return wikiRadius(pagesOf(e))
+	case lensThreads:
+		return threadRadius(openThreads(e))
+	}
+	return 0
+}
+
+// diskStyle is the color of the lens's disks.
+func (l lens) diskStyle() lipgloss.Style {
+	if l == lensWiki {
+		return wikiDiskSt
+	}
+	return threadDiskSt
+}
+
+// disks draws a disk under each project whose lens gives it one: its wiki's size through
+// the Wiki lens, its open threads through the Threads lens.
+func (v view) disks(c *canvas, dots [][2]int) {
 	for i := range v.graph.nodes {
-		it := v.item(i)
-		if it == nil {
-			continue
-		}
-		if r := diskRadius(openThreads(it.Entry)); r > 0 {
-			c.disk(dots[i][0], dots[i][1], r, 3)
+		if it := v.item(i); it != nil {
+			if r := v.lens.radius(it.Entry); r > 0 {
+				c.disk(dots[i][0], dots[i][1], r, 3)
+			}
 		}
 	}
 }
@@ -327,7 +360,7 @@ func upstreamText(g links.Link) string {
 }
 
 // lensFacts is what the summary line says about a project through the lens; nil for the
-// Details lens, which says the general facts.
+// Wiki lens, which says the general facts.
 func lensFacts(l lens, e registry.Entry) []string {
 	s := e.State
 	switch l {

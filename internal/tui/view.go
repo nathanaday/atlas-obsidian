@@ -1,7 +1,7 @@
 // Package tui is the atlas view: every project on one screen as a map, each project a
 // node and each member link an edge, laid out by a live force simulation. The overview
 // walks the clusters, one per project no other mirrors; Enter opens a cluster onto the
-// whole screen. A lens (details, threads, version control) colors the same map by one
+// whole screen. A lens (wiki, threads, version control) colors the same map by one
 // aspect and picks the card Enter opens. It shows and launches; creating and changing
 // project content is the CLI's and the session's job.
 package tui
@@ -909,7 +909,7 @@ func (v view) nodeStyle(i int) lipgloss.Style {
 		return selectedSt
 	case n.problem:
 		return problemSt
-	case v.lens != lensDetails:
+	case v.lens != lensWiki:
 		return v.lensStyle(i)
 	case v.sel < 0:
 		return nodeSt
@@ -975,7 +975,7 @@ func helpLines(harness string) []string {
 		{"← or Shift+Tab", "the previous one"},
 		{"Shift+arrows", "nudge the selected project; the map answers"},
 		{"Enter", "open a cluster, or the lens's card; again to close"},
-		{"l", "the next lens: details, threads, version control"},
+		{"l", "the next lens: wiki, threads, version control"},
 		{"/", "find a project by name"},
 		{"o", "open atlas/<name>/ in Obsidian"},
 		{"c", "start " + harnessLabel(harness) + " in the work folder"},
@@ -1034,7 +1034,7 @@ func (v view) summary() string {
 		parts = append(parts, "mirrored by "+hubSt.Render(strings.Join(names, ", ")))
 	}
 	more := lensFacts(v.lens, e)
-	if v.lens == lensDetails {
+	if v.lens == lensWiki {
 		more = facts(e.State)
 	}
 	for _, f := range more {
@@ -1153,7 +1153,7 @@ func (v view) hints() string {
 func (v view) View() string {
 	c := v.draw()
 	lines := []string{v.header()}
-	lines = append(lines, c.render(faint, litSt, diskSt)...)
+	lines = append(lines, c.render(faint, litSt, v.lens.diskStyle())...)
 	lines = append(lines, "  "+v.summary(), v.footer())
 	clip := lipgloss.NewStyle().MaxWidth(max(1, v.width))
 	for i := range lines {

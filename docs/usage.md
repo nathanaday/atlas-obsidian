@@ -527,8 +527,8 @@ is red.
 
 | Lens | The map | The card |
 |---|---|---|
-| details (the first) | the selection lights what it mirrors, and what mirrors it in the hub color; the rest is gray | the path, the description, the links, the page that describes the work, the wiki, the last operation, the inbox, when it was touched |
-| threads | a project with open threads is yellow and sits on a yellow disk; the disk grows with the count | the open count, a bar per stage (stub, spec, plan), what is blocked or stale, the phases, and a list of the open threads with the first line of each stub |
+| wiki (the first) | each project sits on a cyan disk whose area follows its wiki's page count; the selection lights what it mirrors, and what mirrors it in the hub color; the rest is gray | the path, the description, the links, the page that describes the work, the wiki, the last operation, the inbox, when it was touched |
+| threads | a project with open threads is yellow and sits on a yellow disk whose area follows the count | the open count, a bar per stage (stub, spec, plan), what is blocked or stale, the phases, and a list of the open threads with the first line of each stub |
 | version control | red: uncommitted changes; yellow: ahead of or behind the upstream; gray: in step, or no git; a legend on the bottom row names the colors | the branch, the head, the upstream with how far ahead or behind, when the last fetch ran, the origin URL, the uncommitted count, the last commit |
 
 On the threads card, `↑` and `↓` move through the list. `c` starts the
@@ -549,7 +549,7 @@ last fetch. The card shows when that was.
 | `←` `↑` Shift+Tab | the previous one |
 | Shift+arrows | nudge the selected project; the map answers |
 | Enter | open the selected hub's cluster, or the lens's card; again to close the card |
-| `l` | the next lens: details, threads, version control |
+| `l` | the next lens: wiki, threads, version control |
 | `↑` `↓` on the threads card | move through the open threads |
 | `/` | find any project by name, at either level; Enter keeps the match, Esc goes back |
 | `o` | open `atlas/<name>/` in Obsidian |
