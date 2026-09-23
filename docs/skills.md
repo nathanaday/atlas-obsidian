@@ -153,6 +153,42 @@ before any page:
 
 A skill then reads only the pages the report names.
 
+## Testing the skills
+
+Two layers.
+
+- `make test` runs `internal/plugin`: every folder is a skill with its name,
+  a description with triggers, and a `Tools:` line; `hooks.SkillMap` is the
+  folders; every relative link resolves; and every skill a skill, agent,
+  hook, launch prompt, the code, or a current doc names exists.
+- End to end, a skill runs in a real session over a scratch project, in a
+  scratch atlas home, with the checkout's plugin and the installed copy
+  turned off:
+
+```bash
+export ATLAS_OBSIDIAN_HOME=/tmp/atlas-e2e/home
+atlas-obsidian -y setup --no-plugin
+cd /tmp/atlas-e2e/some-project
+claude -p "/atlas-obsidian:wiki-review quick review" \
+  --plugin-dir ~/code/atlas-obsidian \
+  --settings '{"enabledPlugins":{"atlas-obsidian@nathanaday-atlas-obsidian":false}}' \
+  --dangerously-skip-permissions --output-format json
+```
+
+`--resume <session_id> "yes"` answers a gate. A prompt that ends "this is an
+unattended test run: take the default you recommend, and take my yes"
+drives a skill to its end.
+
+The 5.6.0 runs, 2026-09-22: `atlas-onboard` on a blank folder and on a small
+repository (the page that describes it, six seeded pages, ten threads from
+TODO markers and a roadmap); `wiki-ingest` of a 2686-line source through four
+workers into ten pages that lint clean; `wiki-review` quick and deep over
+planted defects (both found every one, and the deep review found real
+citation errors the ingest made); `wiki-edit` repairing three findings in one
+operation; `thread-work` from a stub through both gates, two commits, and a
+review, to a receipt; and 18 plain requests, each routed to the intended
+skill.
+
 ## What changed in 5.6.0
 
 | Before | After | Why |
