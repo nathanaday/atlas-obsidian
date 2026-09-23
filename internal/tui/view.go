@@ -169,6 +169,8 @@ func newView(items []Item, opener Opener, acts actions.Atlas) view {
 	v := view{opener: opener, acts: acts, width: 100, height: 40, sel: -1}
 	v.take(items, "")
 	v.settingChoice = v.harness()
+	// Init returns the first tick; Bubble Tea keeps no change Init makes to its copy.
+	v.ticking = v.moving()
 	return v
 }
 
@@ -332,7 +334,9 @@ func (v *view) pan() {
 }
 
 func (v view) Init() tea.Cmd {
-	v.ticking = true
+	if !v.ticking {
+		return nil
+	}
 	return tick()
 }
 

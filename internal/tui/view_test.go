@@ -70,7 +70,6 @@ func sized(items []Item, opener Opener, acts actions.Atlas) view {
 	v := newView(items, opener, acts)
 	next, _ := v.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	v = next.(view)
-	v.ticking = true
 	for i := 0; i < 2000 && v.ticking; i++ {
 		next, _ = v.Update(tickMsg(time.Now()))
 		v = next.(view)
@@ -387,6 +386,22 @@ func TestAClusterFitsASmallScreen(t *testing.T) {
 		if !strings.Contains(stripANSI(v.View()), name) {
 			t.Fatalf("%s is missing:\n%s", name, stripANSI(v.View()))
 		}
+	}
+}
+
+func TestTheMapSettlesFromStartup(t *testing.T) {
+	v := newView(sample(), Opener{}, actions.Atlas{})
+	cmd := v.Init()
+	if cmd == nil {
+		t.Fatal("Init starts the ticks")
+	}
+	next, cmd := v.Update(cmd())
+	v = next.(view)
+	if cmd == nil || v.graph.alpha >= 1 {
+		t.Fatal("the first tick steps the overview and schedules the next")
+	}
+	if (newView(nil, Opener{}, actions.Atlas{})).Init() != nil {
+		t.Fatal("an empty map has nothing to animate")
 	}
 }
 
