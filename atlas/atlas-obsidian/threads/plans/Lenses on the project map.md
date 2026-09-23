@@ -114,4 +114,5 @@ The three-layer rule requires every new key to have a command.
   - The summary line puts the description last and clips it (`fitJoin`). Before, a long description pushed every fact off the line in every lens. This bug was already there before this thread.
   - The histogram bars stop at 30 cells, and a preview line ends in an ellipsis.
 - Checked by rendering the real atlas (20 projects) through each lens at 130×38 and 70×20; tmux is not installed. The disk reads as a small yellow blob beside the name. The glyph fallback is not needed.
-- Next: `make install`, then try `c` and `p` for real in a terminal. Those launches cannot run under `go test`.
+- 2026-09-22: The cursor is clamped when a refresh shortens the list. `make install` done (5.6.0).
+- Next: the user tries `c` and `p` on the threads card and `c` on the version control card in a real terminal. Those launches cannot run under `go test`. Then `thread-receipt`.
