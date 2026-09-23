@@ -12,6 +12,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/nathanaday/atlas-obsidian/internal/actions"
+	"github.com/nathanaday/atlas-obsidian/internal/claudecode"
+	"github.com/nathanaday/atlas-obsidian/internal/links"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/registry"
 	"github.com/nathanaday/atlas-obsidian/internal/threads"
@@ -45,11 +47,22 @@ func sample() []Item {
 	items := []Item{proj("platform", "id-webapp", "id-firmware"), proj("webapp", "id-thesis"), proj("firmware"), proj("thesis"), proj("notes")}
 	zero := 0
 	items[1].Entry.State.DaysIdle = &zero
+	items[1].Entry.Threads = true
 	items[1].Entry.State.Threads = &registry.ThreadSummary{
-		Counts: threads.Counts{Open: 3, Plan: 1, Spec: 2, Phases: 1},
-		Open:   []registry.ThreadLine{{ID: "thr-20260917-0001", Title: "Filter vehicle false alarms", Stage: "plan", Priority: "high", Phase: "Alarm quality"}},
+		Counts: threads.Counts{Open: 3, Plan: 1, Spec: 2, Blocked: 1, Phases: 1},
+		Open: []registry.ThreadLine{
+			{ID: "thr-20260917-0001", Title: "Filter vehicle false alarms", Stage: "plan", Priority: "high", Phase: "Alarm quality"},
+			{ID: "thr-20260917-0002", Title: "Night mode", Stage: "spec", Priority: "normal", Summary: "The map is too bright after dark."},
+			{ID: "thr-20260917-0003", Title: "Export to CSV", Stage: "spec", Priority: "normal", Blocked: "the vendor"},
+		},
 		Phases: []string{"Alarm quality", "Launch"},
 	}
+	// The git states the Version control lens colors: webapp has uncommitted changes,
+	// firmware is ahead of its upstream, thesis is in step, notes has no git.
+	dirty, clean, one, none := 2, 0, 1, 0
+	items[1].Entry.State.Git = &links.Link{Kind: links.Repo, OK: true, Branch: "main", Dirty: &dirty, Head: "abc1234", Subject: "Fix it", Upstream: "origin/main", Ahead: &none, Behind: &none}
+	items[2].Entry.State.Git = &links.Link{Kind: links.Repo, OK: true, Branch: "main", Dirty: &clean, Upstream: "origin/main", Ahead: &one, Behind: &none, Remote: "git@example.com:a/firmware.git", Fetched: "2026-09-20"}
+	items[3].Entry.State.Git = &links.Link{Kind: links.Repo, OK: true, Branch: "main", Dirty: &clean, Upstream: "origin/main", Ahead: &none, Behind: &none}
 	items[1].Entry.State.Described = &registry.Description{Page: "wiki/entities/webapp.md", Commit: "abc1234", Behind: 2}
 	items = append(items, Item{Entry: registry.Entry{Path: "/old/gateway", Error: missingError, Reason: registry.ReasonMissing}})
 	return items
@@ -182,7 +195,7 @@ func TestTheSummaryNamesTheLinksOfTheSelection(t *testing.T) {
 	}
 	v = selectName(t, v, "webapp")
 	s = stripANSI(v.summary())
-	if !strings.Contains(s, "mirrors thesis") || !strings.Contains(s, "mirrored by platform") || !strings.Contains(s, "3 threads open") || !strings.Contains(s, "touched today") {
+	if !strings.Contains(s, "mirrors thesis") || !strings.Contains(s, "mirrored by platform") || strings.Contains(s, "threads open") || !strings.Contains(s, "touched today") {
 		t.Fatalf("summary %q", s)
 	}
 	v = selectName(t, v, "gateway")
@@ -479,13 +492,18 @@ func TestEnterOpensTheCardWithOnlyWhatExists(t *testing.T) {
 		t.Fatal("Enter opens the card")
 	}
 	screen := stripANSI(v.View())
-	for _, want := range []string{"Path", "/code/webapp", "Mirrors", "thesis", "Mirrored by", "platform", "Described", "3 open: 1 plan", "[plan] Filter vehicle false alarms", "Alarm quality → Launch", "Touched", "touched today"} {
+	for _, want := range []string{"Path", "/code/webapp", "Mirrors", "thesis", "Mirrored by", "platform", "Described", "Wiki", "4 pages", "Touched", "touched today"} {
 		if !strings.Contains(screen, want) {
 			t.Fatalf("the card lacks %q:\n%s", want, screen)
 		}
 	}
 	if strings.Contains(screen, "Last operation —") || strings.Contains(screen, "Hot topics") {
 		t.Fatalf("rows with nothing to say are left out:\n%s", screen)
+	}
+	for _, gone := range []string{"Threads", "Filter vehicle", "Git ", "Signal", "3 threads open"} {
+		if strings.Contains(screen, gone) {
+			t.Fatalf("the details card leaves %q to its lens:\n%s", gone, screen)
+		}
 	}
 	if lines := strings.Split(v.View(), "\n"); len(lines) != 30 {
 		t.Fatalf("the card keeps the frame at %d lines", len(lines))
@@ -506,11 +524,11 @@ func TestEnterOpensTheCardWithOnlyWhatExists(t *testing.T) {
 	if !quits(cmd) {
 		t.Fatal("Esc on the overview quits")
 	}
-	// A project nobody described carries the signal.
+	// A project nobody described says so on its Described row.
 	v = selectName(t, v, "firmware")
 	v = pressV(v, tea.KeyEnter)
-	if screen := stripANSI(v.View()); !strings.Contains(screen, "Signal") || !strings.Contains(screen, "not described") {
-		t.Fatalf("signal:\n%s", screen)
+	if screen := stripANSI(v.View()); !strings.Contains(screen, "Described      no; the wiki-describe skill") {
+		t.Fatalf("not described:\n%s", screen)
 	}
 	v = pressV(v, tea.KeyEnter)
 	// A problem's card says the fix.
@@ -589,7 +607,7 @@ func TestOpenPutsTheProjectsFolderInObsidian(t *testing.T) {
 
 func TestTheHarnessStartsInTheWork(t *testing.T) {
 	launched := ""
-	opener := Opener{Agent: func(harness, path string) error { launched = harness + " " + path; return nil }}
+	opener := Opener{Agent: func(harness, path string, _ claudecode.Intent) error { launched = harness + " " + path; return nil }}
 	v := selectName(t, sized(sample(), opener, actions.Atlas{}), "webapp")
 	_, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	if cmd == nil || quits(cmd) {
@@ -757,8 +775,11 @@ func TestNewThreadWritesARealStub(t *testing.T) {
 
 func TestTheFooterNeverWraps(t *testing.T) {
 	v := selectName(t, sized(sample(), Opener{}, actions.Atlas{}), "webapp")
-	full := v.hints()
-	if !strings.Contains(full, "t terminal") || !strings.Contains(full, "q quit") {
+	if hints := v.hints(); !strings.Contains(hints, "l lens") || !strings.Contains(hints, "q quit") {
+		t.Fatalf("hints %q", hints)
+	}
+	wide, _ := v.Update(tea.WindowSizeMsg{Width: 160, Height: 16})
+	if full := wide.(view).hints(); !strings.Contains(full, "t terminal") || !strings.Contains(full, ", settings") {
 		t.Fatalf("hints %q", full)
 	}
 	for _, width := range []int{100, 70, 50, 30, 12} {

@@ -194,6 +194,11 @@ answer. The selected project is filled, what it mirrors and what mirrors it are
 lit, and one line under the map says how it connects. Enter on a project opens
 its card with only the facts that exist.
 
+`l` changes the lens: the same map colored by one aspect. The threads lens
+shows which projects have open threads, with a disk that grows with the count,
+and its card lists them; the version control lens shows uncommitted work in red
+and a branch ahead of or behind its upstream in yellow.
+
 From the map: `o` opens `atlas/<name>/` in Obsidian, `c` starts your preferred
 harness in the work folder, `i` opens it in VS Code, `t` opens a terminal
 window there, `n` opens a new thread, `R` re-reads everything, `,` opens the
@@ -202,7 +207,9 @@ settings, and `?` shows the keys.
 The settings hold the harness (Claude Code or Codex) and the IDE, saved
 globally. `atlas-obsidian config preferred-harness codex` sets the same thing.
 `open-agent webapp` launches the preferred harness; `open-claude` and
-`open-codex` select one; add `--thread "Filter vehicle"` to continue a thread.
+`open-codex` select one; add `--thread "Filter vehicle"` to continue a thread,
+with `--ask` to be asked what to do with it; `--plant` plants a new thread and
+`--git` opens a session on the work's git state.
 `open-ide webapp` and `open-terminal webapp` open the work folder in VS Code
 and in a terminal window.
 

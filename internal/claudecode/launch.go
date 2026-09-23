@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/nathanaday/atlas-obsidian/internal/home"
 )
@@ -39,6 +40,54 @@ func ThreadPrompt(stage, threadID string) string {
 		skill = "thread"
 	}
 	return "/atlas-obsidian:" + skill + " " + threadID
+}
+
+// AskPrompt is the first message that opens a session on a thread and asks the user what
+// to do with it.
+func AskPrompt(threadID string) string {
+	return "/atlas-obsidian:thread " + threadID + " Read this thread end to end, then ask me what I would like to do with it. " +
+		"Offer to move it to its next stage, naming the stage and its skill, or to kill it, with or without a reason. Do nothing until I choose."
+}
+
+// PlantPrompt is the first message that plants a thread from a conversation.
+const PlantPrompt = "/atlas-obsidian:thread-stub Ask me to describe the thread I want to plant, then open it from my words."
+
+// GitPrompt is the first message that opens a session on the git state of the work.
+const GitPrompt = "Help me handle the git state of this project's work folder. If it is not a git repository, offer to initialize one. " +
+	"Otherwise fetch, then summarize the branch, what is uncommitted, and what is ahead of or behind the upstream. " +
+	"Offer to stage changes, commit, push, pull, or anything else I want, and do nothing until I choose."
+
+// Intent is what a session opens for. The zero Intent opens with the configured first
+// message, if any.
+type Intent struct {
+	// Thread is a thread's id. Alone it continues the thread from Stage, its stage; with
+	// Ask the session reads it and asks.
+	Thread string
+	Stage  string
+	Ask    bool
+	// Plant plants a thread; Git handles the work's git state.
+	Plant bool
+	Git   bool
+}
+
+// Prompt is the first message for an intent in a harness's own form: Codex names a
+// skill with $ where Claude Code uses the plugin's slash command.
+func Prompt(harness string, in Intent) string {
+	var prompt string
+	switch {
+	case in.Plant:
+		prompt = PlantPrompt
+	case in.Git:
+		prompt = GitPrompt
+	case in.Thread != "" && in.Ask:
+		prompt = AskPrompt(in.Thread)
+	case in.Thread != "":
+		prompt = ThreadPrompt(in.Stage, in.Thread)
+	}
+	if harness == "codex" {
+		prompt = strings.Replace(prompt, "/atlas-obsidian:", "$", 1)
+	}
+	return prompt
 }
 
 // LaunchCommand builds the process that runs Claude Code in a project's work folder, with

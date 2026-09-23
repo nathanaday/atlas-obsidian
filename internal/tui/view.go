@@ -1,8 +1,9 @@
 // Package tui is the atlas view: every project on one screen as a map, each project a
 // node and each member link an edge, laid out by a live force simulation. The overview
 // walks the clusters, one per project no other mirrors; Enter opens a cluster onto the
-// whole screen. It shows and launches; creating and changing project content is the
-// CLI's and the session's job.
+// whole screen. A lens (details, threads, version control) colors the same map by one
+// aspect and picks the card Enter opens. It shows and launches; creating and changing
+// project content is the CLI's and the session's job.
 package tui
 
 import (
@@ -18,6 +19,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/nathanaday/atlas-obsidian/internal/actions"
+	"github.com/nathanaday/atlas-obsidian/internal/claudecode"
 	"github.com/nathanaday/atlas-obsidian/internal/project"
 	"github.com/nathanaday/atlas-obsidian/internal/registry"
 	"github.com/nathanaday/atlas-obsidian/internal/threads"
@@ -48,11 +50,11 @@ func entryName(e registry.Entry) string {
 
 // Opener connects the view to Obsidian and the preferred harness without the screen
 // doing the work itself. Obsidian opens the atlas/<name>/ folder at path. Agent runs the
-// selected harness in the work folder at path, holding the terminal until the session
-// ends.
+// selected harness in the work folder at path, opened for an intent, holding the
+// terminal until the session ends.
 type Opener struct {
 	Obsidian func(path string) error
-	Agent    func(harness, path string) error
+	Agent    func(harness, path string, in claudecode.Intent) error
 }
 
 // now is the clock the screens use; tests may replace it.
@@ -128,6 +130,10 @@ type view struct {
 	chosen  bool
 	ticking bool
 	panel   panelKind
+	// lens is what the map shows about each project; cursor is the thread the Threads
+	// card points at, an index into the selected project's open threads.
+	lens   lens
+	cursor int
 	// settings is the settings panel, over everything else while open.
 	settings      bool
 	settingChoice string
@@ -344,6 +350,9 @@ func (v view) Init() tea.Cmd {
 // selectNode moves the selection to a node, from then on the user's choice.
 func (v *view) selectNode(i int) {
 	if i >= 0 && i < len(v.graph.nodes) {
+		if i != v.sel {
+			v.cursor = 0
+		}
 		v.sel = i
 		v.chosen = true
 	}
@@ -447,8 +456,22 @@ func (v view) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return v.refresh()
 	case "/":
 		return v.openFind()
-	case "o", "c", "i", "t", "n":
+	case "l":
+		v.lens = v.lens.next()
+		v.cursor = 0
+		return v, nil
+	case "o", "c", "i", "t", "n", "p":
 		return v.launch(msg.String())
+	}
+	if v.threadCard() {
+		switch msg.Type {
+		case tea.KeyUp:
+			v.cursor = max(0, v.cursor-1)
+			return v, nil
+		case tea.KeyDown:
+			v.cursor = max(0, min(v.cursor+1, len(v.openList())-1))
+			return v, nil
+		}
 	}
 	switch msg.Type {
 	case tea.KeyEnter:
@@ -529,15 +552,52 @@ func (v view) launch(key string) (tea.Model, tea.Cmd) {
 	case "o":
 		return v.open(item)
 	case "c":
-		return v.agent(item)
+		return v.agent(item, v.intent())
 	case "i":
 		return v.background(item, "opening %s in the IDE…", "the IDE", v.acts.OpenIDE, "opening an IDE")
 	case "t":
 		return v.background(item, "opening a terminal at %s…", "a terminal", v.acts.OpenTerminal, "opening a terminal")
 	case "n":
 		return v.openStub(item)
+	case "p":
+		if !v.threadCard() {
+			return v, nil
+		}
+		if !item.Entry.Threads {
+			v.errMsg = "threads are off in " + entryName(item.Entry) + "; atlas-obsidian edit " + item.Entry.Name + " --threads on"
+			return v, nil
+		}
+		return v.agent(item, claudecode.Intent{Plant: true})
 	}
 	return v, nil
+}
+
+// threadCard reports whether the Threads card is open.
+func (v view) threadCard() bool { return v.panel == panelCard && v.lens == lensThreads }
+
+// openList is the selected project's open threads.
+func (v view) openList() []registry.ThreadLine {
+	if it := v.current(); it != nil && it.Entry.State != nil && it.Entry.State.Threads != nil {
+		return it.Entry.State.Threads.Open
+	}
+	return nil
+}
+
+// intent is what c opens a session for: the thread under the cursor while the Threads
+// card is open, the git state while the Version control card is, else the work.
+func (v view) intent() claudecode.Intent {
+	if v.panel != panelCard {
+		return claudecode.Intent{}
+	}
+	switch v.lens {
+	case lensThreads:
+		if open := v.openList(); v.cursor < len(open) {
+			return claudecode.Intent{Thread: open[v.cursor].ID, Stage: open[v.cursor].Stage, Ask: true}
+		}
+	case lensGit:
+		return claudecode.Intent{Git: true}
+	}
+	return claudecode.Intent{}
 }
 
 // background runs an action on the entry in the background and reports when it is done.
@@ -652,16 +712,16 @@ func (v view) updateStub(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return v, cmd
 }
 
-// agent hands the terminal to the preferred harness session in the entry's folder and
-// resumes after.
-func (v view) agent(item *Item) (tea.Model, tea.Cmd) {
+// agent hands the terminal to the preferred harness session in the entry's folder,
+// opened for an intent, and resumes after.
+func (v view) agent(item *Item, in claudecode.Intent) (tea.Model, tea.Cmd) {
 	if v.opener.Agent == nil {
 		v.errMsg = "starting the preferred harness is not available here"
 		return v, nil
 	}
 	harness := v.harness()
 	name, path, run := entryName(item.Entry), item.Entry.Path, v.opener.Agent
-	return v, tea.Exec(launch{run: func() error { return run(harness, path) }}, func(err error) tea.Msg { return agentDoneMsg{name: name, harness: harness, err: err} })
+	return v, tea.Exec(launch{run: func() error { return run(harness, path, in) }}, func(err error) tea.Msg { return agentDoneMsg{name: name, harness: harness, err: err} })
 }
 
 // open starts opening the project's folder in Obsidian in the background.
@@ -700,6 +760,7 @@ func (v view) header() string {
 	if hub, ok := v.top.byID[v.cluster]; ok {
 		left += dim.Render(" › ") + title.Render(v.top.nodes[hub].name)
 	}
+	left += dim.Render(" · ") + v.lens.tag()
 	var counts []string
 	counts = append(counts, fmt.Sprintf("%d project%s", projects, plural(projects)))
 	if links > 0 {
@@ -781,6 +842,7 @@ func (v *view) draw() *canvas {
 		}
 		c.line(dots[e[0]][0], dots[e[0]][1], dots[e[1]][0], dots[e[1]][1], layer)
 	}
+	v.disks(c, dots)
 	order := make([]int, 0, len(v.graph.nodes))
 	if v.sel >= 0 {
 		order = append(order, v.sel)
@@ -843,6 +905,8 @@ func (v view) nodeStyle(i int) lipgloss.Style {
 		return selectedSt
 	case n.problem:
 		return problemSt
+	case v.lens != lensDetails:
+		return v.lensStyle(i)
 	case v.sel < 0:
 		return nodeSt
 	case v.cluster == "":
@@ -881,6 +945,12 @@ func (v view) overlay() []string {
 		if it == nil {
 			return nil
 		}
+		switch v.lens {
+		case lensThreads:
+			return panel(entryName(it.Entry)+dim.Render(" · threads"), threadCardLines(it.Entry, v.cursor, width-4, tall-4), width, tall)
+		case lensGit:
+			return panel(entryName(it.Entry)+dim.Render(" · version control"), gitCardLines(it.Entry), width, tall)
+		}
 		var members, hubs []string
 		n := v.topOf(v.sel)
 		for _, m := range n.members {
@@ -900,10 +970,14 @@ func helpLines(harness string) []string {
 		{"→ or Tab", "the next cluster; inside one, the next project"},
 		{"← or Shift+Tab", "the previous one"},
 		{"Shift+arrows", "nudge the selected project; the map answers"},
-		{"Enter", "open a cluster, or the card; again to close"},
+		{"Enter", "open a cluster, or the lens's card; again to close"},
+		{"l", "the next lens: details, threads, version control"},
 		{"/", "find a project by name"},
 		{"o", "open atlas/<name>/ in Obsidian"},
 		{"c", "start " + harnessLabel(harness) + " in the work folder"},
+		{"", "on the threads card: ask about the thread under ↑↓"},
+		{"", "on the version control card: handle the git state"},
+		{"p", "on the threads card: plant a thread with " + harnessLabel(harness)},
 		{"i", "open the work folder in the IDE"},
 		{"t", "open a terminal at the work folder"},
 		{"n", "open a thread"},
@@ -955,22 +1029,35 @@ func (v view) summary() string {
 		}
 		parts = append(parts, "mirrored by "+hubSt.Render(strings.Join(names, ", ")))
 	}
+	more := lensFacts(v.lens, e)
+	if v.lens == lensDetails {
+		more = facts(e.State)
+	}
+	for _, f := range more {
+		parts = append(parts, dim.Render(f))
+	}
 	if e.Description != "" && len(n.members)+len(n.hubs) == 0 {
 		parts = append(parts, dim.Render(e.Description))
-	}
-	for _, f := range facts(e.State) {
-		parts = append(parts, dim.Render(f))
 	}
 	return fitJoin(parts, "  ", v.width-2)
 }
 
-// fitJoin joins parts with sep, dropping parts from the end until the line fits width.
-// The first part always stays.
+// minClip is the fewest cells fitJoin clips a last part to rather than drop it.
+const minClip = 16
+
+// fitJoin joins parts with sep, dropping parts from the end until the line fits width;
+// a last part with room for minClip cells is clipped to fit instead. The first part
+// always stays.
 func fitJoin(parts []string, sep string, width int) string {
 	for len(parts) > 1 {
 		line := strings.Join(parts, sep)
 		if lipgloss.Width(line) <= width {
 			return line
+		}
+		head := strings.Join(parts[:len(parts)-1], sep) + sep
+		if room := width - lipgloss.Width(head); room >= minClip {
+			last := []rune(stripANSI(parts[len(parts)-1]))
+			return head + dim.Render(string(last[:room-1])+"…")
 		}
 		parts = parts[:len(parts)-1]
 	}
@@ -1022,7 +1109,17 @@ func (v view) hints() string {
 		case v.opens():
 			enter = "Enter open cluster"
 		}
-		keys = []hint{{enter, 0}, {"o Obsidian", 4}, {"c " + harnessLabel(v.harness()), 5}, {"i IDE", 6}, {"t terminal", 7}, {"n thread", 8}, {"/ find", 3}, {"R refresh", 10}, {", settings", 9}, {"? keys", 2}, {"q quit", 1}}
+		agent := "c " + harnessLabel(v.harness())
+		switch in := v.intent(); {
+		case in.Ask:
+			agent = "c ask " + harnessLabel(v.harness())
+		case in.Git:
+			agent = "c git in " + harnessLabel(v.harness())
+		}
+		keys = []hint{{enter, 0}, {"l lens", 3}, {"o Obsidian", 5}, {agent, 4}, {"i IDE", 7}, {"t terminal", 8}, {"n thread", 9}, {"/ find", 6}, {"R refresh", 11}, {", settings", 10}, {"? keys", 2}, {"q quit", 1}}
+		if v.threadCard() {
+			keys = append(keys[:1], append([]hint{{"↑↓ thread", 0}, {"p plant", 1}}, keys[1:]...)...)
+		}
 	default:
 		keys = []hint{{"R refresh", 2}, {", settings", 3}, {"? keys", 1}, {"q quit", 0}}
 	}
@@ -1052,7 +1149,7 @@ func (v view) hints() string {
 func (v view) View() string {
 	c := v.draw()
 	lines := []string{v.header()}
-	lines = append(lines, c.render(faint, litSt)...)
+	lines = append(lines, c.render(faint, litSt, diskSt)...)
 	lines = append(lines, "  "+v.summary(), v.footer())
 	clip := lipgloss.NewStyle().MaxWidth(max(1, v.width))
 	for i := range lines {

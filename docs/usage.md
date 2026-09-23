@@ -11,18 +11,21 @@ one tool from a Claude Code session, so scripts, muscle memory, and the
 
 | In `view` | Command | Tool, from a Claude Code session |
 |---|---|---|
-| Enter on a project | `show NAME` | `atlas`, `status` |
+| Enter on a project: the card of the lens | `show NAME` | `atlas`, `status` |
 | `o` open `atlas/<name>/` in Obsidian | `open-vault NAME` | — |
 | `i` open the project root in the preferred IDE | `open-ide NAME` | — |
 | `t` open a terminal at the work folder | `open-terminal NAME` | — |
 | `,` settings: choose the IDE, Enter saves | `config preferred-ide vscode` | — |
-| `c` start the preferred harness in the work | `open-agent NAME [--thread ID]` | — |
+| `c` start the preferred harness in the work | `open-agent NAME` | — |
+| `c` on the threads card: ask about the thread under the cursor | `open-agent NAME --thread ID --ask` | — |
+| `p` on the threads card: plant a thread in a session | `open-agent NAME --plant` | — |
+| `c` on the version control card: handle the git state | `open-agent NAME --git` | — |
+| — | `open-agent NAME --thread ID`: continue a thread | — |
 | `,` settings: choose the harness, Enter saves | `config preferred-harness codex` | — |
-| — | `open-claude NAME [--thread ID]` | — |
-| — | `open-codex NAME [--thread ID]` | — |
+| — | `open-claude NAME`, `open-codex NAME`, each with the flags of `open-agent` | — |
 | `n` open a new thread | `thread PROJECT new TEXT` | `thread` |
 | `R` refresh | `refresh` | `atlas` with `refresh` |
-| arrows and Tab select; Enter opens a cluster or the card; Esc steps back; `/` finds; `?` shows every key; `q` quits | — | — |
+| arrows and Tab select; Enter opens a cluster or the card; `l` changes the lens; Esc steps back; `/` finds; `?` shows every key; `q` quits | — | — |
 | — | `init [PATH]`, `edit NAME`, `forget NAME` | `project` |
 | — | `edit NAME --add-member P`, `sync [PROJECT]` | `project` with `add_members`, then `sync` |
 | — | `init --no-threads`, `edit NAME --threads on\|off` | `project` with `threads` |
@@ -291,7 +294,9 @@ researches, asks only what it cannot find, and files the spec; `thread-plan`
 files the approach; `thread-run` does the work, commits and tests along the
 way, and writes progress in the plan; `thread-receipt` closes the thread and
 offers the wiki what the work taught. `open-claude --thread` starts the session
-in the work with the skill for the thread's next stage as the first message:
+in the work with the skill for the thread's next stage as the first message;
+`--ask` starts it on the `thread` skill instead, which reads the thread and
+asks what to do with it:
 
 ```bash
 atlas-obsidian open-claude webapp --thread thr-20260917-3f2a
@@ -512,15 +517,44 @@ the overview, its whole cluster) and what mirrors it, and its facts; a zero is
 left out. Enter on anything that is not a hub on the overview opens the card:
 only the rows that have something to say.
 
+### Lenses
+
+A lens colors the same map by one aspect of the projects, and chooses the card
+Enter opens and the facts on the line under the map. The nodes stay where they
+are. `l` goes to the next lens, and the header names the one in use. In every
+lens the selected project is filled blue and a folder the atlas could not read
+is red.
+
+| Lens | The map | The card |
+|---|---|---|
+| details (the first) | the selection lights what it mirrors, and what mirrors it in the hub color; the rest is gray | the path, the description, the links, the page that describes the work, the wiki, the last operation, the inbox, when it was touched |
+| threads | a project with open threads is yellow and sits on a yellow disk; the disk grows with the count | the open count, a bar per stage (stub, spec, plan), what is blocked or stale, the phases, and a list of the open threads with the first line of each stub |
+| version control | red: uncommitted changes; yellow: ahead of or behind the upstream; gray: in step, or no git | the branch, the head, the upstream with how far ahead or behind, when the last fetch ran, the origin URL, the uncommitted count, the last commit |
+
+On the threads card, `↑` and `↓` move through the list. `c` starts the
+preferred harness on the thread under the cursor: the session reads the thread
+and asks what to do with it, with the next stage or a kill as the first
+choices. `p` starts a session that asks you to describe a new thread and opens
+it from your words. `n` still opens a thread from one line, without a session.
+On the version control card, `c` starts a session on the git state of the
+work: it offers to initialize a repository when there is none, and otherwise
+fetches, summarizes, and offers to stage, commit, push, or pull.
+
+Refresh reads git without the network, so ahead and behind count against the
+last fetch. The card shows when that was.
+
 | Key | What it does |
 |---|---|
 | `→` `↓` Tab | the next top project on the overview; the next project inside a cluster |
 | `←` `↑` Shift+Tab | the previous one |
 | Shift+arrows | nudge the selected project; the map answers |
-| Enter | open the selected hub's cluster, or the card; again to close the card |
+| Enter | open the selected hub's cluster, or the lens's card; again to close the card |
+| `l` | the next lens: details, threads, version control |
+| `↑` `↓` on the threads card | move through the open threads |
 | `/` | find any project by name, at either level; Enter keeps the match, Esc goes back |
 | `o` | open `atlas/<name>/` in Obsidian |
-| `c` | start the preferred harness in the work |
+| `c` | start the preferred harness in the work; on the threads card, on the thread under the cursor; on the version control card, on the git state |
+| `p` on the threads card | plant a thread in a harness session |
 | `i` | open the work folder in the preferred IDE |
 | `t` | open a terminal window at the work folder |
 | `n` | open a new thread |

@@ -68,3 +68,29 @@ func TestLaunchCodex(t *testing.T) {
 		t.Fatalf("missing Codex: %v", err)
 	}
 }
+
+func TestPrompt(t *testing.T) {
+	cases := []struct {
+		harness string
+		in      Intent
+		want    string
+	}{
+		{"claude", Intent{}, ""},
+		{"claude", Intent{Thread: "thr-1", Stage: "spec"}, "/atlas-obsidian:thread-work thr-1"},
+		{"claude", Intent{Thread: "thr-1", Stage: "receipt"}, "/atlas-obsidian:thread thr-1"},
+		{"codex", Intent{Thread: "thr-1", Stage: "plan"}, "$thread-work thr-1"},
+		{"claude", Intent{Thread: "thr-1", Ask: true}, AskPrompt("thr-1")},
+		{"codex", Intent{Thread: "thr-1", Ask: true}, "$thread thr-1 Read this thread"},
+		{"claude", Intent{Plant: true}, PlantPrompt},
+		{"codex", Intent{Plant: true}, "$thread-stub Ask me"},
+		{"codex", Intent{Git: true}, GitPrompt},
+	}
+	for _, c := range cases {
+		if got := Prompt(c.harness, c.in); !strings.HasPrefix(got, c.want) || (c.want == "") != (got == "") {
+			t.Errorf("%s %+v: %q", c.harness, c.in, got)
+		}
+	}
+	if !strings.HasPrefix(AskPrompt("thr-1"), "/atlas-obsidian:thread thr-1 ") {
+		t.Fatal(AskPrompt("thr-1"))
+	}
+}

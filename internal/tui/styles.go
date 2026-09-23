@@ -7,12 +7,15 @@ import (
 )
 
 // The palette: the project color for what is selected and what it mirrors, a second
-// color for what mirrors it, red for what is wrong, and two grays for what is not in
+// color for what mirrors it, red for what is wrong, yellow for what waits on the user
+// through a lens, green for the version control lens, and two grays for what is not in
 // focus.
 const (
 	projectColor = lipgloss.Color("12")
 	hubColor     = lipgloss.Color("13")
 	problemColor = lipgloss.Color("9")
+	waitColor    = lipgloss.Color("11")
+	gitColor     = lipgloss.Color("10")
 	mutedColor   = lipgloss.Color("245")
 	faintColor   = lipgloss.Color("240")
 	labelColor   = lipgloss.Color("#FFC600")
@@ -35,6 +38,12 @@ var (
 	problemSt  = lipgloss.NewStyle().Foreground(problemColor)
 	nodeSt     = lipgloss.NewStyle()
 	fadedSt    = lipgloss.NewStyle().Foreground(mutedColor)
+	// Through a lens: open threads and a branch apart from its upstream are yellow,
+	// uncommitted changes red.
+	threadSt = lipgloss.NewStyle().Foreground(waitColor).Bold(true)
+	dirtySt  = lipgloss.NewStyle().Foreground(problemColor).Bold(true)
+	gitSt    = lipgloss.NewStyle().Foreground(gitColor).Bold(true)
+	diskSt   = lipgloss.NewStyle().Foreground(waitColor)
 )
 
 // stripANSI drops escape sequences: it measures styled text and renders a row plain.

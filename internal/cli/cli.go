@@ -68,10 +68,12 @@ Projects (PROJECT is a name, a path, or nothing for the project you are in):
   forget PROJECT            drop a project from the atlas; its atlas/<name>/ folder stays
   open-ide NAME            open the work folder in the preferred IDE
   open-terminal NAME       open a terminal window at the work folder
-  open-agent NAME          start the preferred harness in the work folder
+  open-agent NAME          start the preferred harness in the work folder; --thread ID
+                            continues a thread (--ask reads it and asks), --plant plants
+                            one, --git handles the work's git state
   open-vault [PROJECT]      open the project's folder in Obsidian
-  open-claude NAME          start Claude Code in the work; --thread ID continues a thread
-  open-codex NAME           start Codex in the work; --thread ID continues a thread
+  open-claude NAME          start Claude Code in the work; the flags of open-agent
+  open-codex NAME           start Codex in the work; the flags of open-agent
 
 Threads (ID is a thread's id or title):
   threads [PROJECT]         list open threads by stage; --all adds the closed ones, --stage S, --json
@@ -1128,8 +1130,8 @@ func (e *env) view(args []string) (int, error) {
 	}
 	opener := tui.Opener{
 		Obsidian: func(path string) error { return obsidian.RegisterAndOpen(path) },
-		Agent: func(harness, path string) error {
-			cmd, err := claudecode.LaunchCommand(cfg.HarnessLaunch(harness), path, "")
+		Agent: func(harness, path string, in claudecode.Intent) error {
+			cmd, err := claudecode.LaunchCommand(cfg.HarnessLaunch(harness), path, claudecode.Prompt(harness, in))
 			if err != nil {
 				return err
 			}
@@ -1278,12 +1280,25 @@ func (e *env) openClaude(args []string) (int, error) {
 func (e *env) openAgent(args []string, agent string) (int, error) {
 	fs := newFlags("open-"+agent, e.stderr)
 	threadID := fs.String("thread", "", "continue this thread: start with the skill for its next stage as the first message")
+	ask := fs.Bool("ask", false, "with --thread: read the thread and ask what to do with it")
+	plant := fs.Bool("plant", false, "plant a thread: the session asks you to describe it")
+	gitState := fs.Bool("git", false, "handle the git state of the work")
 	positional, err := parse(fs, args)
 	if err != nil {
 		return 2, nil
 	}
+	usage := fmt.Errorf("usage: atlas-obsidian open-%s NAME [--thread ID [--ask] | --plant | --git]", agent)
 	if len(positional) != 1 {
-		return 2, fmt.Errorf("usage: atlas-obsidian open-%s NAME [--thread ID]", agent)
+		return 2, usage
+	}
+	chosen := 0
+	for _, on := range []bool{*threadID != "", *plant, *gitState} {
+		if on {
+			chosen++
+		}
+	}
+	if chosen > 1 || *ask && *threadID == "" {
+		return 2, usage
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -1296,8 +1311,8 @@ func (e *env) openAgent(args []string, agent string) (int, error) {
 	if !e.console.Interactive() {
 		return 2, fmt.Errorf("open-%s starts an interactive session and needs a terminal", agent)
 	}
-	prompt := ""
-	if *threadID != "" {
+	in := claudecode.Intent{Plant: *plant, Git: *gitState, Ask: *ask}
+	if *threadID != "" || *plant {
 		p, err := project.Open(entry.Path)
 		if err != nil {
 			return 1, err
@@ -1306,20 +1321,20 @@ func (e *env) openAgent(args []string, agent string) (int, error) {
 		if err != nil {
 			return 1, err
 		}
-		t, err := board.Resolve(*threadID)
-		if err != nil {
-			return 1, err
+		if *threadID != "" {
+			t, err := board.Resolve(*threadID)
+			if err != nil {
+				return 1, err
+			}
+			if t.Closed() {
+				return 1, fmt.Errorf("%s is closed (%s); `atlas-obsidian thread %s reopen %s` opens it again", t.Title, t.Outcome, entry.Name, t.ID)
+			}
+			in.Thread, in.Stage = t.ID, t.Stage
+			e.console.Say("  thread: %s (%s)", t.Title, t.Stage)
 		}
-		if t.Closed() {
-			return 1, fmt.Errorf("%s is closed (%s); `atlas-obsidian thread %s reopen %s` opens it again", t.Title, t.Outcome, entry.Name, t.ID)
-		}
-		prompt = claudecode.ThreadPrompt(t.Stage, t.ID)
-		e.console.Say("  thread: %s (%s)", t.Title, t.Stage)
 	}
+	prompt := claudecode.Prompt(agent, in)
 	launch := cfg.HarnessLaunch(agent)
-	if agent == "codex" {
-		prompt = strings.Replace(prompt, "/atlas-obsidian:", "$", 1)
-	}
 	cmd, err := claudecode.LaunchCommand(launch, entry.Path, prompt)
 	if err != nil {
 		return 1, err

@@ -12,7 +12,7 @@ import (
 type canvas struct {
 	w, h  int
 	dots  []uint8
-	layer []int8 // the strongest color drawn in a cell: 0 none, 1 dim, 2 lit
+	layer []int8 // the strongest color drawn in a cell: 0 none, then 1 up, one per style render takes
 	runs  []run
 }
 
@@ -75,6 +75,17 @@ func (c *canvas) line(x0, y0, x1, y1 int, layer int8) {
 	}
 }
 
+// disk fills the dots within r of a center dot.
+func (c *canvas) disk(cx, cy, r int, layer int8) {
+	for y := cy - r; y <= cy+r; y++ {
+		for x := cx - r; x <= cx+r; x++ {
+			if dx, dy := x-cx, y-cy; dx*dx+dy*dy <= r*r {
+				c.dot(x, y, layer)
+			}
+		}
+	}
+}
+
 func abs(n int) int {
 	if n < 0 {
 		return -n
@@ -112,9 +123,10 @@ func (c *canvas) free(x, y, width int) bool {
 	return true
 }
 
-// render is the canvas as h lines, each exactly w cells wide. Where runs overlap, the
-// one placed last shows, so a panel placed after the labels covers them.
-func (c *canvas) render(dimSt, litSt lipgloss.Style) []string {
+// render is the canvas as h lines, each exactly w cells wide. A cell's dots take the
+// style of its layer, styles[layer-1], the last style for any layer past them. Where runs
+// overlap, the one placed last shows, so a panel placed after the labels covers them.
+func (c *canvas) render(styles ...lipgloss.Style) []string {
 	out := make([]string, c.h)
 	for y := 0; y < c.h; y++ {
 		owner := make([]int, c.w)
@@ -147,13 +159,11 @@ func (c *canvas) render(dimSt, litSt lipgloss.Style) []string {
 				continue
 			}
 			i := y*c.w + x
-			switch {
-			case c.dots[i] == 0:
+			if c.dots[i] == 0 {
 				b.WriteByte(' ')
-			case c.layer[i] >= 2:
-				b.WriteString(litSt.Render(string(rune(0x2800 + int(c.dots[i])))))
-			default:
-				b.WriteString(dimSt.Render(string(rune(0x2800 + int(c.dots[i])))))
+			} else {
+				st := styles[max(0, min(int(c.layer[i]), len(styles))-1)]
+				b.WriteString(st.Render(string(rune(0x2800 + int(c.dots[i])))))
 			}
 			x++
 		}

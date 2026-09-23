@@ -60,3 +60,18 @@ func TestCanvasOverlappingRunsShowTheLaterOne(t *testing.T) {
 		t.Fatalf("row %q", rows[0])
 	}
 }
+
+func TestADiskTakesItsOwnLayer(t *testing.T) {
+	withColor(t)
+	c := newCanvas(10, 4)
+	c.line(0, 8, 19, 8, 1)
+	c.disk(10, 8, 3, 3)
+	color := func(st lipgloss.Style) string { return strings.SplitN(st.Render("x"), "x", 2)[0] }
+	rows := c.render(faint, litSt, diskSt)
+	if !strings.Contains(rows[2], color(diskSt)) || !strings.Contains(rows[2], color(faint)) || strings.Contains(rows[0], color(diskSt)) {
+		t.Fatalf("rows %q", rows)
+	}
+	if strings.Contains(strings.Join(c.render(faint), ""), color(diskSt)) {
+		t.Fatal("a layer past the styles takes the last one")
+	}
+}

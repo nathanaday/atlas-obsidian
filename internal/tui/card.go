@@ -7,15 +7,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/nathanaday/atlas-obsidian/internal/home"
-	"github.com/nathanaday/atlas-obsidian/internal/refresh"
 	"github.com/nathanaday/atlas-obsidian/internal/registry"
 )
 
 // labelWidth is the label column of a card.
 const labelWidth = 15
-
-// maxCardThreads bounds the open threads a card lists.
-const maxCardThreads = 5
 
 func plural(n int) string {
 	if n == 1 {
@@ -36,8 +32,8 @@ func touchedText(s *registry.State) string {
 	}
 }
 
-// facts is what a project's state says in a few words: pages, open threads, the inbox,
-// and when it was touched. A zero is left out; a project nobody refreshed says so.
+// facts is what a project's state says in a few words through the Details lens: pages,
+// the inbox, and when it was touched. A zero is left out; a project nobody refreshed says so.
 func facts(s *registry.State) []string {
 	if s == nil {
 		return []string{"not refreshed; press R"}
@@ -45,14 +41,6 @@ func facts(s *registry.State) []string {
 	var out []string
 	if s.Pages != nil {
 		out = append(out, fmt.Sprintf("%d page%s", *s.Pages, plural(*s.Pages)))
-	}
-	if s.Threads != nil && s.Threads.Counts.Open > 0 {
-		n := s.Threads.Counts.Open
-		text := fmt.Sprintf("%d thread%s open", n, plural(n))
-		if s.Threads.Counts.Blocked > 0 {
-			text += fmt.Sprintf(", %d blocked", s.Threads.Counts.Blocked)
-		}
-		out = append(out, text)
 	}
 	if s.Inbox != nil && *s.Inbox > 0 {
 		out = append(out, fmt.Sprintf("%d in inbox", *s.Inbox))
@@ -101,8 +89,8 @@ func problemFix(e registry.Entry) string {
 	return e.Error
 }
 
-// cardLines is the body of a project's card: only the rows that have something to say.
-// names turns a project id into its name.
+// cardLines is the body of a project's card through the Details lens: only the rows that
+// have something to say. The threads and git have lenses of their own.
 func cardLines(e registry.Entry, members, hubs []string) []string {
 	var out []string
 	row := func(k, val string) {
@@ -126,16 +114,21 @@ func cardLines(e registry.Entry, members, hubs []string) []string {
 		row("State", dim.Render("not refreshed; press R"))
 		return out
 	}
-	if g := s.Git; g != nil {
-		row("Git", refresh.LinkSummary(*g))
+	if !s.OK {
+		row("State", errSt.Render("unreachable: "+s.Error))
 	}
 	if d := s.Described; d != nil {
 		row("Described", d.Summary())
+	} else {
+		row("Described", dim.Render("no; the wiki-describe skill writes the page"))
 	}
 	if s.Pages != nil {
 		wiki := fmt.Sprintf("%d page%s", *s.Pages, plural(*s.Pages))
 		if u := s.Unfinished.Text(); u != "" {
 			wiki += " · " + u
+		}
+		if s.PendingRecovery {
+			wiki += " · " + errSt.Render("an operation was interrupted; run atlas-obsidian recover")
 		}
 		row("Wiki", wiki)
 	}
@@ -143,37 +136,7 @@ func cardLines(e registry.Entry, members, hubs []string) []string {
 	if s.Inbox != nil && *s.Inbox > 0 {
 		row("Inbox", fmt.Sprintf("%d waiting", *s.Inbox))
 	}
-	if s.Threads != nil {
-		row("Threads", threadSummaryText(s.Threads))
-		if len(s.Threads.Phases) > 0 {
-			row("Phases", strings.Join(s.Threads.Phases, " → "))
-		}
-		for i, t := range s.Threads.Open {
-			if i == maxCardThreads {
-				out = append(out, label.Width(labelWidth).Render("")+dim.Render(fmt.Sprintf("… and %d more", len(s.Threads.Open)-i)))
-				break
-			}
-			k := ""
-			if i == 0 {
-				k = "Open"
-			}
-			line := fmt.Sprintf("[%s] %s", t.Stage, t.Title)
-			if t.Phase != "" {
-				line += dim.Render(" · " + t.Phase)
-			}
-			if t.Blocked != "" {
-				line += errSt.Render(" · blocked")
-			}
-			if t.Stale {
-				line += errSt.Render(" · stale")
-			}
-			out = append(out, label.Width(labelWidth).Render(k)+line)
-		}
-	}
 	row("Touched", touchedText(s))
-	for _, note := range refresh.Signals(e, now()) {
-		out = append(out, label.Width(labelWidth).Render("Signal")+errSt.Render(note))
-	}
 	return out
 }
 

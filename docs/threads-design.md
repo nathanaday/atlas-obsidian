@@ -209,8 +209,10 @@ atlas-obsidian open-claude NAME --thread ID
 `PROJECT` is a name, a path, or `.`. `ID` is a thread's id, its title, or
 the start of its title. `file` and `new` read the text from stdin when it is
 not a terminal. `open-claude --thread` starts the session with the skill for
-the thread's next stage. In the view, `n` on a project opens a thread from
-one line.
+the thread's next stage; add `--ask` to have the session read the thread and
+ask what to do with it instead. `--plant` starts a session that asks for a new
+thread. In the view, `n` on a project opens a thread from one line, and `p` on
+the threads card plants one in a session.
 
 ## Skills
 

@@ -147,12 +147,12 @@ internal/overlap/       what a hub's origins hold in common: the pages scored by
 internal/mcpserver/     the tools, thin over the packages above
 internal/plugin/        tests only: the plugin's skills, agents, links, and every skill name the code and docs use
 internal/hooks/         session-start (the project, its wiki, the page that describes the work, the open threads, the inbox, and hot.md), guard, touched, stop
-internal/claudecode/    Claude Code's plugin registry, `claude plugin`, launching claude in the work
+internal/claudecode/    Claude Code's plugin registry, `claude plugin`, launching claude in the work, and the first message for each launch intent (`Intent`, `Prompt`)
 internal/registry/      the scan of the projects the config lists, the entries, the registry state file
 internal/refresh/       derive one entry's state, rewrite the registry, list an entry's signals
 internal/manage/        init, edit, forget, and register a project
 internal/links/         the facts git reports about a folder, and CleanName
-internal/tui/           Bubble Tea screens: the view (a force-directed map of the projects and their member links on a braille canvas, an overview of the clusters and each cluster opened onto the screen, the selection's summary, the card, find, settings, launch keys)
+internal/tui/           Bubble Tea screens: the view (a force-directed map of the projects and their member links on a braille canvas, an overview of the clusters and each cluster opened onto the screen, the lenses (details, threads, version control) that color it and pick the card, the selection's summary, find, settings, launch keys)
 internal/terminal/      open a terminal window at a folder
 internal/ide/           open the project root in the preferred IDE (VS Code for now)
 internal/obsidian/      Obsidian's vault registry, obsidian:// URIs, restart

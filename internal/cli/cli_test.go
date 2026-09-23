@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nathanaday/atlas-obsidian/internal/claudecode"
 	"github.com/nathanaday/atlas-obsidian/internal/console"
 	"github.com/nathanaday/atlas-obsidian/internal/gitx"
 	"github.com/nathanaday/atlas-obsidian/internal/home"
@@ -812,5 +813,57 @@ func TestOverlapCommand(t *testing.T) {
 	}
 	if code := h.run("overlap", "hub", "--member", "nope"); code == 0 || !strings.Contains(h.err.String(), "no origin") {
 		t.Fatalf("member: %d %s", code, h.err.String())
+	}
+}
+
+func TestOpenAgentIntents(t *testing.T) {
+	h := setup(t)
+	bin := t.TempDir()
+	log := filepath.Join(bin, "launch")
+	t.Setenv("ATLAS_TEST_LAUNCH", log)
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\nprintf '%s' \"$*\" > \"$ATLAS_TEST_LAUNCH\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	work := filepath.Join(t.TempDir(), "work")
+	os.MkdirAll(work, 0o755)
+	if code := h.run("init", work); code != 0 {
+		t.Fatalf("init=%d: %s", code, h.err.String())
+	}
+	if code := h.run("thread", "work", "new", "Fix it"); code != 0 {
+		t.Fatalf("thread=%d: %s", code, h.err.String())
+	}
+	launch := func(args ...string) (int, string) {
+		os.Remove(log)
+		var out, stderr bytes.Buffer
+		c := console.NewWith(true, strings.NewReader(""), &out, true)
+		code := run(append([]string{"--home", h.home, "open-claude", "work"}, args...), strings.NewReader(""), &out, &stderr, c)
+		data, _ := os.ReadFile(log)
+		return code, string(data)
+	}
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--thread", "Fix it"}, "/atlas-obsidian:thread-work thr-"},
+		{[]string{"--thread", "Fix it", "--ask"}, "/atlas-obsidian:thread thr-"},
+		{[]string{"--plant"}, claudecode.PlantPrompt},
+		{[]string{"--git"}, claudecode.GitPrompt},
+	} {
+		code, prompt := launch(c.args...)
+		if code != 0 || !strings.HasPrefix(prompt, c.want) {
+			t.Fatalf("%v: exit %d, prompt %q", c.args, code, prompt)
+		}
+	}
+	for _, bad := range [][]string{{"--ask"}, {"--plant", "--git"}, {"--thread", "Fix it", "--git"}} {
+		if code, prompt := launch(bad...); code != 2 || prompt != "" {
+			t.Fatalf("%v: exit %d, prompt %q", bad, code, prompt)
+		}
+	}
+	if code := h.run("edit", "work", "--threads", "off"); code != 0 {
+		t.Fatalf("edit=%d: %s", code, h.err.String())
+	}
+	if code, prompt := launch("--plant"); code != 1 || prompt != "" {
+		t.Fatalf("plant with threads off: exit %d, prompt %q", code, prompt)
 	}
 }
