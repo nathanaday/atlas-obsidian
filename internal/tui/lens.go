@@ -151,12 +151,17 @@ func (l lens) diskStyle() lipgloss.Style {
 }
 
 // disks draws a disk under each project whose lens gives it one: its wiki's size through
-// the Wiki lens, its open threads through the Threads lens.
+// the Wiki lens, its open threads through the Threads lens. Through the Wiki lens only
+// the projects in focus keep the disk's color; the rest are gray like the edges.
 func (v view) disks(c *canvas, dots [][2]int) {
 	for i := range v.graph.nodes {
 		if it := v.item(i); it != nil {
 			if r := v.lens.radius(it.Entry); r > 0 {
-				c.disk(dots[i][0], dots[i][1], r, 3)
+				var layer int8 = 3
+				if v.lens == lensWiki && !v.focus(i) {
+					layer = 1
+				}
+				c.disk(dots[i][0], dots[i][1], r, layer)
 			}
 		}
 	}

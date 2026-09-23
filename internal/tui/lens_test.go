@@ -220,3 +220,34 @@ func TestTheWikiLensSizesTheWikis(t *testing.T) {
 		t.Fatal("a project nobody refreshed has no disk")
 	}
 }
+
+// diskLayer is the layer the canvas holds at a node's own dot.
+func diskLayer(v view, c *canvas, i int) int8 {
+	at := v.cells[i]
+	return c.layer[at.y*c.w+at.x]
+}
+
+func TestTheWikiLensColorsOnlyTheFocus(t *testing.T) {
+	v := selectName(t, sized(sample(), Opener{}, actions.Atlas{}), "platform")
+	c := v.draw()
+	for _, name := range []string{"platform", "webapp", "firmware", "thesis"} {
+		if diskLayer(v, c, nodeAt(t, v, name)) != 3 {
+			t.Fatalf("%s is in the selected cluster; its disk keeps the color", name)
+		}
+	}
+	if diskLayer(v, c, nodeAt(t, v, "notes")) != 1 {
+		t.Fatal("a disk out of focus is gray")
+	}
+	// Inside a cluster: the selection, what it mirrors, and what mirrors it.
+	v = selectName(t, v, "firmware")
+	c = v.draw()
+	if diskLayer(v, c, nodeAt(t, v, "firmware")) != 3 || diskLayer(v, c, nodeAt(t, v, "platform")) != 3 || diskLayer(v, c, nodeAt(t, v, "thesis")) != 1 {
+		t.Fatal("inside a cluster the focus is the selection and its links")
+	}
+	// The threads lens colors by state, not by focus.
+	v = keyV(v, "l")
+	c = v.draw()
+	if diskLayer(v, c, nodeAt(t, v, "webapp")) != 3 {
+		t.Fatal("open threads keep their color out of focus")
+	}
+}

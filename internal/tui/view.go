@@ -900,6 +900,19 @@ func (v view) lit() map[int]bool {
 	return out
 }
 
+// focus reports whether a node is in the selection's light: the selection itself, on the
+// overview its whole cluster, inside a cluster its members and its hubs. With nothing
+// selected every node is.
+func (v view) focus(i int) bool {
+	switch {
+	case v.sel < 0 || i == v.sel:
+		return true
+	case v.cluster == "":
+		return v.lit()[i]
+	}
+	return contains(v.graph.nodes[v.sel].members, i) || contains(v.graph.nodes[v.sel].hubs, i)
+}
+
 // nodeStyle is how a node's label reads against the selection. On the overview the
 // selected project lights its whole cluster; inside one, its members and its hubs.
 func (v view) nodeStyle(i int) lipgloss.Style {
