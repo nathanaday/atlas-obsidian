@@ -10,91 +10,40 @@ A wiki and the state of the work, in every project.
 
 ## About
 
-An agent session starts with no memory of the last one. You explain the project
-again, and the agent reads the same code to reach the conclusions it reached last
-week.
-
-atlas-obsidian keeps what a project knows inside the project: Markdown pages that
-git tracks and Obsidian opens, in a folder beside your code. A hook runs when you
+`atlas-obsidian` keeps a markdown wiki inside the project. A hook runs when you
 start Claude Code or Codex anywhere in the repository. It hands the session the
 project's description, the wiki's recent context, the open threads, and the files
 waiting in the inbox.
 
 ![Every project on one screen](docs/examples/TUI-project-nav.png)
 
-*`atlas-obsidian` with no arguments: every project the atlas lists, the member
-links between them, and a disk sized by each wiki's page count.*
+*`atlas-obsidian` TUI. Evoke the TUI anywhere and browse your atlas-powered projects*
 
-Two pieces install separately: a Go binary that makes a folder of work into a
-project and serves its MCP tools, and a plugin for Claude Code and Codex that
-carries the skills and hooks. Both agents read the same files.
+# Features
 
-## What a project holds
-
-One folder, `atlas/<name>/`, sitting beside your code.
-
-```
-webapp/                      your repository
-├── ...                      your work, untouched
-└── atlas/
-    └── webapp/
-        ├── project.json     name, description, filing mode, threads on or off
-        ├── wiki/            the pages, and the log of every change to them
-        ├── threads/         stubs, specs, plans, receipts; optional
-        ├── inbox/           what you drop in: sources, and notes
-        └── ideas/           your scratch notes, which nothing reads
-```
-
-**A wiki that cites its sources.** Put a PDF, an article, or a note in `inbox/`.
-The agent reads it, keeps an unmodified copy under `.raw/captured/`, and writes
-pages that cite that copy. Ask a question later and the answer names the page it
-used and the captured file that page cites.
-
-**Threads that track the work.** A thread is one bug, feature, or chore. It moves
-through four documents: a stub in your own words, then a spec, a plan, and a
-receipt. No field records the stage. The furthest document that exists is the
-stage, so every change of state is a page you can open and read.
-
-### Sources too large for one context window
+### Ingest huge documents into the wiki
 
 ![Ingesting a 351-page slide deck](docs/examples/ingesting-huge-slide-deck.png)
 
-Past about 40 PDF pages or 2500 lines, `wiki-ingest` splits a source at its
-content breaks and sends each range to a read-only worker, eight at a time. A
-worker reads only its range and returns the claims it found, each with the page
-or line it came from. It writes no pages. The session groups those claims by
-subject, drops the repetitions, keeps every locator, and files one plan for your
-approval. Above, a 351-page slide deck is split into eight ranges.
+The skills use parallel agents to shard and ingest content accurarately. Once hundreds of pages have been ingested, you can make quick, cheap queries to the knowledge base using the Go+MCP core.
 
-### The pages link to each other
+### View your knowledge base in Obsidian
 
 Ingestion writes ordinary wikilinks, so Obsidian's graph view and its backlinks
 work on the result. A source page links to the concepts it covers, and each
 concept page lists the sources that cite it.
 
-| Hovering a source page | Hovering a concept page |
-|---|---|
-| ![The graph around a paper](docs/examples/huge-kb-focus-1.png) | ![The graph around a concept](docs/examples/huge-kb-focus-2.png) |
+![The graph around a paper](docs/examples/huge-kb-focus-1.png) 
 
-### One wiki over several projects
+![The graph around a concept](docs/examples/huge-kb-focus-2.png)
 
-A project may list other projects as members. Its wiki then mirrors each member's
-wiki under `wiki/projects/<name>/`, and its own pages link into those mirrors
-with ordinary wikilinks. Obsidian draws one graph over every project in the list,
-and a session in the hub reads one wiki.
+### Connect projects into a high level knowledge base
 
 ![A hub wiki over four member projects](docs/examples/huge-kb-high-level.png)
 
-```bash
-atlas-obsidian edit platform --add-member svc-a --add-member svc-b
-atlas-obsidian sync platform
-```
+A project may list other projects as members. Its wiki then mirrors each member's wiki using the built in sync system. Updating the children knowledge base propagates the changes upward to the parent hub.
 
-The mirrors are derived: sync rewrites them as one operation, the guard refuses
-edits there, and nothing is ever written back into a member. The members' threads
-are mirrored too, so the hub's board lists every open thread across all of them.
-When two members wrote about one thing, `overlap` finds the pair and
-`atlas-merge` proposes the page that replaces both. Design and reasons:
+Design and reasons:
 [docs/members-design.md](docs/members-design.md).
 
 ## Quickstart
@@ -121,76 +70,11 @@ atlas-obsidian setup --agent claude --plugin-source "$PWD"   # or --agent codex
 ```
 
 `make install` puts `atlas-obsidian` in `$(go env GOPATH)/bin`, usually
-`~/go/bin`; add that to your PATH if it is not there. Use `make install` rather
-than `go install` so the binary is stamped with its version, which
+`~/go/bin`; add that to your PATH if it is not there. 
+
+Use `make install` rather than `go install` so the binary is stamped with its version, which
 `atlas-obsidian doctor` compares against the plugin's.
 
-Setup prints the changes it will make and asks before making them. Run it once
-per agent if you use both. Codex users then open `/hooks` in a new session, trust
-the Atlas hooks, and restart; Codex ignores hooks until they are trusted. Check
-the result with `atlas-obsidian doctor --agent claude` or `--agent codex`.
-
-### Make a project
-
-```bash
-cd ~/code/webapp
-atlas-obsidian init --description "The customer-facing web app."
-```
-
-This writes `atlas/webapp/` beside your code, commits it, and records the folder
-in the atlas config. A folder that is not in a git repository becomes one, since
-the wiki needs a history to commit into; pass `--no-git` to decline.
-
-Two filing modes decide where a new page lands. `generic`, the default, files by
-type into `wiki/sources/`, `wiki/entities/`, and `wiki/concepts/`. `lyt` keeps
-atomic notes in `wiki/notes/` and navigates them through Maps of Content in
-`wiki/mocs/`. Switch with `atlas-obsidian edit webapp --mode lyt`; pages already
-written stay where they are.
-
-For a repository with history, run `/atlas-obsidian:atlas-onboard` in a session
-instead. It makes the project, describes the work in the wiki, proposes a
-structure, and turns the TODO and FIXME lines, roadmap notes, and open issues it
-finds into threads you pick from.
-
-## Usage
-
-Open a thread and start a session on it:
-
-```bash
-atlas-obsidian thread webapp new "Filter vehicle false alarms" --priority high
-claude   # or: codex
-```
-
-Add a source to the wiki:
-
-```bash
-cp ~/Downloads/paper.pdf ~/code/webapp/atlas/webapp/inbox/
-claude   # or: codex
-```
-
-Then choose a skill. Every skill is named `<noun>-<verb>` on one of three nouns:
-`atlas-` acts on projects, `wiki-` on what a project knows, `thread-` on what it
-does. In Codex, type `$` and pick from the list.
-
-| Claude Code | Codex | What it does |
-|---|---|---|
-| `/atlas-obsidian:atlas` | `$atlas` | every project, and the map of every skill |
-| `/atlas-obsidian:thread-work` | `$thread-work` | writes a thread's next document: spec, plan, then receipt |
-| `/atlas-obsidian:wiki-ingest` | `$wiki-ingest` | turns the sources in the inbox into cited pages |
-| `/atlas-obsidian:wiki-query` | `$wiki-query` | answers from the wiki, changing nothing |
-| `/atlas-obsidian:wiki-review` | `$wiki-review` | checks the wiki, quick or deep |
-
-`/atlas-obsidian:thread-work Filter vehicle false alarms` writes that thread's
-spec and stops for your approval, then writes the plan, then does the work. All
-21 skills and how they fit: [docs/skills.md](docs/skills.md).
-
-Run `atlas-obsidian` with no arguments for the view above: each project is a
-node, each member link an edge, positioned by a force simulation. `l` switches
-the lens between wiki, threads, and version control. From the selected node, `o`
-opens Obsidian, `c` starts your agent in the work folder, `i` opens your IDE, and
-`t` opens a terminal there.
-
-Every command and its options: [docs/usage.md](docs/usage.md).
 
 ## Patterns and conventions
 
