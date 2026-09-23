@@ -50,25 +50,27 @@ Usage:
   atlas-obsidian [--home DIR] [-y] <command> [options]
 
 Getting started:
-  setup                     install the plugin; --agent claude (default) or codex
+  setup                     install the plugin; --agent claude (default) or codex,
+                            --plugin-source SRC from a checkout, --no-plugin for none
   init [PATH]               make the current folder (or PATH) a project: an atlas/<name>/ folder
                             inside your work, with its wiki and its threads
                             --name N, --description TEXT, --mode generic|lyt;
                             a folder in no git repository becomes one unless --no-git;
                             threads are on unless --no-threads
 
-Projects (PROJECT is a name, a path, or nothing for the project you are in):
+Projects (PROJECT is a name, a path, or . for the project you are in; [PROJECT] may be left out):
   list                      every project
   show NAME                 everything the atlas knows about one
   edit NAME                 change it: --name N, --description TEXT, --mode generic|lyt,
                             --threads on|off, --add-member P, --remove-member P (each repeatable)
   sync [PROJECT]            mirror the wikis of its members under wiki/projects/, as one operation,
                             and their threads under threads/projects/
-  describe PROJECT          stage a snapshot of the work; the wiki-describe skill writes its page
+  describe [PROJECT]        stage a snapshot of the work; the wiki-describe skill writes its page;
+                            --no-claude stages and stops
   forget PROJECT            drop a project from the atlas; its atlas/<name>/ folder stays
-  open-ide NAME            open the work folder in the preferred IDE
-  open-terminal NAME       open a terminal window at the work folder
-  open-agent NAME          start the preferred harness in the work folder; --thread ID
+  open-ide NAME             open the work folder in the preferred IDE
+  open-terminal NAME        open a terminal window at the work folder
+  open-agent NAME           start the preferred harness in the work folder; --thread ID
                             continues a thread (--ask reads it and asks), --plant plants
                             one, --git handles the work's git state
   open-vault [PROJECT]      open the project's folder in Obsidian
@@ -87,14 +89,16 @@ Threads (ID is a thread's id or title):
   phase PROJECT ACTION ...  create TITLE [--goal TEXT] [--order N], rename TITLE --to NEW,
                             reorder TITLE --order N, remove TITLE
 
-The wiki (PROJECT is a name, a path, or nothing for the project you are in):
-  ingest PROJECT [PATH...]  stage new files into the inbox, then ingest them
-  lint [PROJECT]            run the wiki health check
+The wiki (PROJECT is a name, a path, or . for the project you are in; [PROJECT] may be left out):
+  ingest PROJECT [PATH...]  stage new files into the inbox, then ingest them;
+                            --dry-run shows what it would stage, --no-claude stages and stops
+  lint [PROJECT]            run the wiki health check; --json, --strict exits 1 on findings
   overlap [PROJECT]         what the wiki and the mirrors of its members hold in common:
                             --member NAME for one origin, --within for one wiki's own
                             near-duplicates, --json, -n N pairs
-  stub PROJECT [TITLE...]   create seed pages for the pages your links name but nobody has written
-  history [PROJECT]         list operations, newest first
+  stub PROJECT [TITLE...]   create seed pages for the pages your links name but nobody has written;
+                            --type concept|entity (lyt: note|moc)
+  history [PROJECT]         list operations, newest first; -n N (default 20)
   undo PROJECT OPERATION    take back one operation
   recover [PROJECT]         restore the wiki after an interrupted operation
   apply PROJECT PLAN.json   apply a plan file, for scripts
@@ -104,7 +108,8 @@ Across the atlas:
   refresh                   read everything again and rewrite the registry
   config [KEY VALUE]        show or set new-days / preferred-harness / preferred-ide
   info                      show every path and version the atlas uses
-  doctor                    check the installation and every project
+  doctor                    check the installation and every project;
+                            --agent claude (default) or codex
 
 Plugin:
   mcp                       serve the atlas tools over stdio; Claude Code runs this
@@ -1366,7 +1371,7 @@ func (e *env) ingest(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) == 0 {
-		return 2, errors.New("usage: atlas-obsidian ingest [PROJECT] [PATH ...] [--dry-run] [--no-claude]")
+		return 2, errors.New("usage: atlas-obsidian ingest PROJECT [PATH ...] [--dry-run] [--no-claude]")
 	}
 	cfg, err := e.home.Load()
 	if err != nil {
@@ -1890,7 +1895,7 @@ func (e *env) stub(args []string) (int, error) {
 		return 2, nil
 	}
 	if len(positional) < 1 {
-		return 2, errors.New("usage: atlas-obsidian stub [PROJECT] [TITLE...] [--type T]")
+		return 2, errors.New("usage: atlas-obsidian stub PROJECT [TITLE...] [--type T]")
 	}
 	v, err := e.vaultArg(positional[0])
 	if err != nil {
