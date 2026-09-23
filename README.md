@@ -10,25 +10,24 @@ A wiki and the state of the work, in every project.
 
 ## About
 
-Every agent session starts blank. You explain the project again, the agent reads
-the same code to reach the same conclusion it reached last week, and the context
-window closes on all of it.
+An agent session starts with no memory of the last one. You explain the project
+again, and the agent reads the same code to reach the conclusions it reached last
+week.
 
 atlas-obsidian keeps what a project knows inside the project: Markdown pages that
-git tracks and Obsidian opens, in a folder beside your code. Start Claude Code or
-Codex anywhere in the repository and the session opens already knowing what the
-project is, what the wiki learned recently, which threads are open, and what is
-waiting to be read.
+git tracks and Obsidian opens, in a folder beside your code. A hook runs when you
+start Claude Code or Codex anywhere in the repository. It hands the session the
+project's description, the wiki's recent context, the open threads, and the files
+waiting in the inbox.
 
 ![Every project on one screen](docs/examples/TUI-project-nav.png)
 
-*`atlas-obsidian` with no arguments: every project it knows, the links between
-them, and a disk that grows with the size of each wiki.*
+*`atlas-obsidian` with no arguments: every project the atlas lists, the member
+links between them, and a disk sized by each wiki's page count.*
 
 Two pieces install separately: a Go binary that makes a folder of work into a
 project and serves its MCP tools, and a plugin for Claude Code and Codex that
-carries the skills and hooks. Both agents read the same files, with no conversion
-between them.
+carries the skills and hooks. Both agents read the same files.
 
 ## What a project holds
 
@@ -46,34 +45,32 @@ webapp/                      your repository
         └── ideas/           your scratch notes, which nothing reads
 ```
 
-It holds two things.
-
 **A wiki that cites its sources.** Put a PDF, an article, or a note in `inbox/`.
 The agent reads it, keeps an unmodified copy under `.raw/captured/`, and writes
-pages that cite that copy. Ask a question later and the answer names the page and
-the source behind it.
+pages that cite that copy. Ask a question later and the answer names the page it
+used and the captured file that page cites.
 
-**Threads that carry the work.** A thread is one bug, feature, or chore, and it
-moves through four documents: a stub in your own words, then a spec, a plan, and
-a receipt. Nothing records which stage a thread is in. The furthest document that
-exists *is* the stage, so every change of state is a page you can open and read.
+**Threads that track the work.** A thread is one bug, feature, or chore. It moves
+through four documents: a stub in your own words, then a spec, a plan, and a
+receipt. No field records the stage. The furthest document that exists is the
+stage, so every change of state is a page you can open and read.
 
-### Large sources, read in parallel, written once
+### Sources too large for one context window
 
 ![Ingesting a 351-page slide deck](docs/examples/ingesting-huge-slide-deck.png)
 
-A 351-page slide deck does not fit in one context window. `wiki-ingest` splits it
-at its content breaks and sends each range to a read-only worker, eight at a
-time. A worker reads only its range and returns the claims it found, each with
-the page it came from; it writes nothing. The session groups those claims by
-subject, drops the repetitions, keeps every locator, and turns the result into
-one plan you see before a single file changes.
+Past about 40 PDF pages or 2500 lines, `wiki-ingest` splits a source at its
+content breaks and sends each range to a read-only worker, eight at a time. A
+worker reads only its range and returns the claims it found, each with the page
+or line it came from. It writes no pages. The session groups those claims by
+subject, drops the repetitions, keeps every locator, and files one plan for your
+approval. Above, a 351-page slide deck is split into eight ranges.
 
-### Pages link to what taught them
+### The pages link to each other
 
-Ingestion writes ordinary wikilinks, so the wiki is a graph you can walk in
-either direction: from a paper to the concepts it introduced, and from a concept
-back to every source that covers it.
+Ingestion writes ordinary wikilinks, so Obsidian's graph view and its backlinks
+work on the result. A source page links to the concepts it covers, and each
+concept page lists the sources that cite it.
 
 | Hovering a source page | Hovering a concept page |
 |---|---|
@@ -83,8 +80,8 @@ back to every source that covers it.
 
 A project may list other projects as members. Its wiki then mirrors each member's
 wiki under `wiki/projects/<name>/`, and its own pages link into those mirrors
-with ordinary wikilinks. Obsidian shows one graph over the whole ecosystem, and a
-session in the hub reads one wiki.
+with ordinary wikilinks. Obsidian draws one graph over every project in the list,
+and a session in the hub reads one wiki.
 
 ![A hub wiki over four member projects](docs/examples/huge-kb-high-level.png)
 
@@ -94,10 +91,10 @@ atlas-obsidian sync platform
 ```
 
 The mirrors are derived: sync rewrites them as one operation, the guard refuses
-edits there, and a member never knows it is listed. The members' threads come
-along too, so the hub's board shows every open thread in the ecosystem. When two
-members wrote about one thing, `overlap` finds the pair and `atlas-merge`
-proposes the page that replaces both. Design and reasons:
+edits there, and nothing is ever written back into a member. The members' threads
+are mirrored too, so the hub's board lists every open thread across all of them.
+When two members wrote about one thing, `overlap` finds the pair and
+`atlas-merge` proposes the page that replaces both. Design and reasons:
 [docs/members-design.md](docs/members-design.md).
 
 ## Quickstart
@@ -125,14 +122,13 @@ atlas-obsidian setup --agent claude --plugin-source "$PWD"   # or --agent codex
 
 `make install` puts `atlas-obsidian` in `$(go env GOPATH)/bin`, usually
 `~/go/bin`; add that to your PATH if it is not there. Use `make install` rather
-than `go install` so the binary carries its version, which lets
-`atlas-obsidian doctor` tell you when the binary and the plugin have drifted
-apart.
+than `go install` so the binary is stamped with its version, which
+`atlas-obsidian doctor` compares against the plugin's.
 
-Setup prints what it intends to do and waits for you to agree. Run it once per
-agent if you use both. Codex users then open `/hooks` in a new session, trust the
-Atlas hooks, and restart; Codex skips hooks until they are trusted. Check the
-result with `atlas-obsidian doctor --agent claude` or `--agent codex`.
+Setup prints the changes it will make and asks before making them. Run it once
+per agent if you use both. Codex users then open `/hooks` in a new session, trust
+the Atlas hooks, and restart; Codex ignores hooks until they are trusted. Check
+the result with `atlas-obsidian doctor --agent claude` or `--agent codex`.
 
 ### Make a project
 
@@ -165,34 +161,34 @@ atlas-obsidian thread webapp new "Filter vehicle false alarms" --priority high
 claude   # or: codex
 ```
 
-Teach the wiki something:
+Add a source to the wiki:
 
 ```bash
 cp ~/Downloads/paper.pdf ~/code/webapp/atlas/webapp/inbox/
 claude   # or: codex
 ```
 
-Then choose a skill. Every skill is a verb on one of three nouns, so the name
-says where it belongs: `atlas-` for projects, `wiki-` for what a project knows,
-`thread-` for what it does. In Codex, type `$` and pick from the list.
+Then choose a skill. Every skill is named `<noun>-<verb>` on one of three nouns:
+`atlas-` acts on projects, `wiki-` on what a project knows, `thread-` on what it
+does. In Codex, type `$` and pick from the list.
 
 | Claude Code | Codex | What it does |
 |---|---|---|
 | `/atlas-obsidian:atlas` | `$atlas` | every project, and the map of every skill |
-| `/atlas-obsidian:thread-work` | `$thread-work` | carries a thread on: spec, plan, the work, the receipt |
+| `/atlas-obsidian:thread-work` | `$thread-work` | writes a thread's next document: spec, plan, then receipt |
 | `/atlas-obsidian:wiki-ingest` | `$wiki-ingest` | turns the sources in the inbox into cited pages |
 | `/atlas-obsidian:wiki-query` | `$wiki-query` | answers from the wiki, changing nothing |
 | `/atlas-obsidian:wiki-review` | `$wiki-review` | checks the wiki, quick or deep |
 
 `/atlas-obsidian:thread-work Filter vehicle false alarms` writes that thread's
-spec and stops for your yes, then the plan, then does the work. All 21 skills and
-how they fit: [docs/skills.md](docs/skills.md).
+spec and stops for your approval, then writes the plan, then does the work. All
+21 skills and how they fit: [docs/skills.md](docs/skills.md).
 
-Run `atlas-obsidian` with no arguments for the view above: every project as a
-node, every member link as an edge, laid out by a live force simulation. `l`
-changes the lens — wiki, threads, or version control — and from any node `o`
-opens Obsidian, `c` starts your agent there, `i` opens your IDE, and `t` opens a
-terminal.
+Run `atlas-obsidian` with no arguments for the view above: each project is a
+node, each member link an edge, positioned by a force simulation. `l` switches
+the lens between wiki, threads, and version control. From the selected node, `o`
+opens Obsidian, `c` starts your agent in the work folder, `i` opens your IDE, and
+`t` opens a terminal there.
 
 Every command and its options: [docs/usage.md](docs/usage.md).
 
@@ -213,9 +209,9 @@ Full reasoning in [docs/core-design.md](docs/core-design.md).
   thread cards, the board that lists them, and the opening callout of each thread
   document are all written by the binary. The agent writes the prose.
 - **Ids travel; paths stay.** A project's `project.json` holds no path. The paths
-  live in `~/.atlas-obsidian/config.json`, and the atlas never searches your disk
-  — it knows about a project because `init` added its folder to that list. Move
-  the folder and the next session started inside it repairs the entry.
+  live in `~/.atlas-obsidian/config.json`, which `init` appends to. The atlas
+  never scans your disk, so a project can live anywhere. Move the folder, and the
+  next session started inside it repairs the entry.
 
 ## Documentation
 
